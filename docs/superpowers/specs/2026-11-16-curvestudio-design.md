@@ -65,7 +65,7 @@ ConcreteInfo_CurveStudio/
 │   ├── reporting/            # curvestudio-reporting (PDF/XLSX/JSON/CSV; no GUI deps)
 │   └── plotting/             # curvestudio-plotting (Matplotlib publication output; shared by desktop + reports)
 ├── apps/
-│   ├── desktop/              # curvestudio-desktop (PySide6; GPL-3.0)
+│   ├── desktop/              # curvestudio-desktop (PySide6; AGPL-3.0)
 │   ├── api/                  # curvestudio-api (FastAPI; AGPL-3.0)
 │   └── web/                  # React + TypeScript + Plotly.js (AGPL-3.0)
 ├── deploy/                   # docker-compose, Dockerfiles, Caddyfile, backup scripts, .env.example
@@ -93,7 +93,18 @@ Dependency direction (enforced): `apps/* → reporting, plotting, engineering, m
 
 **Model discovery.** Pipeline from PRD §9: validate → select applicable families (domain rules) → initial guesses → fit candidates in a process pool (multi-start for hard ones) → reject non-converged → metrics (AICc, BIC, k-fold CV RMSE, adj. R², residual-quality score, complexity) → configurable ranking with a high-order-polynomial guard. Output is the full ranked table; the user chooses.
 
+**Auto-fit (headline feature).** One action, "Auto-fit", fits every model applicable to the data and returns **all converged fits ordered best to worst**, each row showing rank, model name, **equation with fitted numbers substituted**, **R²**, adjusted R², RMSE, AICc, BIC, CV-RMSE and convergence status; non-converged models are listed separately with their reason, never ranked. Default order is **"Best overall"** (AICc-led composite with CV and a complexity penalty), because ordering by R² alone always favours the model with the most parameters. A one-click column sort lets the user order by R² (or any column) when they want that, and the UI labels the active ordering. Results stream in as models finish, so a first ranking appears quickly; the run is cancellable and seeded for reproducibility. Models are screened by cheap rules first (domain: needs positive x, y monotonic, etc.) and then fitted in parallel with a per-model time limit, so a 300-model run stays interactive on a normal laptop (target to be benchmarked, not promised).
+
 **Project format `.cstudio`.** ZIP with `manifest.json` (schema-versioned, Pydantic-validated; app + dependency versions), original and cleaned datasets as CSV (shortest-round-trip floats), operation logs, fit configs and results as JSON, plot configs. No pickle. Extraction is hardened (path traversal, size and file-count limits, zip-bomb ratio). Opening re-fits nothing automatically but can re-run any recorded analysis and compare to stored results.
+
+### 5.2a Model library scale
+
+Goal: **as many well-founded models as we can verify**, starting from the PRD's families and growing continuously. Three tiers, all declarative `ModelSpec`s sharing one test harness:
+1. **Hand-written named models** (target 150+ at Phase 4): saturation, sigmoid/growth (logistic 3/4/5-parameter, Gompertz, Richards, Weibull, von Bertalanffy, Bleasdale-Nelder…), exponential/decay (single, double, triple, stretched), power/log variants, rational functions, peak/distribution shapes (Gaussian, Lorentzian, Voigt, pseudo-Voigt, lognormal, gamma, Weibull, Cauchy, Lévy…), dose-response (Hill, 4PL/5PL), kinetics, Arrhenius/Antoine/Sellmeier-style physics, harmonic/Fourier, and the concrete/engineering set in PRD §15.
+2. **Generated families** (hundreds more): polynomial 1–10 (with/without intercept), rational polynomials `P_m(x)/Q_n(x)` for small m, n, inverse and reciprocal polynomials, log/exp/power transforms of x and y (TableCurve-style combinations), sums of 2–3 exponentials/Gaussians/power terms, Fourier series 1–6 terms. Generation is deterministic, each variant gets a stable id, and a parameter-count cap keeps overfit-prone variants out of default Auto-fit runs (opt-in "exhaustive" mode).
+3. **User/community models** via custom equations and later plugins.
+
+A model is only shipped once it passes the standard checks: equation matches reference, Jacobian matches finite differences, a seeded synthetic dataset recovers its own parameters, and its validity rules are exercised. This keeps the count honest — a model that cannot be shown to fit its own noiseless data is not added. Counts are tracked in CI so the library size is a measured number, not a claim.
 
 ### 5.3 Desktop app (PySide6)
 
@@ -113,7 +124,7 @@ MVC with controllers between Qt widgets and the core. Interactive plots via PyQt
 
 ### 5.6 Licensing (proposal — see §9)
 
-Core, model_library, reporting, plotting, engineering: **MIT** (reusable libraries, per PRD §24). Desktop: **GPL-3.0**. API and web: **AGPL-3.0**, so a closed hosted fork must publish its changes. Docs: CC BY 4.0.
+Core, model_library, reporting, plotting, engineering: **MIT** (reusable libraries, per PRD §24). Desktop, API and web: **AGPL-3.0** (owner's decision, 16/11/2026). For the desktop app AGPL behaves like GPL-3.0 for distributed copies; its extra network clause only matters if someone offers the app as a hosted service, and PySide6 (LGPL) and the BSD scientific stack are compatible with it. Docs: CC BY 4.0. Open question for the owner: the MIT libraries can be embedded in closed products; switch them to AGPL too if that is not wanted.
 
 ## 6. Testing and scientific verification
 
@@ -136,7 +147,7 @@ Phases follow PRD §22, reordered so the first usable app lands early. Each phas
 | 1 | Data | Import (CSV/TSV/TXT/JSON/XLSX/clipboard), `Dataset`, ops log, validation | Round-trip + validation tests |
 | 2 | Fitting core | `ModelSpec`, registry, OLS/WLS/polynomial, nonlinear fit, `FitResult`, NIST StRD harness | NIST pass-rate documented |
 | 3 | Statistics | Covariance, CIs, prediction bands, diagnostics, tests, IC/CV, bootstrap | Cross-check fixtures |
-| 4 | Model library + expressions | 50+ models, then 100+; safe equation builder; multi-start | Every model recovers its params |
+| 4 | Model library + expressions + Auto-fit engine | 150+ named models plus generated families; safe equation builder; multi-start; ranked Auto-fit with equations and R² | Every model recovers its params; Auto-fit ranks a known-truth dataset's true model in top 3 |
 | 5 | Desktop MVP | Shell, data table, plot, fit panel, results tabs, PNG/SVG/CSV export, `.cstudio` save/load | **MVP gate (PRD §3.1)** |
 | 6 | Discovery + visualization + reports | Discovery/ranking UI, residual plots, bands, PDF/XLSX/JSON reports, prediction studio | Alpha→Beta |
 | 7 | Web + self-host | API, auth, jobs, React UI, plans/billing (flagged), Docker Compose, docs | RC |
@@ -152,7 +163,7 @@ Concrete class/function signatures, exact SQL schemas and migrations, UI widget 
 ## 9. Decisions to confirm
 
 These are my proposals; the first two change what is published, so I want explicit approval.
-1. **Licence split** (MIT core / GPL desktop / AGPL web). AGPL is my addition; the PRD says GPL-3.0 for the application.
+1. **Licence split** (MIT libraries / AGPL-3.0 desktop, API and web). Desktop AGPL is now your decision; still open: should the core libraries be MIT (embeddable anywhere) or AGPL?
 2. **Billing provider:** Razorpay first, behind an adapter. Alternatives (Stripe, Lemon Squeezy) can be added later.
 3. **Project extension:** `.cstudio` (the PRD's `.clab` predated the name).
 4. **Quota defaults** for the hosted free/paid tiers are deferred to Phase 7 and priced against real hosting cost.
