@@ -1,5 +1,6 @@
 """Model layer: declarative model specifications and their registry."""
 
+from curvestudio.models import starter as _starter  # noqa: F401  (registers the starter set)
 from curvestudio.models.registry import get_model, list_models, register
 from curvestudio.models.spec import ModelSpec, Parameter
 
