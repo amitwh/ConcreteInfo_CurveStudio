@@ -17,6 +17,12 @@ reported in ``fitted``/``residuals`` but influence nothing):
   any singular value below it means the parameters are not separately identifiable, so
   the covariance is withheld (``SINGULAR_COVARIANCE``) instead of reporting huge numbers.
 
+The scalar-objective methods (``nelder``, ``powell``, ``bfgs``, ``lbfgsb``,
+``differential_evolution``, ``dual_annealing``, see :mod:`curvestudio.fitting.minimize`)
+share everything after the optimizer call: the same finite checks, status rules,
+covariance and warnings. They have no ``active_mask``, so ``PARAMETER_AT_BOUND`` comes
+from the distance to a finite bound alone.
+
 Non-finite values during iteration: if a trial step makes the model non-finite, every
 non-finite residual is replaced by a large finite penalty (``1e100``). Both ``lm`` and
 ``trf``/``dogbox`` only accept steps that reduce the cost, so the penalty acts as a wall
@@ -39,6 +45,7 @@ from curvestudio.data import XY
 from curvestudio.fitting._uncertainty import correlation, finite_or_none
 from curvestudio.fitting.config import FitConfig
 from curvestudio.fitting.metrics import FitStatistics, fit_statistics
+from curvestudio.fitting.minimize import SCALAR_METHODS, minimize_sse
 from curvestudio.fitting.result import (
     FitResult,
     FitStatus,
@@ -54,6 +61,12 @@ NON_FINITE_PENALTY = 1e100
 
 MULTISTART_RTOL = 1e-6
 """Relative SSE spread among converged starts above which they are said to disagree."""
+
+ROBUST_LOSS_WARNING = (
+    "ROBUST_LOSS_COVARIANCE_APPROXIMATE: standard errors use the least-squares formula "
+    "and are approximate"
+)
+"""Added when a robust loss is used: ``s2 * pinv(J'J)`` assumes a quadratic loss."""
 
 _BOUND_RTOL = 1e-8
 """A parameter within this relative distance of a finite bound is reported at the bound."""
@@ -97,6 +110,10 @@ class _Problem:
         if not bool(np.all(np.isfinite(jac))):
             raise _NonFiniteJacobianError(f"Jacobian is not finite at {self.describe(theta)}")
         return jac
+
+    def sse_gradient(self, theta: FloatArray) -> FloatArray:
+        """Analytic gradient ``2 J_r' r`` of the weighted SSE (``J_r`` is :meth:`jacobian`)."""
+        return np.asarray(2.0 * self.guarded_jacobian(theta).T @ self.guarded_residuals(theta))
 
     def describe(self, theta: FloatArray) -> str:
         return ", ".join(f"{n}={v:.6g}" for n, v in zip(self.names, theta, strict=True))
@@ -165,20 +182,35 @@ def _run_once(
         return _Run(start, FitStatus.FAILED, "model not finite at starting values")
     try:
         with np.errstate(all="ignore"):
-            ret = least_squares(
-                problem.guarded_residuals,
-                start,
-                jac=problem.guarded_jacobian,
-                bounds=(lower, upper),
-                method=method,
-                loss=config.loss,
-                x_scale="jac",
-                ftol=config.ftol,
-                xtol=config.xtol,
-                gtol=config.gtol,
-                max_nfev=config.max_nfev,
-            )
-        theta = np.asarray(ret.x, dtype=np.float64)
+            if method in SCALAR_METHODS:
+                outcome = minimize_sse(
+                    lambda t: float(np.sum(problem.guarded_residuals(t) ** 2)),
+                    problem.sse_gradient,
+                    start,
+                    method,
+                    lower,
+                    upper,
+                    config,
+                )
+                theta, success, message_text = outcome.x, outcome.success, outcome.message
+                active_mask = None
+            else:
+                ret = least_squares(
+                    problem.guarded_residuals,
+                    start,
+                    jac=problem.guarded_jacobian,
+                    bounds=(lower, upper),
+                    method=method,
+                    loss=config.loss,
+                    x_scale="jac",
+                    ftol=config.ftol,
+                    xtol=config.xtol,
+                    gtol=config.gtol,
+                    max_nfev=config.max_nfev,
+                )
+                theta = np.asarray(ret.x, dtype=np.float64)
+                success, message_text = bool(ret.success), str(ret.message)
+                active_mask = np.asarray(ret.active_mask)
         resid = problem.residuals(theta)
         jac = problem.jacobian(theta)
     except _NonFiniteJacobianError as exc:
@@ -195,8 +227,8 @@ def _run_once(
         problems.append("Jacobian is not finite at the solution")
     if not math.isfinite(sse):
         problems.append("SSE is not finite at the solution")
-    converged = bool(ret.success) and not problems
-    message = "; ".join([str(ret.message), *problems])
+    converged = success and not problems
+    message = "; ".join([message_text, *problems])
     return _Run(
         start=start,
         status=FitStatus.CONVERGED if converged else FitStatus.NOT_CONVERGED,
@@ -204,7 +236,7 @@ def _run_once(
         theta=theta if bool(np.all(np.isfinite(theta))) else None,
         sse=sse if math.isfinite(sse) else math.inf,
         jacobian=jac,
-        active_mask=np.asarray(ret.active_mask),
+        active_mask=active_mask,
     )
 
 
@@ -432,6 +464,8 @@ def fit_nonlinear(
             residuals=residuals,
         )
 
+    if config.loss != "linear":
+        warnings.append(ROBUST_LOSS_WARNING)
     se, covariance, corr = _uncertainties(winner.jacobian, stats)
     if se is None:
         warnings.append("SINGULAR_COVARIANCE")

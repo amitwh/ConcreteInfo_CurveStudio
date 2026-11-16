@@ -48,7 +48,10 @@ def fit(model: ModelSpec | str, data: XY, config: FitConfig = FitConfig()) -> Fi
     Starts come from ``config.initial`` per parameter, else ``model.initial_guess`` on the
     active (weight > 0) points, clipped into the effective bounds; ``n_starts > 1`` adds
     seeded restarts and the lowest-SSE converged run wins. ``data.weights`` multiply the
-    squared residuals. Polynomials are not special-cased; use ``fit_polynomial`` for them.
+    squared residuals. ``config.method`` may also be a scalar minimiser of the weighted SSE
+    (``nelder``, ``powell``, ``bfgs``, ``lbfgsb``, ``differential_evolution``,
+    ``dual_annealing``; see :mod:`curvestudio.fitting.minimize`) which takes no robust loss.
+    Polynomials are not special-cased; use ``fit_polynomial`` for them.
 
     Status: ``INVALID_INPUT`` when there are no more active points than parameters or
     ``model.applicability`` objects; ``FAILED`` when the start is unusable or the optimizer
@@ -76,6 +79,13 @@ def fit(model: ModelSpec | str, data: XY, config: FitConfig = FitConfig()) -> Fi
             )
     lower, upper = _effective_bounds(spec, config)
     has_bounds = bool(np.any(np.isfinite(lower)) or np.any(np.isfinite(upper)))
-    check_method_compatibility(config.method, config.loss, has_bounds, has_jacobian=True)
+    check_method_compatibility(
+        config.method,
+        config.loss,
+        has_bounds,
+        has_jacobian=True,
+        all_bounds_finite=bool(np.all(np.isfinite(lower)) and np.all(np.isfinite(upper))),
+        n_starts=config.n_starts,
+    )
     method = resolve_method(config.method, config.loss, has_bounds)
     return fit_nonlinear(spec, data, config, method=method, lower=lower, upper=upper)

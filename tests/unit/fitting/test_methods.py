@@ -30,8 +30,8 @@ def test_lm_with_robust_loss_is_rejected_naming_loss() -> None:
 
 
 def test_unknown_method_is_rejected() -> None:
-    with pytest.raises(ValueError, match="unknown method 'nelder'"):
-        check_method_compatibility("nelder", "linear", has_bounds=False, has_jacobian=True)
+    with pytest.raises(ValueError, match="unknown method 'simplex'"):
+        check_method_compatibility("simplex", "linear", has_bounds=False, has_jacobian=True)
 
 
 def test_unknown_loss_is_rejected() -> None:
