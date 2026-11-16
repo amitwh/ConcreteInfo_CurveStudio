@@ -12,6 +12,10 @@ reported in ``fitted``/``residuals`` but influence nothing):
 * residuals ``r_i = sqrt(w_i) * (y_i - f(x_i))`` on active points, so ``sum(r**2)`` is the
   weighted SSE; Jacobian rows are scaled the same way and come from
   :meth:`ModelSpec.jacobian` (analytic, never finite differences);
+* a solution whose Jacobian is rank-deficient by the cut-off below is reported as
+  ``NOT_CONVERGED``, not as a converged fit with withheld errors: on the plateaus where
+  this happens (a degenerate or redundant model, e.g. one that has vanished far from
+  the data) the parameters are not identifiable, so the run is not a usable answer;
 * covariance ``s2 * pinv(J'J)`` with ``s2 = SSE / df`` and ``df = n_active - k``. The
   pseudo-inverse uses the SVD of ``J`` with the cut-off ``eps * max(J.shape) * s_max``;
   any singular value below it means the parameters are not separately identifiable, so
@@ -70,6 +74,12 @@ ROBUST_LOSS_WARNING = (
 
 _BOUND_RTOL = 1e-8
 """A parameter within this relative distance of a finite bound is reported at the bound."""
+
+RANK_DEFICIENT_MESSAGE = (
+    "Jacobian is rank-deficient at the solution: parameters are not identifiable here "
+    "(degenerate or redundant model)"
+)
+"""Termination reason added to a run whose solution Jacobian has lost column rank."""
 
 
 class _NonFiniteJacobianError(Exception):
@@ -225,6 +235,10 @@ def _run_once(
         problems.append("parameters are not finite")
     if not bool(np.all(np.isfinite(jac))):
         problems.append("Jacobian is not finite at the solution")
+    elif _svd_rank_deficient(
+        np.asarray(np.linalg.svd(jac, compute_uv=False), dtype=np.float64), jac.shape
+    ):
+        problems.append(RANK_DEFICIENT_MESSAGE)
     if not math.isfinite(sse):
         problems.append("SSE is not finite at the solution")
     converged = success and not problems
@@ -303,6 +317,19 @@ def _at_bounds(
     return flagged
 
 
+def _svd_rank_deficient(svals: FloatArray, shape: tuple[int, ...]) -> bool:
+    """Whether fewer than ``shape[1]`` singular values clear the relative cut-off.
+
+    The exact rule :func:`_uncertainties` uses to withhold the covariance: a singular
+    value at or below ``eps * max(shape) * s_max`` is indistinguishable from zero, so
+    the matrix does not have full column rank. ``_run_once`` applies the same rule to
+    decide that a solution is not identifiable, keeping the two judgements identical.
+    """
+    k = shape[1]
+    cutoff = np.finfo(np.float64).eps * max(shape) * (svals[0] if svals.size else 0.0)
+    return svals.size < k or not bool(np.all(svals > cutoff)) or not svals[0] > 0.0
+
+
 def _uncertainties(
     jac: FloatArray, stats: FitStatistics
 ) -> tuple[FloatArray | None, list[list[float]] | None, list[list[float]] | None]:
@@ -313,8 +340,7 @@ def _uncertainties(
     """
     k = jac.shape[1]
     _, svals, vt = np.linalg.svd(jac, full_matrices=False)
-    cutoff = np.finfo(np.float64).eps * max(jac.shape) * (svals[0] if svals.size else 0.0)
-    if svals.size < k or not bool(np.all(svals > cutoff)) or not svals[0] > 0.0:
+    if _svd_rank_deficient(svals, jac.shape):
         return None, None, None
     # Singular values far from 1 pass the relative cut-off but their squares can leave the
     # float range: underflow to 0 (e.g. 1e-241 on a plateau where the model has vanished)

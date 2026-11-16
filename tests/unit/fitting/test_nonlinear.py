@@ -4,6 +4,7 @@ import json
 import math
 import warnings
 from collections.abc import Iterator
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -21,8 +22,11 @@ from curvestudio.fitting.nonlinear import (
 )
 from curvestudio.models import ModelSpec, Parameter, register
 from curvestudio.models.registry import _clear_registry
+from curvestudio.testing.nist import load_nls
 
 FloatArray = np.ndarray[Any, np.dtype[np.float64]]
+
+DATA_DIR = Path(__file__).resolve().parents[2] / "data" / "nist_strd"
 
 
 @pytest.fixture(autouse=True)
@@ -428,7 +432,10 @@ def test_analytic_jacobian_is_used(monkeypatch: pytest.MonkeyPatch) -> None:
         assert calls["n"] >= 3, method
 
 
-def test_redundant_parameters_give_singular_covariance() -> None:
+def test_redundant_parameters_are_not_converged() -> None:
+    # a and b enter only as the product a*b, so the Jacobian columns are proportional
+    # everywhere: the parameters are never separately identifiable and the run must say
+    # so instead of reporting "converged" numbers with withheld errors.
     model = ModelSpec(
         id="redundant",
         name="Redundant product",
@@ -439,12 +446,35 @@ def test_redundant_parameters_give_singular_covariance() -> None:
     )
     x, y = _noisy_line()
     res = fit(model, make_xy(x, y - 1.5))
-    assert "SINGULAR_COVARIANCE" in res.warnings
+    assert res.status is FitStatus.NOT_CONVERGED
+    assert "rank-deficient" in res.termination_reason
     assert res.covariance is None and res.correlation is None
     assert all(p.std_err is None and p.ci_low is None for p in res.parameters)
-    assert res.status is FitStatus.CONVERGED
     v = values(res)
     assert v["a"] * v["b"] == pytest.approx(0.7, rel=0.05)
+
+
+def test_degenerate_plateau_is_not_converged_danwood() -> None:
+    # NIST DanWood (y = b1*x**b2, certified SSE 0.0043) from a far negative-b2 start:
+    # x**b2 ~ 1e-141, the model has vanished, every Jacobian entry is ~0 and the
+    # optimizer stops on the flat plateau at SSE ~ 103.9. The rank-deficient Jacobian
+    # at the solution must turn the run into NOT_CONVERGED (replayed 16/11/2026: the
+    # engine reported CONVERGED with SINGULAR_COVARIANCE and SSE 103.917818 here).
+    p = load_nls(DATA_DIR / "nonlinear" / "DanWood.dat")
+    danwood = ModelSpec(
+        id="danwood",
+        name="DanWood",
+        category="test",
+        expression="b1*x**b2",
+        parameters=(Parameter("b1"), Parameter("b2")),
+        initial_guess=lambda x, y: {"b1": 1.0, "b2": 5.0},
+    )
+    res = fit(danwood, make_xy(p.x, p.y), FitConfig(initial={"b1": -50.0, "b2": -800.0}))
+    assert res.status is FitStatus.NOT_CONVERGED
+    assert "rank-deficient" in res.termination_reason
+    assert res.covariance is None and res.correlation is None
+    assert all(p.std_err is None and p.ci_low is None for p in res.parameters)
+    FitResult_round_trip(res)
 
 
 def test_parameter_at_bound_is_flagged() -> None:
@@ -595,15 +625,18 @@ def test_no_better_unconverged_warning_when_nothing_converged() -> None:
     assert _better_unconverged_warning(winner, runs, scale=1.0) is None
 
 
-def test_garbage_converged_winner_is_flagged_end_to_end() -> None:
-    # Unbounded, b = -5, seed 0, 5 starts: one restart "converges" (lm, xtol) at
-    # b ~ -14.4 with SSE ~ 4e64 while the unconverged base run reaches SSE ~ 32. The
-    # converged run still wins (ruling) but the warning must say a better start exists.
+def test_garbage_plateau_runs_are_not_converged_end_to_end() -> None:
+    # Unbounded, b = -5, seed 0, 5 starts: three restarts used to "converge" (lm, xtol)
+    # on plateaus at SSE 1e71..1e127 where the model has exploded and the Jacobian at
+    # the solution is rank-deficient; the base run and one restart exhaust their budget
+    # near SSE ~ 32. All runs are now honestly NOT_CONVERGED, the winner is the
+    # lowest-SSE one, and no better-unconverged warning fires (no converged winner
+    # exists to beat; the warning itself is covered by the _Run-level tests above).
     res = fit(EXP_DECAY, prd_data(), FitConfig(initial=BAD_START, n_starts=5))
-    assert res.status is FitStatus.CONVERGED
-    flagged = [w for w in res.warnings if w.startswith("MULTISTART_BETTER_UNCONVERGED: ")]
-    assert len(flagged) == 1
-    assert res.stats is not None and res.stats.sse > 1e60
+    assert res.status is FitStatus.NOT_CONVERGED
+    assert "rank-deficient" not in res.termination_reason  # the winner is budget-limited
+    assert res.stats is not None and 20.0 < res.stats.sse < 45.0
+    assert res.warnings == ()
 
 
 def test_good_multistart_fit_has_no_better_unconverged_warning() -> None:
