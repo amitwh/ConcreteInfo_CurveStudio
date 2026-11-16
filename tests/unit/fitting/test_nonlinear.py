@@ -11,10 +11,12 @@ import pytest
 
 from curvestudio.data import XY
 from curvestudio.fitting import FitConfig, FitStatus, fit, fit_polynomial
+from curvestudio.fitting.metrics import fit_statistics
 from curvestudio.fitting.nonlinear import (
     _better_unconverged_warning,
     _pick_winner,
     _Run,
+    _uncertainties,
     generate_starts,
 )
 from curvestudio.models import ModelSpec, Parameter, register
@@ -657,3 +659,13 @@ def test_default_tolerances_resolve_parameters_of_an_ill_conditioned_fit() -> No
     for p in res.parameters:
         assert p.value == pytest.approx(reference[p.name], rel=1e-7), p.name
 
+
+def test_tiny_jacobian_withholds_covariance_without_numpy_warnings() -> None:
+    # On a plateau where the model has vanished the Jacobian can be ~1e-240: well-conditioned
+    # relative to itself (passes the SVD cut-off) but its squared singular values underflow.
+    jac = np.array([[1e-240, 0.0], [0.0, 2e-240], [1e-240, 1e-240], [3e-240, -1e-240]])
+    stats = fit_statistics(np.array([1.0, 2.0, 3.0, 4.0]), np.array([1.1, 1.9, 3.2, 3.9]), 2)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        se, covariance, corr = _uncertainties(jac, stats)
+    assert (se, covariance, corr) == (None, None, None)
