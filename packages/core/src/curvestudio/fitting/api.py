@@ -54,8 +54,9 @@ def fit(model: ModelSpec | str, data: XY, config: FitConfig = FitConfig()) -> Fi
     Polynomials are not special-cased; use ``fit_polynomial`` for them.
 
     Status: ``INVALID_INPUT`` when there are no more active points than parameters or
-    ``model.applicability`` objects; ``FAILED`` when the start is unusable or the optimizer
-    raises (message kept); ``NOT_CONVERGED`` when the optimizer stops without success, the
+    ``model.applicability`` objects; ``FAILED`` when the start is unusable, the optimizer
+    raises (message kept) or the fit statistics overflow (data scale too large);
+    ``NOT_CONVERGED`` when the optimizer stops without success, the
     solution is not finite, or the Jacobian at the solution is rank-deficient (parameters
     not identifiable); otherwise ``CONVERGED``. See
     :mod:`curvestudio.fitting.nonlinear` for the covariance and warning conventions.

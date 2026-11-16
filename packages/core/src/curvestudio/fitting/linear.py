@@ -202,9 +202,29 @@ def fit_polynomial(
     if not finite_fit:
         return build(FitStatus.FAILED, "solution is not finite (numerical overflow)")
 
-    stats = fit_statistics(
-        y_a, fitted_all[active], k, weights=w_a if weighted else None, through_origin=through_origin
-    )
+    try:
+        stats = fit_statistics(
+            y_a,
+            fitted_all[active],
+            k,
+            weights=w_a if weighted else None,
+            through_origin=through_origin,
+        )
+    except ValueError as exc:  # e.g. sums of squares overflow on a huge data scale
+        params = (
+            tuple(
+                ParameterEstimate(name=n, value=float(v)) for n, v in zip(names, coef, strict=True)
+            )
+            if finite_fit
+            else ()
+        )
+        return build(
+            FitStatus.FAILED,
+            f"fit statistics could not be computed: {exc}",
+            parameters=params,
+            fitted=fitted,
+            residuals=residuals,
+        )
 
     # inv(A'A) = V diag(1/s^2) V' from the SVD of the scaled design, then undo the scaling.
     _, svals, vt = np.linalg.svd(scaled, full_matrices=False)

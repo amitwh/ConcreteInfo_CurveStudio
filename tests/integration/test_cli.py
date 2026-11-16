@@ -105,6 +105,25 @@ def test_unconverged_fit_exits_3(capsys: pytest.CaptureFixture[str]) -> None:
     assert "not_converged" in captured.out
 
 
+def test_overflowing_y_is_a_failed_fit_not_invalid_configuration(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # y ~ 1e160: the sums of squares overflow. The statistics failure is a numerical
+    # outcome of the fit (exit 3, Status: failed), not an invalid fit configuration.
+    lines = ["x,y"]
+    for i in range(20):
+        y = "1e+160" if i % 2 else "9e+159"
+        lines.append(f"{0.5 * i},{y}")
+    path = tmp_path / "huge.csv"
+    path.write_text("\n".join(lines) + "\n")
+    code = main(["fit", str(path), "--x", "x", "--y", "y", "--poly", "1"])
+    captured = capsys.readouterr()
+    assert code == 3
+    assert "Status: failed" in captured.out
+    assert "overflow" in captured.out
+    assert "invalid fit configuration" not in captured.err
+
+
 def test_poly_path(capsys: pytest.CaptureFixture[str]) -> None:
     code = main(["fit", str(DECAY), "--x", "x", "--y", "y", "--poly", "2"])
     captured = capsys.readouterr()

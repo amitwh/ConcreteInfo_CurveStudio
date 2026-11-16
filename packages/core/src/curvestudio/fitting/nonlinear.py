@@ -485,11 +485,23 @@ def fit_nonlinear(
 
     fitted = fitted_all.tolist() if finite_fit else None
     residuals = residuals_all.tolist() if finite_fit else None
-    stats = (
-        fit_statistics(y[active], fitted_all[active], k, weights=w[active] if weighted else None)
-        if finite_fit
-        else None
-    )
+    try:
+        stats = (
+            fit_statistics(
+                y[active], fitted_all[active], k, weights=w[active] if weighted else None
+            )
+            if finite_fit
+            else None
+        )
+    except ValueError as exc:  # e.g. sums of squares overflow on a huge data scale
+        return build(
+            FitStatus.FAILED,
+            f"fit statistics could not be computed: {exc}",
+            initial=initial,
+            parameters=tuple(ParameterEstimate(name=n, value=v) for n, v in values.items()),
+            fitted=fitted,
+            residuals=residuals,
+        )
     if status is not FitStatus.CONVERGED or stats is None or winner.jacobian is None:
         estimates = tuple(ParameterEstimate(name=n, value=v) for n, v in values.items())
         return build(

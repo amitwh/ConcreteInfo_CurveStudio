@@ -528,6 +528,19 @@ def test_non_finite_model_at_start_is_failed() -> None:
     FitResult_round_trip(res)
 
 
+def test_statistics_overflow_is_failed_not_raised() -> None:
+    # y ~ 1e160 with noise: the residuals are ~1e159 and their squares overflow, so
+    # the sums leave the float range. Replayed 16/11/2026: the ValueError escaped
+    # fit(); the contract says numerical outcomes come back as a FitResult.
+    x = np.linspace(1.0, 10.0, 20)
+    y = 1e160 * (1.0 + np.random.default_rng(0).normal(0.0, 0.1, x.size))
+    res = fit(LINE, make_xy(x, y))
+    assert res.status is FitStatus.FAILED
+    assert "overflow" in res.termination_reason
+    assert res.parameters and all(p.std_err is None for p in res.parameters)
+    FitResult_round_trip(res)
+
+
 def test_exception_inside_optimizer_is_failed_not_raised(monkeypatch: pytest.MonkeyPatch) -> None:
     original = ModelSpec.jacobian
     calls = {"n": 0}

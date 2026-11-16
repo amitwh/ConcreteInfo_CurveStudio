@@ -122,6 +122,19 @@ def test_zero_weights_leaving_too_few_active_points_is_invalid_input() -> None:
     assert res.status is FitStatus.INVALID_INPUT
 
 
+def test_statistics_overflow_is_failed_not_raised() -> None:
+    # y ~ 1e160: residuals ~1e159, their squares overflow and the sums of squares
+    # leave the float range. Replayed 16/11/2026: the ValueError escaped
+    # fit_polynomial(); the contract says numerical outcomes come back as a FitResult.
+    x = list(np.linspace(1.0, 10.0, 20))
+    y = [float(v) for v in 1e160 * (1.0 + np.random.default_rng(0).normal(0.0, 0.1, 20))]
+    res = fit_polynomial(make_xy(x, y), 1)
+    assert res.status is FitStatus.FAILED
+    assert "overflow" in res.termination_reason
+    assert res.parameters and all(p.std_err is None for p in res.parameters)
+    assert res.fitted  # the fitted line itself is finite and still reported
+
+
 def test_through_origin_recovers_slope() -> None:
     x = [1.0, 2.0, 3.0, 4.0]
     res = fit_polynomial(make_xy(x, [2 * v for v in x]), 1, through_origin=True)
