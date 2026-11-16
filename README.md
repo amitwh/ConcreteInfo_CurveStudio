@@ -69,7 +69,7 @@ There is no runtime configuration yet. When the web app lands (Phase 7), its env
 
 ## Contributing
 
-Contribution guidelines, the code of conduct and the model-contribution rules (every model needs its equation, parameter definitions, references, tests and assumptions) arrive with Phase 0 and will be linked here.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, the licence of contributions and the model-contribution rules (every model needs its equation, parameter definitions, references, tests and assumptions), and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) for community expectations. Security reports go through [SECURITY.md](SECURITY.md).
 
 ## Licence
 

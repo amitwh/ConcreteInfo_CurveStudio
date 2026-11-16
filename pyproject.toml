@@ -46,6 +46,14 @@ python_version = "3.14"
 mypy_path = "packages/core/src"
 strict = true
 
-[[tool.mypy.overrides]]
-module = ["curvestudio", "curvestudio.*"]
+[tool.importlinter]
+root_package = "curvestudio"
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "Core must not import GUI, web or database frameworks"
+type = "forbidden"
+source_modules = ["curvestudio"]
+forbidden_modules = ["PySide6", "fastapi", "sqlalchemy", "starlette", "uvicorn"]
+allow_indirect_imports = true
 
