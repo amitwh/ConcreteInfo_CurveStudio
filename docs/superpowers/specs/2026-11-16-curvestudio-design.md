@@ -56,7 +56,7 @@ Chosen because it is the only approach that protects "same engine, same numbers,
 ConcreteInfo_CurveStudio/
 ├── pyproject.toml            # uv workspace root, tool config (ruff, mypy, pytest, import-linter)
 ├── packages/
-│   ├── core/                 # curvestudio-core   (MIT)
+│   ├── core/                 # curvestudio-core   (AGPL-3.0-or-later)
 │   │   └── src/curvestudio/{data,models,fitting,optimization,statistics,diagnostics,
 │   │                        discovery,prediction,interpolation,transformations,
 │   │                        expressions,project,validation}/
@@ -93,7 +93,7 @@ Dependency direction (enforced): `apps/* → reporting, plotting, engineering, m
 
 **Model discovery.** Pipeline from PRD §9: validate → select applicable families (domain rules) → initial guesses → fit candidates in a process pool (multi-start for hard ones) → reject non-converged → metrics (AICc, BIC, k-fold CV RMSE, adj. R², residual-quality score, complexity) → configurable ranking with a high-order-polynomial guard. Output is the full ranked table; the user chooses.
 
-**Auto-fit (headline feature).** One action, "Auto-fit", fits every model applicable to the data and returns **all converged fits ordered best to worst**, each row showing rank, model name, **equation with fitted numbers substituted**, **R²**, adjusted R², RMSE, AICc, BIC, CV-RMSE and convergence status; non-converged models are listed separately with their reason, never ranked. Default order is **"Best overall"** (AICc-led composite with CV and a complexity penalty), because ordering by R² alone always favours the model with the most parameters. A one-click column sort lets the user order by R² (or any column) when they want that, and the UI labels the active ordering. Results stream in as models finish, so a first ranking appears quickly; the run is cancellable and seeded for reproducibility. Models are screened by cheap rules first (domain: needs positive x, y monotonic, etc.) and then fitted in parallel with a per-model time limit, so a 300-model run stays interactive on a normal laptop (target to be benchmarked, not promised).
+**Auto-fit (headline feature).** One action, "Auto-fit", fits every model applicable to the data and returns **all converged fits ordered best to worst**, each row showing rank, model name, **equation with fitted numbers substituted**, **R²**, adjusted R², RMSE, AICc, BIC, CV-RMSE and convergence status; non-converged models are listed separately with their reason, never ranked. The ordering is a **user-selectable setting** (`RankBy`): **"Best overall"** (my recommendation: AICc-led composite with cross-validation and a complexity penalty), **"R²"**, or any single metric (adjusted R², RMSE, AICc, BIC, CV-RMSE). Default is "Best overall" because ordering by R² alone always favours the model with the most parameters; the choice is remembered per user, changing it re-sorts instantly without refitting, and the active ordering is always labelled. When R² ordering is active and the top model has many more parameters than a close runner-up, the UI shows a short overfitting note instead of hiding the option. Results stream in as models finish, so a first ranking appears quickly; the run is cancellable and seeded for reproducibility. Models are screened by cheap rules first (domain: needs positive x, y monotonic, etc.) and then fitted in parallel with a per-model time limit, so a 300-model run stays interactive on a normal laptop (target to be benchmarked, not promised).
 
 **Project format `.cstudio`.** ZIP with `manifest.json` (schema-versioned, Pydantic-validated; app + dependency versions), original and cleaned datasets as CSV (shortest-round-trip floats), operation logs, fit configs and results as JSON, plot configs. No pickle. Extraction is hardened (path traversal, size and file-count limits, zip-bomb ratio). Opening re-fits nothing automatically but can re-run any recorded analysis and compare to stored results.
 
@@ -124,7 +124,7 @@ MVC with controllers between Qt widgets and the core. Interactive plots via PyQt
 
 ### 5.6 Licensing (proposal — see §9)
 
-Core, model_library, reporting, plotting, engineering: **MIT** (reusable libraries, per PRD §24). Desktop, API and web: **AGPL-3.0** (owner's decision, 16/11/2026). For the desktop app AGPL behaves like GPL-3.0 for distributed copies; its extra network clause only matters if someone offers the app as a hosted service, and PySide6 (LGPL) and the BSD scientific stack are compatible with it. Docs: CC BY 4.0. Open question for the owner: the MIT libraries can be embedded in closed products; switch them to AGPL too if that is not wanted.
+**The whole repository is AGPL-3.0-or-later** (owner's decision, 16/11/2026): core, model_library, reporting, plotting, engineering, desktop, API and web, with one `LICENSE` at the root and `license = "AGPL-3.0-or-later"` in every `pyproject.toml`. This deliberately departs from the PRD §24 suggestion of MIT/BSD for reusable math libraries: it means nobody can embed the engine in a closed product or run a closed hosted fork. Third-party dependencies (PySide6 LGPL, NumPy/SciPy/LMfit/Statsmodels/SymPy/Pandas BSD, Plotly.js MIT) are compatible; each new dependency's licence is checked when added. Docs: CC BY 4.0. Contributors keep their copyright and license contributions under AGPL via the inbound=outbound rule stated in CONTRIBUTING.
 
 ## 6. Testing and scientific verification
 
@@ -163,7 +163,7 @@ Concrete class/function signatures, exact SQL schemas and migrations, UI widget 
 ## 9. Decisions to confirm
 
 These are my proposals; the first two change what is published, so I want explicit approval.
-1. **Licence split** (MIT libraries / AGPL-3.0 desktop, API and web). Desktop AGPL is now your decision; still open: should the core libraries be MIT (embeddable anywhere) or AGPL?
+1. **Licence:** AGPL-3.0-or-later for everything (decided). Consequence to be aware of: companies that want to embed the engine in proprietary software cannot, unless you later offer them a separate commercial licence, which needs contributors' agreement (a CLA) — not set up now.
 2. **Billing provider:** Razorpay first, behind an adapter. Alternatives (Stripe, Lemon Squeezy) can be added later.
 3. **Project extension:** `.cstudio` (the PRD's `.clab` predated the name).
 4. **Quota defaults** for the hosted free/paid tiers are deferred to Phase 7 and priced against real hosting cost.
