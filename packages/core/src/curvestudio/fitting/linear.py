@@ -16,6 +16,8 @@ from numpy.typing import NDArray
 from scipy import stats as scipy_stats
 
 from curvestudio.data import XY
+from curvestudio.fitting._uncertainty import correlation as _correlation
+from curvestudio.fitting._uncertainty import finite_or_none as _finite_or_none
 from curvestudio.fitting.metrics import FitStatistics, fit_statistics
 from curvestudio.fitting.result import (
     FitResult,
@@ -56,19 +58,6 @@ def _equation(powers: range, values: list[float] | None) -> str:
             coef = f"({text})" if values[i] < 0 else text
         parts.append(coef if power == 0 else f"{coef}*{_term(power)}")
     return "y = " + " + ".join(parts)
-
-
-def _finite_or_none(matrix: FloatArray) -> list[list[float]] | None:
-    return matrix.tolist() if bool(np.all(np.isfinite(matrix))) else None
-
-
-def _correlation(cov: FloatArray, se: FloatArray) -> list[list[float]] | None:
-    """``cov_ij / (se_i * se_j)`` with an exact unit diagonal; ``None`` if undefined."""
-    if not bool(np.all(np.isfinite(se)) and np.all(se > 0.0)):
-        return None
-    corr = np.clip(cov / np.outer(se, se), -1.0, 1.0)
-    np.fill_diagonal(corr, 1.0)
-    return corr.tolist() if bool(np.all(np.isfinite(corr))) else None
 
 
 def fit_polynomial(
