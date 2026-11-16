@@ -22,8 +22,9 @@ FiniteFloat = Annotated[float, Field(allow_inf_nan=False)]
 class FitStatistics(BaseModel):
     """Goodness-of-fit summary. ``None`` means "not defined", never "not computed".
 
-    ``n`` counts every observation, including zero-weight ones, and ``df = n - k`` uses
-    that same ``n`` for weighted and unweighted fits alike.
+    ``n`` is the number of observations passed in; the engines pass the active
+    (weight > 0) points only, so zero-weight points are excluded from ``n`` and from
+    ``df = n - k`` in every fit result.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -61,8 +62,9 @@ def fit_statistics(
 
     Weights multiply squared residuals, so ``sse = sum(w * r**2)`` and the total sum of
     squares is taken about the *weighted* mean. ``mae`` follows the same convention as
-    ``mse``: ``sum(w * |r|) / n``. Zero weights are allowed; those points add nothing to
-    any sum but still count in ``n`` (and so in ``df``).
+    ``mse``: ``sum(w * |r|) / n``. Zero weights are allowed in ``weights`` (they add
+    nothing to any sum); the engines pass only the active (``w > 0``) points, so ``n``
+    counts active observations in every fit result.
 
     ``r2`` is ``1 - sse/sst`` with ``sst`` centred on the (weighted) mean. With
     ``through_origin=True`` the model has no free intercept, the centred form can go

@@ -415,6 +415,22 @@ def test_zero_weight_point_does_not_influence_the_fit() -> None:
     assert len(with_outlier.fitted) == x.size
 
 
+def test_zero_weight_points_are_reported_as_a_warning() -> None:
+    x, y = _noisy_line()
+    w = np.ones_like(x)
+    w[2] = w[5] = 0.0
+    res = fit(LINE, make_xy(x, y, w))
+    assert res.status is FitStatus.CONVERGED
+    assert "ZERO_WEIGHT_POINTS: 2" in res.warnings
+    assert res.stats is not None and res.stats.n == x.size - 2
+
+
+def test_unweighted_fit_has_no_zero_weight_warning() -> None:
+    res = fit(LINE, make_xy(*_noisy_line()))
+    assert "ZERO_WEIGHT_POINTS: 2" not in res.warnings
+    assert not any(w.startswith("ZERO_WEIGHT_POINTS") for w in res.warnings)
+
+
 def test_analytic_jacobian_is_used(monkeypatch: pytest.MonkeyPatch) -> None:
     calls = {"n": 0}
     original = ModelSpec.jacobian

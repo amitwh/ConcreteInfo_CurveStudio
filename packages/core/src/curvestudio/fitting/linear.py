@@ -146,6 +146,8 @@ def fit_polynomial(
     w = np.ones_like(x) if data.weights is None else np.asarray(data.weights, dtype=np.float64)
     active = w > 0.0
     n_active = int(np.count_nonzero(active))
+    if weighted and n_active < w.size:
+        warnings.append(f"ZERO_WEIGHT_POINTS: {w.size - n_active}")
     if n_active <= k:
         return build(
             FitStatus.INVALID_INPUT,

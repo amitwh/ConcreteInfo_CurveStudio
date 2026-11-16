@@ -104,6 +104,19 @@ def test_zero_weight_points_are_ignored_but_still_reported() -> None:
     assert res.residuals[4] == pytest.approx(100.0 - res.fitted[4])
 
 
+def test_zero_weight_points_are_reported_as_a_warning() -> None:
+    x = [1.0, 2.0, 3.0, 4.0, 5.0]
+    y = [2.1, 3.9, 6.2, 8.0, 8.9]
+    res = fit_polynomial(make_xy(x, y, [1, 0, 1, 0, 1]), 1)
+    assert res.status is FitStatus.CONVERGED
+    assert "ZERO_WEIGHT_POINTS: 2" in res.warnings
+
+
+def test_unweighted_polynomial_has_no_zero_weight_warning() -> None:
+    res = fit_polynomial(make_xy([1.0, 2.0, 3.0], [1.0, 2.0, 3.0]), 1)
+    assert not any(w.startswith("ZERO_WEIGHT_POINTS") for w in res.warnings)
+
+
 def test_zero_weights_leaving_too_few_active_points_is_invalid_input() -> None:
     res = fit_polynomial(make_xy([1, 2, 3], [1, 2, 3], [1, 1, 0]), 1)
     assert res.status is FitStatus.INVALID_INPUT

@@ -7,6 +7,7 @@ import pandas as pd
 import pytest
 
 from curvestudio.data import (
+    XY,
     DataError,
     Dataset,
     ExcludeRows,
@@ -117,6 +118,68 @@ def test_xy_non_numeric_cell() -> None:
         ds.xy("x", "y")
     assert info.value.code == "NON_NUMERIC"
     assert info.value.rows == (1,)
+
+
+def test_xy_rejects_negative_weights_with_original_rows() -> None:
+    ds = make(x=[1.0, 2.0, 3.0], y=[1.0, 2.0, 3.0], w=[1.0, -0.5, 2.0])
+    with pytest.raises(DataError) as info:
+        ds.xy("x", "y", weights="w")
+    assert info.value.code == "INVALID_WEIGHT"
+    assert info.value.rows == (1,)
+
+
+def test_xy_negative_weight_rows_ignore_excluded_rows() -> None:
+    ds = make(x=[1.0, 2.0, 3.0, 4.0], y=[1.0, 2.0, 3.0, 4.0], w=[1.0, -1.0, -2.0, 3.0])
+    ds = ds.with_op(ExcludeRows((3,)))
+    with pytest.raises(DataError) as info:
+        ds.xy("x", "y", weights="w")
+    assert info.value.code == "INVALID_WEIGHT"
+    assert info.value.rows == (1, 2)
+
+
+# --- XY defends itself (public type, built directly by library callers) ------------------
+
+
+def direct_xy(**overrides: object) -> XY:
+    fields: dict[str, object] = {
+        "x": [1.0, 2.0, 3.0],
+        "y": [1.0, 2.0, 3.0],
+        "weights": None,
+        "x_name": "x",
+        "y_name": "y",
+        "fingerprint": "f",
+    }
+    return XY(**{**fields, **overrides})  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("fields", "code", "rows"),
+    [
+        ({"x": [[1.0], [2.0]]}, "INVALID_SHAPE", ()),
+        ({"y": np.ones((2, 2))}, "INVALID_SHAPE", ()),
+        ({"weights": np.ones((3, 1))}, "INVALID_SHAPE", ()),
+        ({"y": [1.0, 2.0]}, "LENGTH_MISMATCH", ()),
+        ({"weights": [1.0, 1.0, 1.0, 1.0]}, "LENGTH_MISMATCH", ()),
+        ({"x": [1.0, math.nan, 3.0]}, "MISSING_VALUE", (1,)),
+        ({"y": [1.0, 2.0, math.inf]}, "NON_FINITE", (2,)),
+        ({"weights": [1.0, math.nan, 1.0]}, "MISSING_VALUE", (1,)),
+        ({"weights": [1.0, 2.0, -1.0]}, "INVALID_WEIGHT", (2,)),
+        ({"weights": [1.0, 2.0, -math.inf]}, "NON_FINITE", (2,)),
+    ],
+)
+def test_xy_constructed_directly_validates_itself(
+    fields: dict[str, object], code: str, rows: tuple[int, ...]
+) -> None:
+    with pytest.raises(DataError) as info:
+        direct_xy(**fields)
+    assert info.value.code == code
+    assert info.value.rows == rows
+
+
+def test_xy_constructed_directly_accepts_zero_weights() -> None:
+    xy = direct_xy(weights=[1.0, 0.0, 2.0])
+    assert xy.weights is not None
+    assert xy.weights.tolist() == [1.0, 0.0, 2.0]
 
 
 def test_fingerprint_deterministic_and_ulp_sensitive() -> None:

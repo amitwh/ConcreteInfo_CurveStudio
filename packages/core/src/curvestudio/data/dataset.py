@@ -17,7 +17,15 @@ BoolArray = NDArray[np.bool_]
 
 @dataclass(frozen=True, eq=False)
 class XY:
-    """Validated, read-only numeric arrays ready for fitting."""
+    """Validated, read-only numeric arrays ready for fitting.
+
+    Constructing one validates and normalises the arrays: they become read-only
+    float64 copies, must be one-dimensional and equal-length, hold only finite values,
+    and weights must be ``>= 0`` (zero weights are supported: such points appear in
+    ``fitted``/``residuals`` but influence nothing). Row numbers in the raised
+    :class:`DataError` are 0-based positions in these arrays; :meth:`Dataset.xy`
+    reports original-table positions instead, because it checks the table first.
+    """
 
     x: FloatArray
     y: FloatArray
@@ -25,6 +33,37 @@ class XY:
     x_name: str
     y_name: str
     fingerprint: str
+
+    def __post_init__(self) -> None:
+        arrays: dict[str, Any] = {"x": self.x, "y": self.y}
+        if self.weights is not None:
+            arrays["weights"] = self.weights
+        columns: dict[str, FloatArray] = {}
+        for name, values in arrays.items():
+            column = np.asarray(values, dtype=np.float64)
+            if column.ndim != 1:
+                raise DataError(
+                    "INVALID_SHAPE", f"{name} must be one-dimensional, got shape {column.shape}"
+                )
+            columns[name] = column
+        sizes = {name: column.size for name, column in columns.items()}
+        if len(set(sizes.values())) > 1:
+            detail = ", ".join(f"{name}={size}" for name, size in sizes.items())
+            raise DataError(
+                "LENGTH_MISMATCH", f"x, y and weights must have equal lengths ({detail})"
+            )
+        for name, column in columns.items():
+            _require_finite(name, column)
+        if "weights" in columns:
+            negative = np.flatnonzero(columns["weights"] < 0.0)
+            if negative.size:
+                raise DataError(
+                    "INVALID_WEIGHT",
+                    "weights must be >= 0; use weight 0 to leave an observation out of the fit",
+                    tuple(int(i) for i in negative),
+                )
+        for name, column in columns.items():
+            object.__setattr__(self, name, _frozen(column))
 
 
 @dataclass(frozen=True, eq=False, init=False)
@@ -127,9 +166,11 @@ class Dataset:
     def xy(self, x: str, y: str, weights: str | None = None) -> XY:
         """Extract validated float64 arrays from the active rows.
 
-        Raises :class:`DataError` with ``MISSING_VALUE`` (blank/NaN cells) or
-        ``NON_FINITE`` (infinite cells), listing original-table row positions.
-        Missing values are never dropped silently.
+        Raises :class:`DataError` with ``MISSING_VALUE`` (blank/NaN cells),
+        ``NON_FINITE`` (infinite cells) or ``INVALID_WEIGHT`` (negative weights),
+        listing original-table row positions. Missing values are never dropped
+        silently; zero weights are allowed and are surfaced by the fitting engines
+        as a ``ZERO_WEIGHT_POINTS`` warning.
         """
         table, active = self._materialise()
         names = [x, y] if weights is None else [x, y, weights]
@@ -157,6 +198,15 @@ class Dataset:
                 "Active rows contain infinite values; fix or exclude them first",
                 tuple(int(i) for i in bad_infinite),
             )
+        if weights is not None:
+            negative = np.flatnonzero((columns[weights] < 0.0) & active)
+            if negative.size:
+                raise DataError(
+                    "INVALID_WEIGHT",
+                    "Active rows contain negative weights; use weight 0 to leave an "
+                    "observation out of the fit",
+                    tuple(int(i) for i in negative),
+                )
 
         x_arr, y_arr = (_frozen(columns[n][active]) for n in (x, y))
         w_arr = None if weights is None else _frozen(columns[weights][active])
@@ -191,6 +241,18 @@ def _frozen(values: FloatArray) -> FloatArray:
     out = np.array(values, dtype=np.float64, copy=True)
     out.setflags(write=False)
     return out
+
+
+def _require_finite(name: str, column: FloatArray) -> None:
+    """Reject NaN (``MISSING_VALUE``) and infinite (``NON_FINITE``) cells with rows."""
+    nan = np.flatnonzero(np.isnan(column))
+    if nan.size:
+        raise DataError("MISSING_VALUE", f"{name} contains NaN values", tuple(int(i) for i in nan))
+    infinite = np.flatnonzero(np.isinf(column))
+    if infinite.size:
+        raise DataError(
+            "NON_FINITE", f"{name} contains infinite values", tuple(int(i) for i in infinite)
+        )
 
 
 def coerce_numeric(series: pd.Series) -> tuple[FloatArray, BoolArray]:
