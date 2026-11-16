@@ -75,6 +75,27 @@ def test_equation_text_does_not_substitute_inside_substituted_numbers() -> None:
     assert spec.equation_text({"e": 1e-7, "f": 3.0}) == "y = 1e-07*x + 3"
 
 
+@pytest.mark.parametrize(
+    ("expression", "expected"),
+    [
+        ("b*1e-3*x + e*x", "y = 2*1e-3*x + 0.5*x"),
+        ("b*2.5e3*x + e", "y = 2*2.5e3*x + 0.5"),
+        ("b*.5e-2*x + e", "y = 2*.5e-2*x + 0.5"),
+        ("b*1E+3*x + e", "y = 2*1E+3*x + 0.5"),
+        ("b*3.*x + e", "y = 2*3.*x + 0.5"),
+    ],
+)
+def test_equation_text_keeps_numeric_literals_when_a_parameter_is_named_e(
+    expression: str, expected: str
+) -> None:
+    spec = make_spec(expression, parameters=(Parameter("b"), Parameter("e")))
+    assert spec.equation_text({"b": 2.0, "e": 0.5}) == expected
+
+
+def test_equation_text_keeps_literals_without_an_e_parameter() -> None:
+    assert make_spec("a*1e-3*x + b").equation_text({"a": 2.0, "b": 1.0}) == "y = 2*1e-3*x + 1"
+
+
 def test_equation_text_requires_every_parameter() -> None:
     with pytest.raises(ValueError, match="b"):
         make_spec().equation_text({"a": 1.0})
@@ -141,6 +162,12 @@ def test_rejected_expression_never_executes() -> None:
     assert marker == []
 
 
+@pytest.mark.parametrize("expression", ["(" * 400 + "x" + ")" * 400, "-" * 990 + "x"])
+def test_deeply_nested_expressions_raise_value_error(expression: str) -> None:
+    with pytest.raises(ValueError):
+        make_spec(expression)
+
+
 def test_unknown_name_error_names_the_offender() -> None:
     with pytest.raises(ValueError, match="zeta"):
         make_spec("a*zeta*x")
@@ -191,6 +218,8 @@ def test_fractional_exponent_and_unary_minus_are_allowed() -> None:
         (Parameter("exp"),),
         (Parameter("x"),),
         (Parameter("pi"),),
+        (Parameter("Integer"),),
+        (Parameter("Float"),),
         (Parameter("a", lower=2.0, upper=1.0),),
     ],
 )

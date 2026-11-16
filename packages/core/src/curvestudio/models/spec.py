@@ -43,10 +43,12 @@ _FUNCTIONS: dict[str, Callable[..., Any]] = {
     "Abs": sympy.Abs,
 }
 _CONSTANTS: dict[str, Any] = {"pi": sympy.pi, "E": sympy.E}
-_RESERVED = frozenset(_FUNCTIONS) | frozenset(_CONSTANTS)
+_RESERVED = frozenset(_FUNCTIONS) | frozenset(_CONSTANTS) | {"Integer", "Float"}
 _BINARY_OPS = (ast.Add, ast.Sub, ast.Mult, ast.Div, ast.Pow)
 _UNARY_OPS = (ast.UAdd, ast.USub)
-_TOKEN = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+_NUMBER = r"(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?"
+_TOKEN = re.compile(rf"{_NUMBER}|[A-Za-z_][A-Za-z0-9_]*")
+"""Numeric literals come first so the ``e`` of ``1e-3`` is never read as a name."""
 
 
 @dataclass(frozen=True)
@@ -106,7 +108,7 @@ def _validate_expression(expression: str, names: frozenset[str]) -> None:
         raise ValueError(f"expression {expression!r} is not valid: {exc}") from exc
     try:
         _check_node(tree.body, names)
-    except (OverflowError, ZeroDivisionError, TypeError) as exc:
+    except (OverflowError, ZeroDivisionError, TypeError, RecursionError) as exc:
         raise ValueError(f"expression {expression!r} has an unusable constant: {exc}") from exc
 
 
@@ -285,7 +287,9 @@ class ModelSpec:
 
         def substitute(match: re.Match[str]) -> str:
             name = match.group(0)
-            return _format_number(float(params[name]), digits) if name in known else name
+            if name in known:
+                return _format_number(float(params[name]), digits)
+            return name  # numeric literal, variable, function or constant: keep verbatim
 
         text = _TOKEN.sub(substitute, self.expression.strip())
         return f"y = {text}"
