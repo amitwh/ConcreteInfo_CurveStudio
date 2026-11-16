@@ -8,7 +8,8 @@ What is changed, and noted:
 * a UTF-8 byte order mark is stripped;
 * fully blank rows and fully blank columns (blank header too) are dropped;
 * blank or duplicate header names become ``col_N`` / ``name_2``;
-* a first row that is entirely numeric is data, so columns are named ``col_1..col_N``.
+* a first row with no text cell is data, so columns are named ``col_1..col_N``
+  (numbers, dates, booleans and blanks alone do not make a header).
 
 Numbers: a column is numeric when every non-blank cell parses as a number. Thousands
 separators (``1,234.5``) are honoured only in a column whose every non-blank cell is a

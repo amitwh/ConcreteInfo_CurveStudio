@@ -17,7 +17,11 @@ public disclosure.
 
 ## Scope notes
 
-- CurveStudio never evaluates user-supplied equations with `eval`/`exec`, and never unpickles
-  user-supplied content. Any path that does is a vulnerability; please report it.
+- CurveStudio never evaluates user-supplied equations with a raw `eval`/`exec` of the user's
+  text: model expressions pass an AST whitelist (a fixed set of arithmetic nodes and functions,
+  no attribute access, subscripts, comprehensions or names beyond the model's own variables and
+  parameters) and are then parsed by SymPy's `parse_expr` against a closed namespace of
+  whitelisted functions and symbols. Fitting code never unpickles user-supplied content either.
+  Any path that reaches `eval`/`exec`/`pickle` with user text is a vulnerability; please report it.
 - Numerical-correctness bugs (a wrong fit reported as successful) are tracked as normal issues
   using the bug report template, not as security reports.

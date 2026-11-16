@@ -7,7 +7,10 @@ Acceptance rules (LRE = log relative error, :func:`curvestudio.testing.nist.lre`
 2. Lower difficulty: both NIST starts converge with a minimum parameter LRE >= 6.
 3. Average/higher difficulty: each start either converges (rule 1 applies) or says it did
    not (``NOT_CONVERGED``, or ``FAILED`` with a reason). Each is also run with 20 seeded
-   starts inside +-1000 x |start| bounds, where only rule 1 is asserted.
+   starts inside +-1000 x |start| bounds, where rule 1 is asserted, except the sign-mirror
+   cases in ``MIRRORED_CASES`` (Eckerle4): those must reach the SSE LRE and match the
+   certified parameters *or their sign mirror* to the rule-1 LREs, because the data
+   cannot distinguish the two minima.
 
 No NumPy/SciPy warning may escape the engine on these problems. Misra1a and DanWood are
 the fast subset CI runs; the full sweep is marked ``slow``.
@@ -79,14 +82,32 @@ def _assert_rule_1(p: NistProblem, result: FitResult) -> None:
     assert sse_lre(p, result) >= CONVERGED_MIN_SSE_LRE, _summary(p, result)
 
 
+def _mirror_summary(p: NistProblem, result: FitResult) -> str:
+    """Failure text for the mirror check: LREs against both references, not just one."""
+    lres = {
+        label: param_lres(p, result, ref)
+        for label, ref in (("certified", p.certified), ("mirror", mirror_reference(p)))
+    }
+    detail = "; ".join(
+        f"{label} param LRE [{', '.join(f'{k}={v:.2f}' for k, v in against.items())}] "
+        f"min {min(against.values()):.2f}"
+        for label, against in lres.items()
+    )
+    return (
+        f"{p.name}: status={result.status.value} SSE LRE {sse_lre(p, result):.2f}; {detail}; "
+        f"need SSE LRE >= {CONVERGED_MIN_SSE_LRE} and a param LRE minimum >= "
+        f"{CONVERGED_MIN_PARAM_LRE} against either reference; {result.termination_reason}"
+    )
+
+
 def _assert_certified_or_mirror(p: NistProblem, result: FitResult) -> None:
     """For a sign-symmetric problem: SSE LRE >= 7 and the parameters match the certified
     values or their mirror (``MIRROR_NEGATED`` negated) to the rule-1 LRE."""
-    assert sse_lre(p, result) >= CONVERGED_MIN_SSE_LRE, _summary(p, result)
+    assert sse_lre(p, result) >= CONVERGED_MIN_SSE_LRE, _mirror_summary(p, result)
     best = max(
         min(param_lres(p, result, ref).values()) for ref in (p.certified, mirror_reference(p))
     )
-    assert best >= CONVERGED_MIN_PARAM_LRE, _summary(p, result)
+    assert best >= CONVERGED_MIN_PARAM_LRE, _mirror_summary(p, result)
 
 
 def _assert_honest_status(result: FitResult) -> None:
