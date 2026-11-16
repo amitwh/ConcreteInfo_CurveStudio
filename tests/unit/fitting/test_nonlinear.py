@@ -11,7 +11,12 @@ import pytest
 
 from curvestudio.data import XY
 from curvestudio.fitting import FitConfig, FitStatus, fit, fit_polynomial
-from curvestudio.fitting.nonlinear import generate_starts
+from curvestudio.fitting.nonlinear import (
+    _better_unconverged_warning,
+    _pick_winner,
+    _Run,
+    generate_starts,
+)
 from curvestudio.models import ModelSpec, Parameter, register
 from curvestudio.models.registry import _clear_registry
 
@@ -545,3 +550,81 @@ def test_steps_into_an_undefined_region_are_survived_without_warnings() -> None:
     assert res.status is FitStatus.CONVERGED
     assert values(res)["a"] == pytest.approx(2.0, rel=1e-6)
     assert values(res)["b"] == pytest.approx(0.5, rel=1e-6)
+
+
+# -- review fixes: better unconverged start, guarded final evaluation ---------------------
+
+
+def _run(status: FitStatus, sse: float) -> _Run:
+    return _Run(start=np.array([1.0]), status=status, message="", theta=np.array([1.0]), sse=sse)
+
+
+def test_better_unconverged_run_is_warned_about_but_converged_still_wins() -> None:
+    runs = [
+        _run(FitStatus.NOT_CONVERGED, 32.0),
+        _run(FitStatus.CONVERGED, 4e64),
+        _run(FitStatus.FAILED, math.inf),
+    ]
+    winner = _pick_winner(runs)
+    assert winner is runs[1]
+    assert _better_unconverged_warning(winner, runs, scale=100.0) == (
+        "MULTISTART_BETTER_UNCONVERGED: winner_sse=4e+64 best_unconverged_sse=32"
+    )
+
+
+@pytest.mark.parametrize(
+    "runs",
+    [
+        [_run(FitStatus.CONVERGED, 1.0), _run(FitStatus.NOT_CONVERGED, 2.0)],
+        [_run(FitStatus.CONVERGED, 1.0), _run(FitStatus.NOT_CONVERGED, 1.0 - 1e-9)],  # within rtol
+        [_run(FitStatus.CONVERGED, 1e-30), _run(FitStatus.NOT_CONVERGED, 1e-32)],  # abs floor
+        [_run(FitStatus.CONVERGED, 1.0), _run(FitStatus.CONVERGED, 0.5)],
+        [_run(FitStatus.CONVERGED, 5.0)],
+    ],
+)
+def test_no_better_unconverged_warning_when_winner_is_best(runs: list[_Run]) -> None:
+    assert _better_unconverged_warning(_pick_winner(runs), runs, scale=1.0) is None
+
+
+def test_no_better_unconverged_warning_when_nothing_converged() -> None:
+    runs = [_run(FitStatus.NOT_CONVERGED, 3.0), _run(FitStatus.NOT_CONVERGED, 1.0)]
+    winner = _pick_winner(runs)
+    assert winner is runs[1]
+    assert _better_unconverged_warning(winner, runs, scale=1.0) is None
+
+
+def test_garbage_converged_winner_is_flagged_end_to_end() -> None:
+    # Unbounded, b = -5, seed 0, 5 starts: one restart "converges" (lm, xtol) at
+    # b ~ -14.4 with SSE ~ 4e64 while the unconverged base run reaches SSE ~ 32. The
+    # converged run still wins (ruling) but the warning must say a better start exists.
+    res = fit(EXP_DECAY, prd_data(), FitConfig(initial=BAD_START, n_starts=5))
+    assert res.status is FitStatus.CONVERGED
+    flagged = [w for w in res.warnings if w.startswith("MULTISTART_BETTER_UNCONVERGED: ")]
+    assert len(flagged) == 1
+    assert res.stats is not None and res.stats.sse > 1e60
+
+
+def test_good_multistart_fit_has_no_better_unconverged_warning() -> None:
+    res = fit(EXP_DECAY, prd_data(), FitConfig(**BAD_START_CONFIG, n_starts=5))  # type: ignore[arg-type]
+    assert res.status is FitStatus.CONVERGED
+    assert not any(w.startswith("MULTISTART_BETTER_UNCONVERGED") for w in res.warnings)
+
+
+def test_final_evaluation_error_is_failed_not_raised(monkeypatch: pytest.MonkeyPatch) -> None:
+    # x = 99 is a zero-weight point, so only the final full-data evaluation sees it.
+    original = ModelSpec.evaluate
+
+    def picky(self: ModelSpec, x: FloatArray, **params: float) -> FloatArray:
+        if bool(np.any(np.asarray(x) == 99.0)):
+            raise RuntimeError("cannot evaluate at x = 99")
+        return original(self, x, **params)
+
+    monkeypatch.setattr(ModelSpec, "evaluate", picky)
+    x, y = _noisy_line()
+    w = np.ones_like(x)
+    x[2], w[2] = 99.0, 0.0
+    res = fit(LINE, make_xy(x, y, w))
+    assert res.status is FitStatus.FAILED
+    assert "cannot evaluate at x = 99" in res.termination_reason
+    assert res.parameters == ()
+    FitResult_round_trip(res)

@@ -232,6 +232,29 @@ def _multistart_warning(runs: list[_Run], scale: float) -> str | None:
     return f"MULTISTART_DISAGREE: sse=[{listed}]"
 
 
+def _better_unconverged_warning(winner: _Run, runs: list[_Run], scale: float) -> str | None:
+    """``MULTISTART_BETTER_UNCONVERGED`` if a non-converged run beat the converged winner.
+
+    The winner rule prefers any converged run, which can crown a run that "converged"
+    (e.g. on ``xtol``) far from the data while an unconverged start got much closer; this
+    makes that visible. Same tolerance as ``MULTISTART_DISAGREE``.
+    """
+    if winner.status is not FitStatus.CONVERGED or len(runs) < 2:
+        return None
+    others = [r.sse for r in runs if r.status is FitStatus.NOT_CONVERGED and math.isfinite(r.sse)]
+    if not others:
+        return None
+    best = min(others)
+    if best >= winner.sse or math.isclose(
+        best, winner.sse, rel_tol=MULTISTART_RTOL, abs_tol=1e-12 * scale
+    ):
+        return None
+    return (
+        f"MULTISTART_BETTER_UNCONVERGED: winner_sse={winner.sse:.6g} "
+        f"best_unconverged_sse={best:.6g}"
+    )
+
+
 def _at_bounds(
     run: _Run, names: tuple[str, ...], lower: FloatArray, upper: FloatArray
 ) -> list[str]:
@@ -364,7 +387,14 @@ def fit_nonlinear(
 
     theta = winner.theta
     values = problem.params(theta)
-    fitted_all = model.evaluate(x, **values)
+    try:
+        fitted_all = model.evaluate(x, **values)
+    except Exception as exc:  # data-dependent failure: reported, never raised
+        return build(
+            FitStatus.FAILED,
+            f"model evaluation at the solution raised {type(exc).__name__}: {exc}",
+            initial=initial,
+        )
     with np.errstate(all="ignore"):
         residuals_all = y - fitted_all
     status, reason = winner.status, winner.message
@@ -379,6 +409,9 @@ def fit_nonlinear(
     disagreement = _multistart_warning(runs, scale)
     if disagreement is not None:
         warnings.append(disagreement)
+    better_unconverged = _better_unconverged_warning(winner, runs, scale)
+    if better_unconverged is not None:
+        warnings.append(better_unconverged)
 
     fitted = fitted_all.tolist() if finite_fit else None
     residuals = residuals_all.tolist() if finite_fit else None
