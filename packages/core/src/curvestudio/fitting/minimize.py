@@ -21,7 +21,7 @@ How ``FitConfig`` limits map onto each method (a dash means the setting is ignor
 ============================ ================ ============== ============== ==============
 method                       ``max_nfev``     ``ftol``       ``xtol``       ``gtol``
 ============================ ================ ============== ============== ==============
-nelder (Nelder-Mead)         ``maxfev``       ``fatol``      ``xatol``      -
+nelder (Nelder-Mead)         ``maxfev``       ``fatol`` [5]_ ``xatol``      -
 powell                       ``maxfev``       ``ftol``       ``xtol``       -
 bfgs                         ``maxiter`` [1]_ -              -              ``gtol`` [4]_
 lbfgsb (L-BFGS-B)            ``maxfun``       ``ftol``       -              ``gtol`` [4]_
@@ -36,6 +36,11 @@ dual_annealing               ``maxfun``       -              -              -
 .. [3] Differential evolution's relative population-spread tolerance; ``atol`` stays 0.
 .. [4] Relative to the starting gradient: ``gtol * max(1, |g0|_inf)``, see
    :func:`minimize_sse`.
+.. [5] ``fatol = ftol * max(SSE0, 1)`` [relative], with ``SSE0`` the objective at the
+   start, see :func:`minimize_sse`.
+
+Powell's ``ftol``, L-BFGS-B's ``ftol`` and differential evolution's ``tol`` are relative in
+SciPy itself, so they are passed through unscaled.
 
 Success follows SciPy's ``success`` flag. For ``dual_annealing`` SciPy clears it when the
 evaluation budget (``maxfun``, mapped from ``max_nfev``) is exhausted or a local search
@@ -80,16 +85,15 @@ class MinimizeOutcome:
     message: str
 
 
-def _minimize_options(
-    method: str, config: FitConfig, gradient_scale: float
-) -> dict[str, float | int]:
+def _minimize_options(method: str, config: FitConfig, scale: float) -> dict[str, float | int]:
     """Options for ``scipy.optimize.minimize`` per the mapping table in the module docstring.
 
-    ``gradient_scale`` multiplies ``gtol`` for ``bfgs``/``lbfgsb`` (see :func:`minimize_sse`).
+    ``scale`` turns a relative tolerance into the absolute one SciPy expects: it multiplies
+    ``ftol`` for ``nelder`` and ``gtol`` for ``bfgs``/``lbfgsb`` (see :func:`minimize_sse`).
     """
     options: dict[str, float | int] = {}
     if method == "nelder":
-        options.update(xatol=config.xtol, fatol=config.ftol)
+        options.update(xatol=config.xtol, fatol=config.ftol * scale)
         if config.max_nfev is not None:
             options["maxfev"] = config.max_nfev
     elif method == "powell":
@@ -97,11 +101,11 @@ def _minimize_options(
         if config.max_nfev is not None:
             options["maxfev"] = config.max_nfev
     elif method == "bfgs":
-        options["gtol"] = config.gtol * gradient_scale
+        options["gtol"] = config.gtol * scale
         if config.max_nfev is not None:
             options["maxiter"] = config.max_nfev
     else:  # lbfgsb
-        options.update(ftol=config.ftol, gtol=config.gtol * gradient_scale)
+        options.update(ftol=config.ftol, gtol=config.gtol * scale)
         if config.max_nfev is not None:
             options["maxfun"] = config.max_nfev
     return options
@@ -122,7 +126,13 @@ def minimize_sse(
     the tolerance handed to SciPy is ``config.gtol * max(1, |gradient(start)|_inf)``. The
     gradient of a sum of squares scales with the data, so an absolute ``1e-10`` is below
     what floating point can reach for data of ordinary size and made BFGS stop with
-    "precision loss" (not converged) on some platforms. Bounds are passed to SciPy only
+    "precision loss" (not converged) on some platforms. ``nelder``'s ``fatol`` is relative
+    for the same reason: SciPy's ``fatol`` is an *absolute* spread of simplex SSE values,
+    so it is set to ``config.ftol * max(1, SSE0)`` with ``SSE0 = objective(start)``; an
+    absolute 1e-14 is unreachable at SSE ~1e5 and Nelder-Mead ran out of evaluations. The
+    floor of 1 keeps a sane absolute tolerance for data whose SSE is near zero (and is used
+    when ``SSE0`` overflows), and ``xatol = config.xtol`` still has to hold too, so the
+    looser ``fatol`` cannot stop the simplex early on its own. Bounds are passed to SciPy only
     when at least one is finite (``bfgs`` never receives any: the method check rejects it);
     ``differential_evolution`` and ``dual_annealing`` need finite bounds on every
     parameter, which :func:`curvestudio.fitting.methods.check_method_compatibility`
@@ -132,16 +142,19 @@ def minimize_sse(
     bounds = Bounds(lower, upper)
     if method in _MINIMIZE_NAMES:
         finite = bool(np.any(np.isfinite(lower)) or np.any(np.isfinite(upper)))
-        gradient_scale = 1.0
-        if method in ("bfgs", "lbfgsb"):
-            gradient_scale = max(1.0, float(np.max(np.abs(gradient(start)))))
+        scale = 1.0
+        if method == "nelder":
+            sse0 = float(objective(start))
+            scale = max(1.0, sse0) if np.isfinite(sse0) else 1.0
+        elif method in ("bfgs", "lbfgsb"):
+            scale = max(1.0, float(np.max(np.abs(gradient(start)))))
         ret = minimize(
             objective,
             start,
             jac=gradient if method in ("bfgs", "lbfgsb") else None,
             method=_MINIMIZE_NAMES[method],
             bounds=bounds if finite and method != "bfgs" else None,
-            options=_minimize_options(method, config, gradient_scale),
+            options=_minimize_options(method, config, scale),
         )
     elif method == "differential_evolution":
         maxiter = 1000

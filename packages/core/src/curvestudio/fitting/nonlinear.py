@@ -316,12 +316,16 @@ def _uncertainties(
     cutoff = np.finfo(np.float64).eps * max(jac.shape) * (svals[0] if svals.size else 0.0)
     if svals.size < k or not bool(np.all(svals > cutoff)) or not svals[0] > 0.0:
         return None, None, None
-    # Singular values far from 1 (e.g. 1e-241 on a plateau where the model has vanished)
-    # pass the relative cut-off but their squares under/overflow; the covariance is then
-    # not representable and is withheld like a rank-deficient one.
+    # Singular values far from 1 pass the relative cut-off but their squares can leave the
+    # float range: underflow to 0 (e.g. 1e-241 on a plateau where the model has vanished)
+    # makes V'/s^2 infinite, overflow to inf (e.g. 1e160) makes it silently 0, a covariance
+    # that looks finite but reports SE = 0. Either way the covariance is not representable
+    # and is withheld like a rank-deficient one.
     with np.errstate(all="ignore"):
-        cov_unit = (vt.T / svals**2) @ vt
-    if not bool(np.all(np.isfinite(cov_unit))):
+        svals_sq = svals**2
+        cov_unit = (vt.T / svals_sq) @ vt
+    squares_representable = np.all(np.isfinite(svals_sq) & (svals_sq > 0.0))
+    if not bool(squares_representable and np.all(np.isfinite(cov_unit))):
         return None, None, None
     if stats.sse == 0.0:
         return np.zeros(k), [[0.0] * k for _ in range(k)], None

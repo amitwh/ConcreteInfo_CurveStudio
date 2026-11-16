@@ -37,12 +37,12 @@ MULTISTART_N = 20
 MULTISTART_SEED = 0
 MULTISTART_BOUND_FACTOR = 1000.0
 
-ECKERLE4_MIRROR = (
-    "Eckerle4 is invariant under (b1, b2) -> (-b1, -b2); with seed 0 the 20-start run from "
-    "Start 1 finishes on the mirror minimum (b1, b2 = -1.5544, -4.0888, SSE LRE 10.7), which "
-    "fits the data exactly as well but is not the certified sign, so parameter LRE is 0"
-)
-"""Why the one xfail exists: the data cannot tell the two solutions apart."""
+# Eckerle4, (b1/b2) * exp(-0.5*((x-b3)/b2)**2), is invariant under (b1, b2) -> (-b1, -b2)
+# with b3 unchanged. With seed 0 the 20-start run from Start 1 lands on that mirror minimum
+# (b1, b2 = -1.5544, -4.0888, b3 = 451.54): it fits the data exactly as well, so the data
+# cannot tell the two apart and that case is checked against either sign.
+MIRRORED_CASES = frozenset({("Eckerle4", "start1")})
+MIRROR_NEGATED = ("b1", "b2")
 
 
 def _slow_unless_fast(name: str) -> list[pytest.MarkDecorator]:
@@ -63,10 +63,7 @@ def _multistart_cases() -> list[Any]:
         if problem(name).difficulty == "lower":
             continue
         for start in STARTS:
-            marks = [pytest.mark.slow]
-            if (name, start) == ("Eckerle4", "start1"):
-                marks.append(pytest.mark.xfail(strict=True, reason=ECKERLE4_MIRROR))
-            out.append(pytest.param(name, start, id=f"{name}-{start}", marks=marks))
+            out.append(pytest.param(name, start, id=f"{name}-{start}", marks=[pytest.mark.slow]))
     return out
 
 
@@ -82,7 +79,7 @@ def _xy(p: NistProblem) -> XY:
 
 
 def _start(p: NistProblem, start: str) -> dict[str, float]:
-    return p.start1 if start == "start1" else p.start2
+    return dict(p.start1 if start == "start1" else p.start2)
 
 
 def _fit(name: str, config: FitConfig) -> FitResult:
@@ -91,9 +88,13 @@ def _fit(name: str, config: FitConfig) -> FitResult:
         return fit(model_spec(name), _xy(problem(name)), config)
 
 
-def _param_lres(p: NistProblem, result: FitResult) -> dict[str, float]:
+def _param_lres(
+    p: NistProblem, result: FitResult, reference: dict[str, float] | None = None
+) -> dict[str, float]:
+    """LRE of each parameter against ``reference`` (default: the certified values)."""
     values = {est.name: est.value for est in result.parameters}
-    return {k: lre(values[k], c) if k in values else 0.0 for k, c in p.certified.items()}
+    want = p.certified if reference is None else reference
+    return {k: lre(values[k], c) if k in values else 0.0 for k, c in want.items()}
 
 
 def _sse_lre(p: NistProblem, result: FitResult) -> float:
@@ -115,6 +116,15 @@ def _assert_rule_1(p: NistProblem, result: FitResult) -> None:
     assert result.stats is not None, _summary(p, result)
     assert min(_param_lres(p, result).values()) >= CONVERGED_MIN_PARAM_LRE, _summary(p, result)
     assert _sse_lre(p, result) >= CONVERGED_MIN_SSE_LRE, _summary(p, result)
+
+
+def _assert_certified_or_mirror(p: NistProblem, result: FitResult) -> None:
+    """For a sign-symmetric problem: SSE LRE >= 7 and the parameters match the certified
+    values or their mirror (``MIRROR_NEGATED`` negated) to the rule-1 LRE."""
+    assert _sse_lre(p, result) >= CONVERGED_MIN_SSE_LRE, _summary(p, result)
+    mirror = {k: -c if k in MIRROR_NEGATED else c for k, c in p.certified.items()}
+    best = max(min(_param_lres(p, result, ref).values()) for ref in (p.certified, mirror))
+    assert best >= CONVERGED_MIN_PARAM_LRE, _summary(p, result)
 
 
 def _assert_honest_status(result: FitResult) -> None:
@@ -182,4 +192,7 @@ def test_nist_multistart_within_wide_bounds(name: str, start: str) -> None:
     print(_summary(p, result))
 
     _assert_honest_status(result)
-    _assert_rule_1(p, result)
+    if (name, start) in MIRRORED_CASES:
+        _assert_certified_or_mirror(p, result)
+    else:
+        _assert_rule_1(p, result)

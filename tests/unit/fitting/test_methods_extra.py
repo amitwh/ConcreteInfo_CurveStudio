@@ -183,6 +183,23 @@ def test_scalar_methods_report_the_least_squares_uncertainties(method: str) -> N
     assert res.stats.sse == pytest.approx(reference.stats.sse, rel=1e-4)
 
 
+@pytest.mark.parametrize("scale", [100.0, 1000.0])
+def test_nelder_with_default_config_converges_at_large_sse(scale: float) -> None:
+    """Regression: nelder's ``fatol`` was the absolute ``ftol`` (1e-14), unreachable at
+    SSE ~4e5 / ~4e7, so Nelder-Mead ran out of evaluations instead of converging."""
+    x = np.linspace(0.0, 10.0, 60)
+    noise = scale * np.random.default_rng(1).normal(0.0, 1.0, x.size)
+    data = make_xy(x, scale * (5.0 * np.exp(-0.4 * x) + 2.0) + noise)
+    res = fit(EXP_DECAY, data, FitConfig(method="nelder"))
+    reference = fit(EXP_DECAY, data, FitConfig(method="trf"))
+    assert reference.status is FitStatus.CONVERGED
+    assert res.status is FitStatus.CONVERGED, res.termination_reason
+    assert res.stats is not None
+    assert res.stats.sse > 1e5 * (scale / 100.0) ** 2
+    for got, want in zip(res.parameters, reference.parameters, strict=True):
+        assert got.value == pytest.approx(want.value, rel=1e-3), got.name
+
+
 # --- configuration errors ---------------------------------------------------------------
 
 

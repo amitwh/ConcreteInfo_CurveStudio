@@ -669,3 +669,35 @@ def test_tiny_jacobian_withholds_covariance_without_numpy_warnings() -> None:
         warnings.simplefilter("error")
         se, covariance, corr = _uncertainties(jac, stats)
     assert (se, covariance, corr) == (None, None, None)
+
+
+def test_huge_jacobian_withholds_covariance_instead_of_zero_standard_errors() -> None:
+    # Singular values ~1e160 pass the relative cut-off but their squares overflow to inf,
+    # and V'/inf would silently give an all-zero covariance (SE = 0) that looks finite.
+    jac = np.array([[1e160, 0.0], [0.0, 2e160], [1e160, 1e160], [3e160, -1e160]])
+    stats = fit_statistics(np.array([1.0, 2.0, 3.0, 4.0]), np.array([1.1, 1.9, 3.2, 3.9]), 2)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        se, covariance, corr = _uncertainties(jac, stats)
+    assert (se, covariance, corr) == (None, None, None)
+
+
+HUGE_SCALE = ModelSpec(
+    id="huge_scale",
+    name="Line with a 1e160 scale factor",
+    category="test",
+    expression="a*1e160*x + b*1e160",
+    parameters=(Parameter("a"), Parameter("b")),
+    initial_guess=lambda x, y: {"a": 1e-160, "b": 0.0},
+)
+
+
+def test_fit_with_a_huge_jacobian_reports_singular_covariance_not_zero_errors() -> None:
+    x = np.linspace(1.0, 10.0, 20)
+    y = 2.0 * x + 1.0 + np.random.default_rng(0).normal(0.0, 0.1, x.size)
+    res = fit(HUGE_SCALE, make_xy(x, y), FitConfig(method="lm"))
+    assert res.status is FitStatus.CONVERGED, res.termination_reason
+    assert all(math.isfinite(r) for r in res.residuals)
+    assert "SINGULAR_COVARIANCE" in res.warnings
+    assert res.covariance is None
+    assert all(p.std_err is None for p in res.parameters)
