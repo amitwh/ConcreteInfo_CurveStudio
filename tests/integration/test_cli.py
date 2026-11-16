@@ -105,6 +105,33 @@ def test_unconverged_fit_exits_3(capsys: pytest.CaptureFixture[str]) -> None:
     assert "not_converged" in captured.out
 
 
+def test_too_few_points_for_the_model_exits_2(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Three points, four parameters (degree-3 polynomial): the fit result is
+    # INVALID_INPUT (n <= k), which is invalid input (exit 2), not a failed fit (3).
+    path = tmp_path / "sparse.csv"
+    path.write_text("x,y\n1,2.0\n2,4.1\n3,6.2\n")
+    code = main(["fit", str(path), "--x", "x", "--y", "y", "--poly", "3"])
+    captured = capsys.readouterr()
+    assert code == 2
+    assert "invalid_input" in captured.out
+    assert "3 active observation(s) for 4 parameter(s)" in captured.out
+
+
+def test_model_that_does_not_apply_exits_2(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # log(x) with x = 0 in the data: the model does not apply, which is invalid input.
+    path = tmp_path / "zero.csv"
+    path.write_text("x,y\n0,1.0\n1,0.0\n2,-0.7\n3,-1.1\n4,-1.4\n")
+    code = main(["fit", str(path), "--x", "x", "--y", "y", "--model", "log_natural"])
+    captured = capsys.readouterr()
+    assert code == 2
+    assert "invalid_input" in captured.out
+    assert "does not apply" in captured.out
+
+
 def test_overflowing_y_is_a_failed_fit_not_invalid_configuration(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

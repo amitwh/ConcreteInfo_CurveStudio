@@ -11,8 +11,9 @@ This module is the outermost layer of the package: it may import the data, fitti
 and model layers, and nothing imports it. A user mistake (unreadable file, missing
 column, unknown model, data that fails validation, an impossible method/loss
 combination) is reported as a message on stderr, never as a traceback, and drives
-the exit code: ``0`` the fit converged, ``2`` invalid input, ``3`` the fit ran but
-did not converge or failed.
+the exit code: ``0`` the fit converged, ``2`` invalid input (including a fit result
+of ``invalid_input``: too few observations, or a model that does not apply),
+``3`` the fit ran but did not converge or failed.
 """
 
 import argparse
@@ -248,7 +249,11 @@ def _run_fit(args: argparse.Namespace) -> int:
         except OSError as exc:
             return _fail(f"cannot write {args.json}: {exc}")
 
-    return EXIT_OK if result.status is FitStatus.CONVERGED else EXIT_NOT_CONVERGED
+    if result.status is FitStatus.CONVERGED:
+        return EXIT_OK
+    if result.status is FitStatus.INVALID_INPUT:
+        return EXIT_INVALID  # the data cannot be fitted this way: invalid input
+    return EXIT_NOT_CONVERGED
 
 
 # --- models ------------------------------------------------------------------------------
