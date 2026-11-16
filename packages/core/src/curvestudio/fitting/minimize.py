@@ -23,8 +23,8 @@ method                       ``max_nfev``     ``ftol``       ``xtol``       ``gt
 ============================ ================ ============== ============== ==============
 nelder (Nelder-Mead)         ``maxfev``       ``fatol``      ``xatol``      -
 powell                       ``maxfev``       ``ftol``       ``xtol``       -
-bfgs                         ``maxiter`` [1]_ -              -              ``gtol``
-lbfgsb (L-BFGS-B)            ``maxfun``       ``ftol``       -              ``gtol``
+bfgs                         ``maxiter`` [1]_ -              -              ``gtol`` [4]_
+lbfgsb (L-BFGS-B)            ``maxfun``       ``ftol``       -              ``gtol`` [4]_
 differential_evolution       ``maxiter`` [2]_ ``tol`` [3]_   -              -
 dual_annealing               ``maxfun``       -              -              -
 ============================ ================ ============== ============== ==============
@@ -34,6 +34,8 @@ dual_annealing               ``maxfun``       -              -              -
 .. [2] ``max_nfev // (popsize * k)`` generations (at least 1); each generation costs about
    ``popsize * k`` evaluations, plus the polish.
 .. [3] Differential evolution's relative population-spread tolerance; ``atol`` stays 0.
+.. [4] Relative to the starting gradient: ``gtol * max(1, |g0|_inf)``, see
+   :func:`minimize_sse`.
 
 Success follows SciPy's ``success`` flag. For ``dual_annealing`` SciPy sets it only when
 the annealing finished normally; hitting the evaluation budget is reported as not
@@ -76,8 +78,13 @@ class MinimizeOutcome:
     message: str
 
 
-def _minimize_options(method: str, config: FitConfig) -> dict[str, float | int]:
-    """Options for ``scipy.optimize.minimize`` per the mapping table in the module docstring."""
+def _minimize_options(
+    method: str, config: FitConfig, gradient_scale: float
+) -> dict[str, float | int]:
+    """Options for ``scipy.optimize.minimize`` per the mapping table in the module docstring.
+
+    ``gradient_scale`` multiplies ``gtol`` for ``bfgs``/``lbfgsb`` (see :func:`minimize_sse`).
+    """
     options: dict[str, float | int] = {}
     if method == "nelder":
         options.update(xatol=config.xtol, fatol=config.ftol)
@@ -88,11 +95,11 @@ def _minimize_options(method: str, config: FitConfig) -> dict[str, float | int]:
         if config.max_nfev is not None:
             options["maxfev"] = config.max_nfev
     elif method == "bfgs":
-        options["gtol"] = config.gtol
+        options["gtol"] = config.gtol * gradient_scale
         if config.max_nfev is not None:
             options["maxiter"] = config.max_nfev
     else:  # lbfgsb
-        options.update(ftol=config.ftol, gtol=config.gtol)
+        options.update(ftol=config.ftol, gtol=config.gtol * gradient_scale)
         if config.max_nfev is not None:
             options["maxfun"] = config.max_nfev
     return options
@@ -109,7 +116,11 @@ def minimize_sse(
 ) -> MinimizeOutcome:
     """Minimise ``objective`` from ``start`` with the scalar optimizer ``method``.
 
-    ``gradient`` is only called by ``bfgs`` and ``lbfgsb``. Bounds are passed to SciPy only
+    ``gradient`` is only called by ``bfgs`` and ``lbfgsb``. Their ``gtol`` is *relative*:
+    the tolerance handed to SciPy is ``config.gtol * max(1, |gradient(start)|_inf)``. The
+    gradient of a sum of squares scales with the data, so an absolute ``1e-10`` is below
+    what floating point can reach for data of ordinary size and made BFGS stop with
+    "precision loss" (not converged) on some platforms. Bounds are passed to SciPy only
     when at least one is finite (``bfgs`` never receives any: the method check rejects it);
     ``differential_evolution`` and ``dual_annealing`` need finite bounds on every
     parameter, which :func:`curvestudio.fitting.methods.check_method_compatibility`
@@ -119,13 +130,16 @@ def minimize_sse(
     bounds = Bounds(lower, upper)
     if method in _MINIMIZE_NAMES:
         finite = bool(np.any(np.isfinite(lower)) or np.any(np.isfinite(upper)))
+        gradient_scale = 1.0
+        if method in ("bfgs", "lbfgsb"):
+            gradient_scale = max(1.0, float(np.max(np.abs(gradient(start)))))
         ret = minimize(
             objective,
             start,
             jac=gradient if method in ("bfgs", "lbfgsb") else None,
             method=_MINIMIZE_NAMES[method],
             bounds=bounds if finite and method != "bfgs" else None,
-            options=_minimize_options(method, config),
+            options=_minimize_options(method, config, gradient_scale),
         )
     elif method == "differential_evolution":
         maxiter = 1000
