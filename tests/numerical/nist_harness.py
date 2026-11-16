@@ -71,17 +71,27 @@ def run_fit(name: str, config: FitConfig) -> FitResult:
         return fit(model_spec(name), xy_from_problem(problem(name)), config)
 
 
+def multistart_bounds(p: NistProblem, start: str) -> dict[str, tuple[float, float]]:
+    """The multistart bounds: (+-MULTISTART_BOUND_FACTOR x |start value|) per parameter,
+    +-MULTISTART_BOUND_FACTOR when the start value is 0."""
+    return {
+        k: (-MULTISTART_BOUND_FACTOR * abs(v), MULTISTART_BOUND_FACTOR * abs(v))
+        if v != 0.0
+        else (-MULTISTART_BOUND_FACTOR, MULTISTART_BOUND_FACTOR)
+        for k, v in start_values(p, start).items()
+    }
+
+
 def multistart_config(p: NistProblem, start: str) -> FitConfig:
     """The multistart configuration from the benchmarks: 20 seeded starts inside
     +-1000 x |start value| bounds per parameter (+-1000 when the start value is 0)."""
     base = start_values(p, start)
-    bounds = {
-        k: (-MULTISTART_BOUND_FACTOR * abs(v), MULTISTART_BOUND_FACTOR * abs(v))
-        if v != 0.0
-        else (-MULTISTART_BOUND_FACTOR, MULTISTART_BOUND_FACTOR)
-        for k, v in base.items()
-    }
-    return FitConfig(initial=base, bounds=bounds, n_starts=MULTISTART_N, seed=MULTISTART_SEED)
+    return FitConfig(
+        initial=base,
+        bounds=multistart_bounds(p, start),
+        n_starts=MULTISTART_N,
+        seed=MULTISTART_SEED,
+    )
 
 
 def param_lres(

@@ -6,15 +6,26 @@ multistart fits with 20 seeded starts inside +-1000 x |start value| bounds, and 
 linear problems via ``fit_polynomial``. The output grades each fit against the certified
 NIST values with the LRE measure; a CONVERGED fit that is wrong (min parameter LRE < 5 or
 SSE LRE < 7) is a rule-1 violation, printed as **VIOLATION** and reported through the
-exit status. A fit that raises under the warnings-as-errors benchmark condition is
-recorded as ``ERROR: <ExceptionType>`` and also makes the exit status 1.
+exit status.
 
-Exit status: 0 when there are no violations and no errors, 1 otherwise.
+Because a multistart ``FitResult`` exposes only the winning run, the per-start columns
+("Converged starts", "Matching certified") are measured by replaying the multistart: the
+engine's own ``generate_starts`` regenerates the same 20 starts (same base, bounds and
+seed) and each is re-run as an independent single-start fit with the same defaults. As a
+sanity check the best SSE over those independent runs must match the multistart winner's
+SSE to a relative 1e-6 whenever the multistart fit converged; otherwise a MISMATCH line
+is printed and the exit status is 1.
+
+A fit that raises under the warnings-as-errors benchmark condition is recorded as
+``ERROR: <ExceptionType>`` and also makes the exit status 1.
+
+Exit status: 0 when there are no violations, errors or mismatches, 1 otherwise.
 """
 
 from __future__ import annotations
 
 import argparse
+import math
 import platform
 import sys
 from collections.abc import Sequence
@@ -22,6 +33,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from importlib import metadata
 from pathlib import Path
+
+import numpy as np
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _HARNESS_DIR = _REPO_ROOT / "tests" / "numerical"
@@ -42,6 +55,7 @@ from nist_harness import (  # noqa: E402
     coefficient_lres,
     linear_problem,
     mirror_reference,
+    multistart_bounds,
     multistart_config,
     param_lres,
     problem,
@@ -51,12 +65,17 @@ from nist_harness import (  # noqa: E402
     sse_lre,
     start_values,
 )
-from nist_models import LINEAR_NAMES, NONLINEAR_NAMES  # noqa: E402
+from nist_models import LINEAR_NAMES, NONLINEAR_NAMES, model_spec  # noqa: E402
 
-from curvestudio.fitting import FitConfig, FitStatus  # noqa: E402
+from curvestudio.fitting import FitConfig, FitResult, FitStatus  # noqa: E402
+from curvestudio.fitting.nonlinear import generate_starts  # noqa: E402
 from curvestudio.fitting.result import IST  # noqa: E402
+from curvestudio.testing.nist import NistProblem  # noqa: E402
 
 DEFAULT_OUT = _HARNESS_DIR / "VALIDATION.md"
+
+SANITY_SSE_RTOL = 1e-6
+"""Relative tolerance for winner-vs-replay SSE agreement (expected to match exactly)."""
 
 _VERSION_DISTRIBUTIONS: tuple[tuple[str, str], ...] = (
     ("curvestudio", "curvestudio-core"),
@@ -65,11 +84,6 @@ _VERSION_DISTRIBUTIONS: tuple[tuple[str, str], ...] = (
     ("lmfit", "lmfit"),
     ("sympy", "sympy"),
 )
-
-# "Converged starts" / "Matching certified" are not reported per start: FitResult exposes
-# only the winning run plus aggregate MULTISTART_* warnings, and the report does not
-# fabricate what the engine does not say.
-NOT_REPORTED = "n/a"
 
 
 @dataclass(frozen=True)
@@ -87,7 +101,12 @@ class NonlinearRow:
 
 @dataclass(frozen=True)
 class MultistartRow:
-    """One 20-start fit. ``param_lre`` is mirror-aware for the Eckerle4 sign symmetry."""
+    """One 20-start fit. ``param_lre`` is mirror-aware for the Eckerle4 sign symmetry.
+
+    ``converged_starts`` / ``matching_certified`` count the engine's own 20 starts re-run
+    independently (see the module docstring); ``None`` when the multistart fit itself
+    raised, so the counts could not be measured.
+    """
 
     problem: str
     difficulty: str
@@ -95,8 +114,8 @@ class MultistartRow:
     status: str
     param_lre: float | None
     sse_lre: float | None
-    converged_starts: str = NOT_REPORTED
-    matching_certified: str = NOT_REPORTED
+    converged_starts: int | None = None
+    matching_certified: int | None = None
     mirrored: bool = False
 
 
@@ -119,11 +138,12 @@ class Summary:
     not_converged: int
     violations: int
     lower_both_starts: int
-    nonlinear_total: int
+    lower_total: int
     linear_passed: int
     linear_total: int
     errors: tuple[str, ...] = ()
     other_statuses: tuple[str, ...] = ()
+    mismatches: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -231,12 +251,74 @@ def _single_row(name: str, difficulty: str, start: str) -> NonlinearRow:
     )
 
 
-def _multistart_row(name: str, difficulty: str, start: str) -> MultistartRow:
+def _independent_starts(name: str, p: NistProblem, start: str) -> list[dict[str, float]]:
+    """The engine's own multistart starts, regenerated exactly as ``fit_nonlinear`` does:
+    same base values, same bounds, same seed, via the public ``generate_starts``."""
+    bounds = multistart_bounds(p, start)
+    names = [q.name for q in model_spec(name).parameters]
+    base = np.array([start_values(p, start)[n] for n in names])
+    lower = np.array([bounds[n][0] for n in names])
+    upper = np.array([bounds[n][1] for n in names])
+    thetas = generate_starts(base, lower, upper, MULTISTART_N, MULTISTART_SEED)
+    return [dict(zip(names, theta, strict=True)) for theta in thetas]
+
+
+def _start_matches_certified(
+    p: NistProblem, result: FitResult, references: tuple[dict[str, float], ...]
+) -> bool:
+    """Rule 1 applied to one independent start: CONVERGED and accurate against any reference."""
+    if result.status is not FitStatus.CONVERGED:
+        return False
+    if sse_lre(p, result) < CONVERGED_MIN_SSE_LRE:
+        return False
+    return any(
+        min(param_lres(p, result, ref).values()) >= CONVERGED_MIN_PARAM_LRE for ref in references
+    )
+
+
+def _replay_multistart(
+    name: str, p: NistProblem, start: str, mirror_aware: bool
+) -> tuple[int, int, list[float], list[str]]:
+    """Re-run the engine's 20 starts independently with the same defaults.
+
+    Returns ``(converged, matching, converged SSEs, errors)``. A start that raises under
+    the warnings-as-errors condition counts as neither converged nor matching and is
+    reported through ``errors``.
+    """
+    bounds = multistart_bounds(p, start)
+    references = (p.certified, mirror_reference(p)) if mirror_aware else (p.certified,)
+    converged = matching = 0
+    sses: list[float] = []
+    errors: list[str] = []
+    for index, initial in enumerate(_independent_starts(name, p, start)):
+        try:
+            result = run_fit(name, FitConfig(initial=initial, bounds=bounds))
+        except Exception as exc:  # recorded as ERROR, never swallowed silently
+            errors.append(f"{name}/{start} independent start {index}: {type(exc).__name__}")
+            continue
+        if result.status is FitStatus.CONVERGED:
+            converged += 1
+            if result.stats is not None:
+                sses.append(result.stats.sse)
+        if _start_matches_certified(p, result, references):
+            matching += 1
+    return converged, matching, sses, errors
+
+
+def _multistart_row(
+    name: str, difficulty: str, start: str
+) -> tuple[MultistartRow, list[str], list[str]]:
+    """The multistart fit plus its per-start replay; returns ``(row, errors, mismatches)``."""
     p = problem(name)
     try:
         result = run_fit(name, multistart_config(p, start))
     except Exception as exc:  # recorded as ERROR, never swallowed silently
-        return MultistartRow(name, difficulty, start, f"ERROR: {type(exc).__name__}", None, None)
+        error = f"{name}/{start} (multistart): ERROR: {type(exc).__name__}"
+        return (
+            MultistartRow(name, difficulty, start, f"ERROR: {type(exc).__name__}", None, None),
+            [error],
+            [],
+        )
     mirrored = False
     if result.parameters:
         param_min = min(param_lres(p, result).values())
@@ -247,9 +329,33 @@ def _multistart_row(name: str, difficulty: str, start: str) -> MultistartRow:
     else:
         param_min = None
     sse = None if result.stats is None else sse_lre(p, result)
-    return MultistartRow(
-        name, difficulty, start, result.status.value, param_min, sse, mirrored=mirrored
+    mirror_aware = any(case[0] == name for case in MIRRORED_CASES)
+    converged, matching, sses, errors = _replay_multistart(name, p, start, mirror_aware)
+    mismatches: list[str] = []
+    if result.status is FitStatus.CONVERGED:
+        winner_sse = result.stats.sse if result.stats is not None else None
+        best = min(sses) if sses else None
+        if (
+            winner_sse is None
+            or best is None
+            or not math.isclose(winner_sse, best, rel_tol=SANITY_SSE_RTOL)
+        ):
+            mismatches.append(
+                f"{name}/{start}: multistart winner SSE {winner_sse} vs best "
+                f"independent-start SSE {best}"
+            )
+    row = MultistartRow(
+        name,
+        difficulty,
+        start,
+        result.status.value,
+        param_min,
+        sse,
+        converged_starts=converged,
+        matching_certified=matching,
+        mirrored=mirrored,
     )
+    return row, errors, mismatches
 
 
 def _linear_row(name: str) -> LinearRow:
@@ -267,9 +373,9 @@ def _summary(
     single_rows: Sequence[NonlinearRow],
     multistart_rows: Sequence[MultistartRow],
     linear_rows: Sequence[LinearRow],
-    nonlinear_total: int,
     errors: Sequence[str],
     other_statuses: Sequence[str],
+    mismatches: Sequence[str],
 ) -> Summary:
     converged_rule1 = sum(
         1
@@ -295,17 +401,20 @@ def _summary(
             for r in rows
         )
     )
+    difficulties = {r.problem: r.difficulty for r in single_rows}
+    lower_total = sum(1 for d in difficulties.values() if d == "lower")
     return Summary(
         converged_rule1=converged_rule1,
         single_total=len(single_rows),
         not_converged=sum(1 for r in single_rows if r.status == FitStatus.NOT_CONVERGED.value),
         violations=violations,
         lower_both_starts=lower_both_starts,
-        nonlinear_total=nonlinear_total,
+        lower_total=lower_total,
         linear_passed=sum(1 for r in linear_rows if _linear_passes(r.problem, r)),
         linear_total=len(linear_rows),
         errors=tuple(errors),
         other_statuses=tuple(other_statuses),
+        mismatches=tuple(mismatches),
     )
 
 
@@ -339,10 +448,12 @@ def _notes(multistart_rows: Sequence[MultistartRow]) -> tuple[str, ...]:
         "wide bounds are the remedy."
     )
     notes.append(
-        "The 'Converged starts' and 'Matching certified' columns are n/a: a FitResult "
-        "reports only the winning run of a multistart fit (plus aggregate "
-        "MULTISTART_DISAGREE / MULTISTART_BETTER_UNCONVERGED warnings), and per-start "
-        "outcomes are not part of the result contract, so they are not invented here."
+        "'Converged starts' and 'Matching certified' are measured by replaying the "
+        "multistart: curvestudio.fitting.nonlinear.generate_starts regenerates the "
+        "engine's own 20 starts (same base, bounds and seed) and each is re-run as an "
+        "independent single-start fit with the same defaults. A start counts as matching "
+        "when it converges with param LRE >= 5 and SSE LRE >= 7 against the certified "
+        "values (Eckerle4: or their sign mirror)."
     )
     notes.append(
         "Generated by scripts/nist_report.py (uv run python scripts/nist_report.py); "
@@ -363,6 +474,7 @@ def build_report(problems: Sequence[str] | None = None) -> ReportData:
     linear_rows: list[LinearRow] = []
     errors: list[str] = []
     other: list[str] = []
+    mismatches: list[str] = []
     for name in nonlinear:
         p = problem(name)
         difficulty = p.difficulty or "unknown"
@@ -377,10 +489,12 @@ def build_report(problems: Sequence[str] | None = None) -> ReportData:
             ):
                 other.append(f"{name}/{start}: {single.status}")
         for start in STARTS:
-            ms_row = _multistart_row(name, difficulty, start)
+            ms_row, ms_errors, ms_mismatches = _multistart_row(name, difficulty, start)
             multistart_rows.append(ms_row)
-            if ms_row.status.startswith("ERROR:"):
-                errors.append(f"{name}/{start} (multistart): {ms_row.status}")
+            errors.extend(ms_errors)
+            mismatches.extend(ms_mismatches)
+            for m in ms_mismatches:
+                print(f"nist_report: **MISMATCH** {m}", file=sys.stderr)
         print(f"nist_report: {name} done", file=sys.stderr)
     for name in linear:
         lin_row = _linear_row(name)
@@ -388,7 +502,7 @@ def build_report(problems: Sequence[str] | None = None) -> ReportData:
         if lin_row.status.startswith("ERROR:"):
             errors.append(f"{name} (linear): {lin_row.status}")
         print(f"nist_report: {name} (linear) done", file=sys.stderr)
-    summary = _summary(single_rows, multistart_rows, linear_rows, len(nonlinear), errors, other)
+    summary = _summary(single_rows, multistart_rows, linear_rows, errors, other, mismatches)
     return ReportData(
         generated_at=datetime.now(IST).isoformat(timespec="seconds"),
         versions=_versions(),
@@ -405,6 +519,20 @@ def _lre_cell(value: float | None, violated: bool) -> str:
     if value is None:
         return "n/a"
     return f"{value:.1f}" + (" **VIOLATION**" if violated else "")
+
+
+def _graded_cell(status: str, value: float | None, violated: bool) -> str:
+    """An accuracy-grade cell: LRE digits only for CONVERGED fits.
+
+    A fit that did not converge keeps its measured LREs in the row data and in the
+    pass/fail logic (which only ever applies to CONVERGED rows), but displaying them
+    would read like a graded accuracy, so they render as ``n/a``.
+    """
+    return _lre_cell(value, violated) if status == FitStatus.CONVERGED.value else "n/a"
+
+
+def _count_cell(value: int | None) -> str:
+    return "n/a" if value is None else f"{value}/{MULTISTART_N}"
 
 
 def _table(headers: Sequence[str], rows: Sequence[Sequence[str]]) -> list[str]:
@@ -440,9 +568,9 @@ def render_markdown(report: ReportData) -> str:
                     r.difficulty,
                     r.start,
                     r.status,
-                    _lre_cell(r.param_lre, _param_violated(r.status, r.param_lre)),
-                    _lre_cell(r.se_lre, False),
-                    _lre_cell(r.sse_lre, _sse_violated(r.status, r.sse_lre)),
+                    _graded_cell(r.status, r.param_lre, _param_violated(r.status, r.param_lre)),
+                    _graded_cell(r.status, r.se_lre, False),
+                    _graded_cell(r.status, r.sse_lre, _sse_violated(r.status, r.sse_lre)),
                 )
                 for r in report.single_rows
             ],
@@ -474,10 +602,10 @@ def render_markdown(report: ReportData) -> str:
                     r.difficulty,
                     r.start,
                     r.status,
-                    _lre_cell(r.param_lre, _param_violated(r.status, r.param_lre)),
-                    _lre_cell(r.sse_lre, _sse_violated(r.status, r.sse_lre)),
-                    r.converged_starts,
-                    r.matching_certified,
+                    _graded_cell(r.status, r.param_lre, _param_violated(r.status, r.param_lre)),
+                    _graded_cell(r.status, r.sse_lre, _sse_violated(r.status, r.sse_lre)),
+                    _count_cell(r.converged_starts),
+                    _count_cell(r.matching_certified),
                 )
                 for r in report.multistart_rows
             ],
@@ -491,7 +619,7 @@ def render_markdown(report: ReportData) -> str:
                 (
                     r.problem,
                     r.status,
-                    _lre_cell(r.coef_lre, False),
+                    _graded_cell(r.status, r.coef_lre, False),
                     ", ".join(r.warnings) if r.warnings else "-",
                 )
                 for r in report.linear_rows
@@ -509,12 +637,13 @@ def render_markdown(report: ReportData) -> str:
             f"- Nonlinear single-start NOT_CONVERGED: {s.not_converged}",
             f"- Rule-1 violations: {s.violations} (must be 0)",
             f"- Lower-difficulty problems converged from both starts: "
-            f"{s.lower_both_starts}/{s.nonlinear_total}",
+            f"{s.lower_both_starts}/{s.lower_total}",
             f"- Linear problems passing: {s.linear_passed}/{s.linear_total}",
         ]
     )
     lines.extend(f"- Errors: {e}" for e in s.errors)
     lines.extend(f"- Other single-start statuses: {e}" for e in s.other_statuses)
+    lines.extend(f"- MISMATCH: {m}" for m in s.mismatches)
     lines.extend(["", "## Notes", ""])
     lines.extend(f"- {note}" for note in report.notes)
     return "\n".join(lines) + "\n"
@@ -542,9 +671,12 @@ def main(argv: list[str] | None = None) -> int:
     args.out.write_text(text, encoding="utf-8")
     print(
         f"wrote {args.out}: {report.summary.violations} rule-1 violation(s), "
-        f"{len(report.summary.errors)} error(s)"
+        f"{len(report.summary.errors)} error(s), "
+        f"{len(report.summary.mismatches)} winner/replay mismatch(es)"
     )
-    return 1 if report.summary.violations or report.summary.errors else 0
+    return (
+        1 if report.summary.violations or report.summary.errors or report.summary.mismatches else 0
+    )
 
 
 if __name__ == "__main__":

@@ -6,6 +6,7 @@ checked character for character. ``build_report`` is exercised on the fast subse
 ``uv run python scripts/nist_report.py`` writes to ``tests/numerical/VALIDATION.md``.
 """
 
+import re
 import sys
 from pathlib import Path
 
@@ -19,6 +20,7 @@ from nist_report import (  # noqa: E402
     NonlinearRow,
     ReportData,
     Summary,
+    _summary,
     build_report,
     main,
     render_markdown,
@@ -46,8 +48,8 @@ Rule 1 — a CONVERGED fit must be right: minimum parameter LRE >= 5 and SSE LRE
 
 | Problem | Difficulty | Start | Status | Min param LRE | SSE LRE | Converged starts | Matching certified |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Eckerle4 * | higher | start1 | converged | 8.8 | 9.1 | n/a | n/a |
-| Gauss1 | lower | start1 | converged | 9.0 | 9.2 | n/a | n/a |
+| Eckerle4 * | higher | start1 | converged | 8.8 | 9.1 | 17/20 | 17/20 |
+| Gauss1 | lower | start1 | not_converged | n/a | n/a | 0/20 | 0/20 |
 
 ## Table 3 — linear (fit_polynomial)
 
@@ -70,7 +72,8 @@ Rule 1 — a CONVERGED fit must be right: minimum parameter LRE >= 5 and SSE LRE
 
 
 def _tiny_report() -> ReportData:
-    """A hand-built report: Misra1a clean both starts, Gauss1 not converged, Rat42 violating."""
+    """A hand-built report: Misra1a clean both starts, Gauss1 not converged (with measured
+    0.0 LREs that must display as n/a), Rat42 violating, and both multistart count shapes."""
     return ReportData(
         generated_at="2026-11-16T17:00:00+05:30",
         versions={
@@ -85,12 +88,22 @@ def _tiny_report() -> ReportData:
         single_rows=(
             NonlinearRow("Misra1a", "lower", "start1", "converged", 8.96, 4.41, 9.51),
             NonlinearRow("Misra1a", "lower", "start2", "converged", 8.8, 4.3, 9.4),
-            NonlinearRow("Gauss1", "lower", "start2", "not_converged", None, None, None),
+            NonlinearRow("Gauss1", "lower", "start2", "not_converged", 0.0, None, 0.0),
             NonlinearRow("Rat42", "higher", "start1", "converged", 3.21, None, 8.02),
         ),
         multistart_rows=(
-            MultistartRow("Eckerle4", "higher", "start1", "converged", 8.8, 9.1, mirrored=True),
-            MultistartRow("Gauss1", "lower", "start1", "converged", 9.0, 9.2),
+            MultistartRow(
+                "Eckerle4",
+                "higher",
+                "start1",
+                "converged",
+                8.8,
+                9.1,
+                converged_starts=17,
+                matching_certified=17,
+                mirrored=True,
+            ),
+            MultistartRow("Gauss1", "lower", "start1", "not_converged", 0.0, 0.0, 0, 0),
         ),
         linear_rows=(LinearRow("Norris", "converged", 12.3, ()),),
         summary=Summary(
@@ -99,7 +112,7 @@ def _tiny_report() -> ReportData:
             not_converged=1,
             violations=1,
             lower_both_starts=1,
-            nonlinear_total=2,
+            lower_total=2,
             linear_passed=1,
             linear_total=1,
             errors=(),
@@ -112,6 +125,22 @@ def test_renderer_produces_the_expected_markdown() -> None:
     assert render_markdown(_tiny_report()) == EXPECTED_TINY
 
 
+def test_summary_lower_denominator_is_the_lower_difficulty_problem_count() -> None:
+    """2 of 3 problems are lower difficulty, both converge from both starts: 2/2, not 2/3."""
+    rows = (
+        NonlinearRow("Misra1a", "lower", "start1", "converged", 8.96, 9.0, 10.5),
+        NonlinearRow("Misra1a", "lower", "start2", "converged", 8.8, 8.9, 10.4),
+        NonlinearRow("Gauss1", "lower", "start1", "converged", 7.2, 7.0, 10.6),
+        NonlinearRow("Gauss1", "lower", "start2", "converged", 7.4, 7.1, 10.6),
+        NonlinearRow("Rat42", "higher", "start1", "converged", 9.2, 9.0, 11.9),
+    )
+    s = _summary(rows, (), (), (), (), ())
+    assert s.lower_both_starts == 2
+    assert s.lower_total == 2
+    assert s.violations == 0
+    assert s.converged_rule1 == 5
+
+
 def test_build_report_restricted_to_the_fast_subset() -> None:
     report = build_report(("Misra1a", "Norris"))
     text = render_markdown(report)
@@ -122,11 +151,18 @@ def test_build_report_restricted_to_the_fast_subset() -> None:
     assert "## Table 3 — linear (fit_polynomial)" in text
     assert "| Misra1a |" in text and "| Norris |" in text
     assert report.summary.errors == ()
+    assert report.summary.mismatches == ()
     assert report.summary.violations == 0
     assert report.summary.single_total == 2
     assert report.summary.linear_total == 1
     assert [row.status for row in report.single_rows] == ["converged", "converged"]
     assert any("scripts/nist_report.py" in note for note in report.notes)
+
+    table2 = text.split("## Table 2")[1].split("## Table 3")[0]
+    ms_rows = [line for line in table2.splitlines() if line.startswith("| Misra1a ")]
+    assert len(ms_rows) == 2
+    for line in ms_rows:
+        assert re.search(r"\| \d+/20 \| \d+/20 \|$", line), line
 
 
 def test_build_report_rejects_unknown_problem_names() -> None:
