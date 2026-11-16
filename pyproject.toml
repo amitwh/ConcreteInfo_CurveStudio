@@ -57,6 +57,17 @@ source_modules = ["curvestudio"]
 forbidden_modules = ["PySide6", "fastapi", "sqlalchemy", "starlette", "uvicorn"]
 allow_indirect_imports = true
 
+[[tool.importlinter.contracts]]
+name = "Nothing imports the command-line layer"
+type = "forbidden"
+source_modules = [
+    "curvestudio.data",
+    "curvestudio.fitting",
+    "curvestudio.models",
+    "curvestudio.testing",
+]
+forbidden_modules = ["curvestudio.cli"]
+
 
 [[tool.mypy.overrides]]
 module = ["pandas", "pandas.*", "openpyxl", "openpyxl.*", "sympy", "sympy.*", "scipy", "scipy.*"]

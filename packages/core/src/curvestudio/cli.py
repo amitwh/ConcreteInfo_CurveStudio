@@ -225,7 +225,7 @@ def _run_fit(args: argparse.Namespace) -> int:
             if value is not None
         ]
         if rejected:
-            return _fail(f"{', '.join(rejected)} only apply with --model, not with --poly")
+            return _fail(f"{', '.join(rejected)} can only be used with --model, not with --poly")
         try:
             result = fit_polynomial(xy, args.poly)
         except ValueError as exc:
