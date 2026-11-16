@@ -37,9 +37,11 @@ dual_annealing               ``maxfun``       -              -              -
 .. [4] Relative to the starting gradient: ``gtol * max(1, |g0|_inf)``, see
    :func:`minimize_sse`.
 
-Success follows SciPy's ``success`` flag. For ``dual_annealing`` SciPy sets it only when
-the annealing finished normally; hitting the evaluation budget is reported as not
-converged with SciPy's message.
+Success follows SciPy's ``success`` flag. For ``dual_annealing`` SciPy clears it when the
+evaluation budget (``maxfun``, mapped from ``max_nfev``) is exhausted or a local search
+fails, so those runs are reported as not converged with SciPy's message. Exhausting the
+annealing-step limit (``maxiter``, left at SciPy's default) keeps ``success=True``: the
+returned point still comes from a converged local search, and the message says so.
 """
 
 from collections.abc import Callable
