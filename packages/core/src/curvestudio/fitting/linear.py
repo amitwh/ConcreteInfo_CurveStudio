@@ -96,7 +96,8 @@ def fit_polynomial(
     raised: ``INVALID_INPUT`` when there are no more active points than parameters, and
     ``FAILED`` when the design is rank deficient (for example fewer distinct x values than
     ``degree + 1``) or overflows. Warnings: ``HIGH_ORDER_POLYNOMIAL`` for ``degree >= 6``
-    and ``ILL_CONDITIONED`` when the scaled design's condition number exceeds 1e12.
+    and ``ILL_CONDITIONED`` when the condition number of the column-scaled or of the unscaled
+    weighted design exceeds 1e12.
 
     Raises:
         ValueError: ``degree`` is not an int >= 0 (>= 1 through the origin) or

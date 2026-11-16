@@ -27,7 +27,7 @@ def make_xy(
 
 
 def test_simple_linear_hand_computed() -> None:
-    # x = 1..4, y = 2, 4, 5, 8: slope 1.9, intercept 0, sse 0.4 -> hand-checked values.
+    # x = 1..4, y = 2, 4, 5, 8: slope 1.9, intercept 0, sse 0.7 -> hand-checked values.
     res = fit_polynomial(make_xy([1, 2, 3, 4], [2, 4, 5, 8]), 1)
     assert res.status is FitStatus.CONVERGED
     assert res.model_id == "poly1"
