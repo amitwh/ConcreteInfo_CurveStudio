@@ -230,3 +230,106 @@ def test_dataset_is_frozen_and_equality_is_value_based() -> None:
     assert a.with_op(ExcludeRows((0,))) != a
     with pytest.raises(AttributeError):
         a.name = "other"  # type: ignore[misc]
+
+
+def test_mutating_original_does_not_affect_dataset() -> None:
+    ds = make(x=[1.0, 2.0], y=[3.0, 4.0])
+    fingerprint = ds.fingerprint()
+    before = ds.xy("x", "y")
+    leaked = ds.original
+    leaked.iloc[0, 0] = 77.0
+    leaked.loc[:, "y"] = -1.0
+    assert ds.xy("x", "y").x.tolist() == [1.0, 2.0]
+    assert ds.xy("x", "y").fingerprint == before.fingerprint
+    assert ds.fingerprint() == fingerprint
+    assert ds.original.loc[0, "x"] == 1.0
+
+
+def test_mutating_table_does_not_affect_dataset() -> None:
+    ds = make(x=[1.0, 2.0], y=[3.0, 4.0]).with_op(TransformColumn("x", "t", "square"))
+    fingerprint = ds.fingerprint()
+    table = ds.table()
+    table.iloc[0, 0] = 77.0
+    table.loc[:, "t"] = 0.0
+    table["extra"] = 1
+    assert ds.xy("x", "t").x.tolist() == [1.0, 2.0]
+    assert ds.xy("x", "t").y.tolist() == [1.0, 4.0]
+    assert list(ds.table().columns) == ["x", "y", "t"]
+    assert ds.fingerprint() == fingerprint
+
+
+def test_derived_dataset_unaffected_by_parent_original_mutation() -> None:
+    ds = make(x=[1.0, 2.0], y=[3.0, 4.0])
+    child = ds.with_op(ExcludeRows((0,)))
+    leaked = ds.original
+    leaked.iloc[1, 0] = 55.0
+    assert child.xy("x", "y").x.tolist() == [2.0]
+
+
+def test_constructor_accepts_positional_ops_and_notes() -> None:
+    ds = Dataset("n", pd.DataFrame({"x": [1.0]}), (ExcludeRows(()),), ("note",))
+    assert ds.ops == (ExcludeRows(()),)
+    assert ds.import_notes == ("note",)
+
+
+def test_unknown_transform_function() -> None:
+    with pytest.raises(DataError) as info:
+        make(x=[1.0]).with_op(TransformColumn("x", "t", "cube"))  # type: ignore[arg-type]
+    assert info.value.code == "UNKNOWN_FUNCTION"
+
+
+def test_constructor_rejects_duplicate_column_names() -> None:
+    frame = pd.DataFrame([[1.0, 2.0]], columns=["x", "x"])
+    with pytest.raises(DataError) as info:
+        Dataset("t", frame)
+    assert info.value.code == "DUPLICATE_COLUMN"
+
+
+@pytest.mark.parametrize(
+    "column",
+    [
+        pd.to_datetime(["2026-01-01", "2026-01-02"]),
+        pd.to_timedelta(["1 day", "2 days"]),
+    ],
+)
+def test_xy_rejects_datetime_and_timedelta_columns(column: pd.Index) -> None:
+    ds = Dataset("t", pd.DataFrame({"x": [1.0, 2.0], "y": column}))
+    with pytest.raises(DataError) as info:
+        ds.xy("x", "y")
+    assert info.value.code == "NON_NUMERIC"
+
+
+def test_transform_onto_existing_column_is_rejected() -> None:
+    ds = make(x=[1.0, 2.0], y=[3.0, 4.0])
+    for target in ("y", "x"):
+        with pytest.raises(DataError) as info:
+            ds.with_op(TransformColumn("x", target, "square"))
+        assert info.value.code == "DUPLICATE_COLUMN"
+
+
+def test_fingerprint_canonicalises_nan_but_keeps_signed_zero() -> None:
+    inf = float("inf")
+    other_nan = inf - inf
+    assert np.float64(other_nan).tobytes() != np.float64(np.nan).tobytes()  # distinct bit patterns
+    a = make(x=[1.0, math.nan])
+    b = make(x=[1.0, other_nan])
+    assert a.fingerprint() == b.fingerprint()
+    assert make(x=[0.0]).fingerprint() != make(x=[-0.0]).fingerprint()
+
+
+def test_exclude_rows_duplicates_are_idempotent() -> None:
+    ds = make(x=[1.0, 2.0, 3.0]).with_op(ExcludeRows((1, 1, 1)))
+    assert ds.active_mask().tolist() == [True, False, True]
+
+
+def test_exclude_rows_empty_tuple_is_a_noop_on_the_mask() -> None:
+    ds = make(x=[1.0, 2.0]).with_op(ExcludeRows(()))
+    assert ds.active_mask().all()
+    assert ds.xy("x", "x").x.tolist() == [1.0, 2.0]
+
+
+def test_exclude_rows_negative_index_is_out_of_range() -> None:
+    with pytest.raises(DataError) as info:
+        make(x=[1.0, 2.0]).with_op(ExcludeRows((-1,)))
+    assert info.value.code == "ROW_OUT_OF_RANGE"
+    assert info.value.rows == (-1,)

@@ -1,7 +1,7 @@
 """Immutable dataset with a reversible log of operations."""
 
 import hashlib
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
@@ -27,22 +27,50 @@ class XY:
     fingerprint: str
 
 
-@dataclass(frozen=True, eq=False)
+@dataclass(frozen=True, eq=False, init=False)
 class Dataset:
     """A table of observations plus the ordered operations applied to it.
 
-    ``original`` is never modified. Excluded rows stay in :meth:`table`; they are
-    only masked out by :meth:`active_mask` and therefore by :meth:`xy`.
+    The original table is held privately and never modified; :attr:`original`
+    returns a fresh copy, so nothing done to it can affect this dataset. Excluded
+    rows stay in :meth:`table`; they are only masked out by :meth:`active_mask`
+    and therefore by :meth:`xy`.
     """
 
     name: str
-    original: pd.DataFrame
-    ops: tuple[Operation, ...] = ()
-    import_notes: tuple[str, ...] = field(default=())
+    ops: tuple[Operation, ...]
+    import_notes: tuple[str, ...]
+    _original: pd.DataFrame = field(repr=False)
 
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "original", self.original.copy(deep=True))
+    def __init__(
+        self,
+        name: str,
+        original: pd.DataFrame,
+        ops: tuple[Operation, ...] = (),
+        import_notes: tuple[str, ...] = (),
+    ) -> None:
+        duplicated = sorted({str(c) for c in original.columns[original.columns.duplicated()]})
+        if duplicated:
+            raise DataError("DUPLICATE_COLUMN", f"Duplicate column names: {', '.join(duplicated)}")
+        object.__setattr__(self, "name", name)
+        object.__setattr__(self, "ops", tuple(ops))
+        object.__setattr__(self, "import_notes", tuple(import_notes))
+        object.__setattr__(self, "_original", original.copy(deep=True))
         self._materialise()  # reject an invalid operation list at construction
+
+    @property
+    def original(self) -> pd.DataFrame:
+        """A copy of the table as imported; mutating it does not affect the dataset."""
+        return self._original.copy(deep=True)
+
+    def _with_ops(self, ops: tuple[Operation, ...]) -> Dataset:
+        derived = object.__new__(Dataset)
+        object.__setattr__(derived, "name", self.name)
+        object.__setattr__(derived, "ops", ops)
+        object.__setattr__(derived, "import_notes", self.import_notes)
+        object.__setattr__(derived, "_original", self._original)  # never mutated, so shared
+        derived._materialise()
+        return derived
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Dataset):
@@ -51,14 +79,14 @@ class Dataset:
             self.name == other.name
             and self.ops == other.ops
             and self.import_notes == other.import_notes
-            and self.original.equals(other.original)
+            and self._original.equals(other._original)
         )
 
     __hash__ = None  # type: ignore[assignment]
 
     def table(self) -> pd.DataFrame:
         """The original table with all operations applied (excluded rows kept)."""
-        return self._materialise()[0]
+        return self._materialise()[0].copy(deep=True)
 
     def active_mask(self) -> BoolArray:
         """Boolean mask over the original rows; ``False`` where a row is excluded."""
@@ -66,24 +94,28 @@ class Dataset:
 
     def with_op(self, op: Operation) -> Dataset:
         """A new dataset with ``op`` appended. Raises :class:`DataError` if invalid."""
-        return replace(self, ops=(*self.ops, op))
+        return self._with_ops((*self.ops, op))
 
     def undo(self) -> Dataset:
         """A new dataset without the most recent operation."""
         if not self.ops:
             raise DataError("NOTHING_TO_UNDO", "There is no operation to undo")
-        return replace(self, ops=self.ops[:-1])
+        return self._with_ops(self.ops[:-1])
 
     def fingerprint(self) -> str:
         """SHA-256 hex digest of the original data (names, dtypes, exact values) and ops."""
         digest = hashlib.sha256()
-        frame = self.original
+        frame = self._original
         _feed(digest, f"{frame.shape[0]}x{frame.shape[1]}")
         for column in frame.columns:
             series = frame[column]
             _feed(digest, str(column))
             _feed(digest, str(series.dtype))
-            if series.dtype.kind in "biuf":
+            if series.dtype.kind == "f":
+                values = np.array(series.to_numpy(), copy=True)
+                values[np.isnan(values)] = np.nan  # one canonical NaN bit pattern
+                digest.update(np.ascontiguousarray(values).tobytes())
+            elif series.dtype.kind in "biu":
                 digest.update(np.ascontiguousarray(series.to_numpy()).tobytes())
             else:
                 for value in series.to_numpy(dtype=object):
@@ -141,7 +173,7 @@ class Dataset:
         return XY(x_arr, y_arr, w_arr, x, y, digest.hexdigest())
 
     def _materialise(self) -> tuple[pd.DataFrame, BoolArray]:
-        frame = self.original.copy(deep=True)
+        frame = self._original  # operations never mutate in place
         active = np.ones(len(frame), dtype=bool)
         for op in self.ops:
             frame, active = _apply(op, frame, active)
@@ -164,6 +196,8 @@ def _frozen(values: FloatArray) -> FloatArray:
 def _numeric_column(table: pd.DataFrame, name: str, active: BoolArray) -> FloatArray:
     """Column ``name`` as float64; non-numeric active cells raise ``NON_NUMERIC``."""
     series = table[name]
+    if series.dtype.kind in "Mm":
+        raise DataError("NON_NUMERIC", f"Column {name!r} holds dates or durations, not numbers")
     if series.dtype.kind in "iuf":
         return np.asarray(series.to_numpy(dtype=np.float64), dtype=np.float64)
     coerced = pd.to_numeric(series, errors="coerce")
@@ -197,6 +231,8 @@ def _apply(op: Operation, frame: pd.DataFrame, active: BoolArray) -> tuple[pd.Da
 def _transform(op: TransformColumn, frame: pd.DataFrame, active: BoolArray) -> pd.DataFrame:
     if op.source not in frame.columns:
         raise DataError("UNKNOWN_COLUMN", f"Column {op.source!r} does not exist")
+    if op.target in frame.columns:
+        raise DataError("DUPLICATE_COLUMN", f"Column {op.target!r} already exists")
     values = _numeric_column(frame, op.source, active)
     with np.errstate(all="ignore"):
         match op.func:
@@ -212,6 +248,8 @@ def _transform(op: TransformColumn, frame: pd.DataFrame, active: BoolArray) -> p
                 violation, result = np.zeros(len(values), dtype=bool), values * values
             case "affine":
                 violation, result = np.zeros(len(values), dtype=bool), op.scale * values + op.offset
+            case _:
+                raise DataError("UNKNOWN_FUNCTION", f"Unknown transform function {op.func!r}")
     bad = np.flatnonzero(violation & active)
     if bad.size:
         raise DataError(
