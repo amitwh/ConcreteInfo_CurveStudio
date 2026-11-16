@@ -15,6 +15,9 @@ dependencies = [
     "openpyxl>=3.1.5",
 ]
 
+[project.scripts]
+curvestudio = "curvestudio.cli:main"
+
 [build-system]
 requires = ["hatchling>=1.33.0"]
 build-backend = "hatchling.build"
