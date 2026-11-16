@@ -28,7 +28,7 @@ Useful variations:
 ```bash
 uv run curvestudio fit examples/decay.csv --x x --y y --poly 2            # polynomial least squares
 uv run curvestudio fit examples/decay.csv --x x --y y --model exp_decay_offset \
-    --weights w --method trf --loss huber --starts 5 --seed 7 --json out.json
+    --method trf --loss huber --starts 5 --seed 7 --json out.json
 uv run curvestudio models                                                 # list model ids, names, categories
 uv run curvestudio fit --help                                             # full option reference
 ```
@@ -38,7 +38,7 @@ uv run curvestudio fit --help                                             # full
 | Code | Meaning                                                                       |
 |------|-------------------------------------------------------------------------------|
 | 0    | the fit converged                                                             |
-| 2    | invalid input: unreadable file, missing column, unknown model, or validation errors |
+| 2    | invalid input: unreadable file, missing column, unknown model, validation errors, or a fit that cannot run (too few observations for the parameters, or a model that does not apply) |
 | 3    | the fit ran but did not converge or failed                                    |
 
 ## Row numbers in messages
