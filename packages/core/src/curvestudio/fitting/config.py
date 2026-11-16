@@ -20,6 +20,10 @@ class FitConfig:
     :func:`curvestudio.fitting.nonlinear.generate_starts`). ``max_nfev`` caps function
     evaluations per start (``None`` = SciPy's default); the tolerances go to
     ``scipy.optimize.least_squares`` unchanged.
+
+    ``ftol`` defaults to 1e-14, not 1e-10: it bounds the *relative SSE* change, and in an
+    ill-conditioned valley the parameters are only resolved to about the square root of
+    it, so 1e-10 let fits report ``CONVERGED`` with ~5 correct digits (NIST MGH09).
     """
 
     method: str = "auto"
@@ -29,7 +33,7 @@ class FitConfig:
     n_starts: int = 1
     seed: int = 0
     max_nfev: int | None = None
-    ftol: float = 1e-10
+    ftol: float = 1e-14
     xtol: float = 1e-10
     gtol: float = 1e-10
     confidence_level: float = 0.95

@@ -628,3 +628,32 @@ def test_final_evaluation_error_is_failed_not_raised(monkeypatch: pytest.MonkeyP
     assert "cannot evaluate at x = 99" in res.termination_reason
     assert res.parameters == ()
     FitResult_round_trip(res)
+
+
+RATIONAL = ModelSpec(
+    id="rational_2_2",
+    name="Rational (ill-conditioned)",
+    category="test",
+    expression="b1*(x**2 + x*b2) / (x**2 + x*b3 + b4)",
+    parameters=(Parameter("b1"), Parameter("b2"), Parameter("b3"), Parameter("b4")),
+    initial_guess=lambda x, y: {"b1": 0.25, "b2": 0.39, "b3": 0.415, "b4": 0.39},
+)
+
+
+def test_default_tolerances_resolve_parameters_of_an_ill_conditioned_fit() -> None:
+    # Kowalik-Osborne enzyme data (the NIST MGH09 problem): the SSE valley is flat and
+    # curved, so an ftol of 1e-10 stops once the SSE has settled to ~10 digits while b2..b4
+    # are only right to ~5. The default must keep going until the parameters match a
+    # reference run with tolerances at the floor of double precision.
+    x = np.array([4.0, 2.0, 1.0, 0.5, 0.25, 0.167, 0.125, 0.1, 0.0833, 0.0714, 0.0625])
+    y = [0.1957, 0.1947, 0.1735, 0.16, 0.0844, 0.0627, 0.0456, 0.0342, 0.0323, 0.0235, 0.0246]
+    data = make_xy(x, y)
+    tight = FitConfig(ftol=1e-15, xtol=1e-15, gtol=1e-15)
+    reference = {p.name: p.value for p in fit(RATIONAL, data, tight).parameters}
+
+    res = fit(RATIONAL, data)
+
+    assert res.status is FitStatus.CONVERGED
+    for p in res.parameters:
+        assert p.value == pytest.approx(reference[p.name], rel=1e-7), p.name
+

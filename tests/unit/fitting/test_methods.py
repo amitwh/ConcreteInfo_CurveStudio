@@ -62,7 +62,7 @@ def test_fit_config_defaults_match_the_contract() -> None:
     cfg = FitConfig()
     assert (cfg.method, cfg.loss, cfg.n_starts, cfg.seed) == ("auto", "linear", 1, 0)
     assert cfg.initial is None and cfg.bounds is None and cfg.max_nfev is None
-    assert (cfg.ftol, cfg.xtol, cfg.gtol, cfg.confidence_level) == (1e-10, 1e-10, 1e-10, 0.95)
+    assert (cfg.ftol, cfg.xtol, cfg.gtol, cfg.confidence_level) == (1e-14, 1e-10, 1e-10, 0.95)
 
 
 @pytest.mark.parametrize(
