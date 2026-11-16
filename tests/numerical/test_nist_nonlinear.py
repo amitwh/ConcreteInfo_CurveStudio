@@ -14,35 +14,30 @@ the fast subset CI runs; the full sweep is marked ``slow``.
 """
 
 import re
-import warnings
 from typing import Any
 
 import numpy as np
 import pytest
+from nist_harness import (
+    CONVERGED_MIN_PARAM_LRE,
+    CONVERGED_MIN_SSE_LRE,
+    LOWER_MIN_PARAM_LRE,
+    MIRRORED_CASES,
+    STARTS,
+    mirror_reference,
+    multistart_config,
+    param_lres,
+    run_fit,
+    sse_lre,
+    start_values,
+)
 from nist_models import NIST_EXPRESSIONS, NONLINEAR_DIR, NONLINEAR_NAMES, model_spec, problem
 
-from curvestudio.data import XY
-from curvestudio.fitting import FitConfig, FitResult, FitStatus, fit
+from curvestudio.fitting import FitConfig, FitResult, FitStatus
 from curvestudio.testing.model_contract import check_model_contract
-from curvestudio.testing.nist import NistProblem, lre
+from curvestudio.testing.nist import NistProblem
 
 FAST = frozenset({"Misra1a", "DanWood"})
-STARTS = ("start1", "start2")
-
-CONVERGED_MIN_PARAM_LRE = 5.0
-CONVERGED_MIN_SSE_LRE = 7.0
-LOWER_MIN_PARAM_LRE = 6.0
-
-MULTISTART_N = 20
-MULTISTART_SEED = 0
-MULTISTART_BOUND_FACTOR = 1000.0
-
-# Eckerle4, (b1/b2) * exp(-0.5*((x-b3)/b2)**2), is invariant under (b1, b2) -> (-b1, -b2)
-# with b3 unchanged. With seed 0 the 20-start run from Start 1 lands on that mirror minimum
-# (b1, b2 = -1.5544, -4.0888, b3 = 451.54): it fits the data exactly as well, so the data
-# cannot tell the two apart and that case is checked against either sign.
-MIRRORED_CASES = frozenset({("Eckerle4", "start1")})
-MIRROR_NEGATED = ("b1", "b2")
 
 
 def _slow_unless_fast(name: str) -> list[pytest.MarkDecorator]:
@@ -67,45 +62,11 @@ def _multistart_cases() -> list[Any]:
     return out
 
 
-def _xy(p: NistProblem) -> XY:
-    return XY(
-        x=np.array(p.x),
-        y=np.array(p.y),
-        weights=None,
-        x_name="x",
-        y_name="y",
-        fingerprint=f"nist-{p.name}",
-    )
-
-
-def _start(p: NistProblem, start: str) -> dict[str, float]:
-    return dict(p.start1 if start == "start1" else p.start2)
-
-
-def _fit(name: str, config: FitConfig) -> FitResult:
-    with warnings.catch_warnings():
-        warnings.simplefilter("error")
-        return fit(model_spec(name), _xy(problem(name)), config)
-
-
-def _param_lres(
-    p: NistProblem, result: FitResult, reference: dict[str, float] | None = None
-) -> dict[str, float]:
-    """LRE of each parameter against ``reference`` (default: the certified values)."""
-    values = {est.name: est.value for est in result.parameters}
-    want = p.certified if reference is None else reference
-    return {k: lre(values[k], c) if k in values else 0.0 for k, c in want.items()}
-
-
-def _sse_lre(p: NistProblem, result: FitResult) -> float:
-    return 0.0 if result.stats is None else lre(result.stats.sse, p.certified_sse)
-
-
 def _summary(p: NistProblem, result: FitResult) -> str:
-    lres = ", ".join(f"{k}={v:.2f}" for k, v in _param_lres(p, result).items())
+    lres = ", ".join(f"{k}={v:.2f}" for k, v in param_lres(p, result).items())
     return (
         f"{p.name}: status={result.status.value} param LRE [{lres}] "
-        f"SSE LRE {_sse_lre(p, result):.2f}; {result.termination_reason}; {result.warnings}"
+        f"SSE LRE {sse_lre(p, result):.2f}; {result.termination_reason}; {result.warnings}"
     )
 
 
@@ -114,16 +75,17 @@ def _assert_rule_1(p: NistProblem, result: FitResult) -> None:
     if result.status is not FitStatus.CONVERGED:
         return
     assert result.stats is not None, _summary(p, result)
-    assert min(_param_lres(p, result).values()) >= CONVERGED_MIN_PARAM_LRE, _summary(p, result)
-    assert _sse_lre(p, result) >= CONVERGED_MIN_SSE_LRE, _summary(p, result)
+    assert min(param_lres(p, result).values()) >= CONVERGED_MIN_PARAM_LRE, _summary(p, result)
+    assert sse_lre(p, result) >= CONVERGED_MIN_SSE_LRE, _summary(p, result)
 
 
 def _assert_certified_or_mirror(p: NistProblem, result: FitResult) -> None:
     """For a sign-symmetric problem: SSE LRE >= 7 and the parameters match the certified
     values or their mirror (``MIRROR_NEGATED`` negated) to the rule-1 LRE."""
-    assert _sse_lre(p, result) >= CONVERGED_MIN_SSE_LRE, _summary(p, result)
-    mirror = {k: -c if k in MIRROR_NEGATED else c for k, c in p.certified.items()}
-    best = max(min(_param_lres(p, result, ref).values()) for ref in (p.certified, mirror))
+    assert sse_lre(p, result) >= CONVERGED_MIN_SSE_LRE, _summary(p, result)
+    best = max(
+        min(param_lres(p, result, ref).values()) for ref in (p.certified, mirror_reference(p))
+    )
     assert best >= CONVERGED_MIN_PARAM_LRE, _summary(p, result)
 
 
@@ -167,28 +129,20 @@ def test_model_jacobian_matches_finite_differences_at_certified_values(name: str
 @pytest.mark.parametrize(("name", "start"), _cases(NONLINEAR_NAMES))
 def test_nist_start(name: str, start: str) -> None:
     p = problem(name)
-    result = _fit(name, FitConfig(initial=_start(p, start)))
+    result = run_fit(name, FitConfig(initial=start_values(p, start)))
     print(_summary(p, result))
 
     _assert_honest_status(result)
     _assert_rule_1(p, result)
     if p.difficulty == "lower":
         assert result.status is FitStatus.CONVERGED, _summary(p, result)
-        assert min(_param_lres(p, result).values()) >= LOWER_MIN_PARAM_LRE, _summary(p, result)
+        assert min(param_lres(p, result).values()) >= LOWER_MIN_PARAM_LRE, _summary(p, result)
 
 
 @pytest.mark.parametrize(("name", "start"), _multistart_cases())
 def test_nist_multistart_within_wide_bounds(name: str, start: str) -> None:
     p = problem(name)
-    base = _start(p, start)
-    bounds = {
-        k: (-MULTISTART_BOUND_FACTOR * abs(v), MULTISTART_BOUND_FACTOR * abs(v))
-        if v != 0.0
-        else (-MULTISTART_BOUND_FACTOR, MULTISTART_BOUND_FACTOR)
-        for k, v in base.items()
-    }
-    config = FitConfig(initial=base, bounds=bounds, n_starts=MULTISTART_N, seed=MULTISTART_SEED)
-    result = _fit(name, config)
+    result = run_fit(name, multistart_config(p, start))
     print(_summary(p, result))
 
     _assert_honest_status(result)
