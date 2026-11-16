@@ -57,3 +57,7 @@ source_modules = ["curvestudio"]
 forbidden_modules = ["PySide6", "fastapi", "sqlalchemy", "starlette", "uvicorn"]
 allow_indirect_imports = true
 
+
+[[tool.mypy.overrides]]
+module = ["pandas", "pandas.*"]
+ignore_missing_imports = true
