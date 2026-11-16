@@ -193,22 +193,34 @@ def _frozen(values: FloatArray) -> FloatArray:
     return out
 
 
+def coerce_numeric(series: pd.Series) -> tuple[FloatArray, BoolArray]:
+    """``series`` as float64 plus a mask of non-null cells that are not numbers.
+
+    Unparseable cells become NaN in the values and ``True`` in the mask. Never raises.
+    """
+    if series.dtype.kind in "iuf":
+        values = np.asarray(series.to_numpy(dtype=np.float64), dtype=np.float64)
+        return values, np.zeros(len(series), dtype=bool)
+    coerced = pd.to_numeric(series, errors="coerce")
+    unparseable = coerced.isna().to_numpy() & ~series.isna().to_numpy()
+    values = np.asarray(coerced.to_numpy(dtype=np.float64, na_value=np.nan), dtype=np.float64)
+    return values, unparseable
+
+
 def _numeric_column(table: pd.DataFrame, name: str, active: BoolArray) -> FloatArray:
     """Column ``name`` as float64; non-numeric active cells raise ``NON_NUMERIC``."""
     series = table[name]
     if series.dtype.kind in "Mm":
         raise DataError("NON_NUMERIC", f"Column {name!r} holds dates or durations, not numbers")
-    if series.dtype.kind in "iuf":
-        return np.asarray(series.to_numpy(dtype=np.float64), dtype=np.float64)
-    coerced = pd.to_numeric(series, errors="coerce")
-    unparseable = coerced.isna().to_numpy() & ~series.isna().to_numpy() & active
-    if unparseable.any():
+    values, unparseable = coerce_numeric(series)
+    bad = np.flatnonzero(unparseable & active)
+    if bad.size:
         raise DataError(
             "NON_NUMERIC",
             f"Column {name!r} contains non-numeric values",
-            tuple(int(i) for i in np.flatnonzero(unparseable)),
+            tuple(int(i) for i in bad),
         )
-    return np.asarray(coerced.to_numpy(dtype=np.float64, na_value=np.nan), dtype=np.float64)
+    return values
 
 
 def _apply(op: Operation, frame: pd.DataFrame, active: BoolArray) -> tuple[pd.DataFrame, BoolArray]:

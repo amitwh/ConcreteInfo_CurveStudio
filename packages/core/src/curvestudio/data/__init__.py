@@ -3,13 +3,16 @@
 from curvestudio.data.dataset import XY, Dataset
 from curvestudio.data.errors import DataError
 from curvestudio.data.operations import ExcludeRows, Operation, RenameColumn, TransformColumn
+from curvestudio.data.validation import Issue, validate
 
 __all__ = [
     "XY",
     "DataError",
     "Dataset",
     "ExcludeRows",
+    "Issue",
     "Operation",
     "RenameColumn",
     "TransformColumn",
+    "validate",
 ]

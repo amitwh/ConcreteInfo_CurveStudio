@@ -26,8 +26,10 @@ def find_forbidden_imports(source: str) -> list[str]:
 
 
 def test_core_has_no_gui_or_web_imports() -> None:
+    files = sorted(CORE_SRC.rglob("*.py"))
+    assert files, f"no python files found under {CORE_SRC}; the guard would be vacuous"
     offenders: list[str] = []
-    for path in sorted(CORE_SRC.rglob("*.py")):
+    for path in files:
         for module in find_forbidden_imports(path.read_text(encoding="utf-8")):
             offenders.append(f"{path.relative_to(CORE_SRC)}: {module}")
     assert not offenders, f"forbidden imports in core: {offenders}"
