@@ -43,7 +43,6 @@ from typing import Any, Literal
 import numpy as np
 import pandas as pd
 from openpyxl import load_workbook
-from openpyxl.utils.exceptions import InvalidFileException
 
 from curvestudio.data.dataset import Dataset
 from curvestudio.data.errors import DataError
@@ -108,14 +107,20 @@ def read_dataset(
         )
     if not path.is_file():
         raise DataError("FILE_NOT_FOUND", f"File not found: {path}")
-    size = path.stat().st_size
+    try:
+        size = path.stat().st_size
+    except OSError as exc:
+        raise _unreadable(path, exc) from exc
     if size > limits.max_bytes:
         raise _too_large(size, limits)
     if kind == "xlsx":
         return _read_xlsx(path, sheet, limits)
 
-    with path.open("rb") as handle:
-        raw = handle.read(limits.max_bytes + 1)
+    try:
+        with path.open("rb") as handle:
+            raw = handle.read(limits.max_bytes + 1)
+    except OSError as exc:
+        raise _unreadable(path, exc) from exc
     if len(raw) > limits.max_bytes:
         raise _too_large(len(raw), limits)
     notes: list[str] = []
@@ -145,6 +150,10 @@ def _too_large(size: int, limits: ImportLimits) -> DataError:
     return DataError(
         "FILE_TOO_LARGE", f"Input is {size:,} bytes; the limit is {limits.max_bytes:,} bytes"
     )
+
+
+def _unreadable(path: Path, exc: OSError) -> DataError:
+    return DataError("FILE_UNREADABLE", f"Cannot read {path}: {exc}")
 
 
 def _decode(raw: bytes, notes: list[str]) -> str:
@@ -227,8 +236,14 @@ def _read_xlsx(path: Path, sheet: str | int, limits: ImportLimits) -> Dataset:
                 raw = _collect(worksheet.iter_rows(values_only=True), limits)
             finally:
                 workbook.close()
-    except (zipfile.BadZipFile, InvalidFileException, KeyError, ValueError) as exc:
-        raise DataError("PARSE_ERROR", f"Cannot read workbook: {exc}") from exc
+    except DataError:
+        raise  # UNKNOWN_SHEET / FILE_TOO_LARGE reach the caller unchanged
+    except OSError as exc:
+        raise DataError("FILE_UNREADABLE", f"Cannot read {path}: {exc}") from exc
+    except Exception as exc:  # any malformed part: bad deflate, broken XML, stray types
+        raise DataError(
+            "PARSE_ERROR", f"Cannot read workbook: {type(exc).__name__}: {exc}"
+        ) from exc
     return _from_rows(path.stem, raw, limits, notes)
 
 

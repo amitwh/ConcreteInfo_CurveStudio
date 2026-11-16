@@ -1,9 +1,12 @@
 """Tests for the file and clipboard importers."""
 
 import datetime
+import io
 import json
 import math
+import sys
 import zipfile
+from collections.abc import Callable
 from pathlib import Path
 
 import pandas as pd
@@ -390,6 +393,76 @@ def test_xlsx_that_is_not_a_zip(tmp_path: Path) -> None:
     with pytest.raises(DataError) as excinfo:
         read_dataset(path)
     assert code_of(excinfo) == "PARSE_ERROR"
+
+
+def _rewrite_member(path: Path, name: str, transform: Callable[[bytes], bytes]) -> None:
+    """Rebuild the workbook zip with ``transform`` applied to member ``name``."""
+    with zipfile.ZipFile(path) as archive:
+        members = [(info, archive.read(info.filename)) for info in archive.infolist()]
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as archive:
+        for info, data in members:
+            archive.writestr(info, transform(data) if info.filename == name else data)
+
+
+def _corrupt_member_payload(path: Path, name: str) -> None:
+    """Flip bytes inside the deflate stream of member ``name`` (zip directory intact)."""
+    raw = path.read_bytes()
+    with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+        info = archive.getinfo(name)
+        start = info.header_offset
+    name_len = int.from_bytes(raw[start + 26 : start + 28], "little")
+    extra_len = int.from_bytes(raw[start + 28 : start + 30], "little")
+    data_start = start + 30 + name_len + extra_len
+    corrupted = bytearray(raw)
+    for position in range(data_start + 10, min(data_start + 60, data_start + info.compress_size)):
+        corrupted[position] ^= 0xFF
+    path.write_bytes(bytes(corrupted))
+
+
+def test_xlsx_with_truncated_sheet_xml_is_a_parse_error(sample_xlsx: Path) -> None:
+    # Valid zip, malformed XML: the parser sees a half-finished worksheet.
+    _rewrite_member(sample_xlsx, "xl/worksheets/sheet1.xml", lambda data: data[: len(data) // 2])
+    with pytest.raises(DataError) as excinfo:
+        read_dataset(sample_xlsx)
+    assert code_of(excinfo) == "PARSE_ERROR"
+
+
+def test_xlsx_with_a_corrupt_deflate_stream_is_a_parse_error(sample_xlsx: Path) -> None:
+    # Replayed 16/11/2026: this escaped as zlib.error "Error -3 while decompressing
+    # data" and reached the user as a traceback.
+    _corrupt_member_payload(sample_xlsx, "xl/worksheets/sheet1.xml")
+    with pytest.raises(DataError) as excinfo:
+        read_dataset(sample_xlsx)
+    assert code_of(excinfo) == "PARSE_ERROR"
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="chmod is not a permission barrier on Windows")
+def test_unreadable_file_permission_denied_is_file_unreadable(
+    tmp_path: Path, sample_xlsx: Path
+) -> None:
+    path = tmp_path / "locked.xlsx"
+    path.write_bytes(sample_xlsx.read_bytes())
+    path.chmod(0o000)
+    try:
+        with pytest.raises(DataError) as excinfo:
+            read_dataset(path)
+        assert code_of(excinfo) == "FILE_UNREADABLE"
+        assert "Permission" in str(excinfo.value) or "denied" in str(excinfo.value)
+    finally:
+        path.chmod(0o644)  # let tmp_path cleanup remove it
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="chmod is not a permission barrier on Windows")
+def test_unreadable_csv_permission_denied_is_file_unreadable(tmp_path: Path) -> None:
+    path = tmp_path / "locked.csv"
+    path.write_text("x,y\n1,2\n")
+    path.chmod(0o000)
+    try:
+        with pytest.raises(DataError) as excinfo:
+            read_dataset(path)
+        assert code_of(excinfo) == "FILE_UNREADABLE"
+    finally:
+        path.chmod(0o644)
 
 
 def test_xls_is_unsupported_even_if_the_file_is_missing(tmp_path: Path) -> None:

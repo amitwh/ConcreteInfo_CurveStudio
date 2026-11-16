@@ -5,12 +5,15 @@ contract under test: 0 converged, 2 invalid input, 3 the fit ran but did not con
 """
 
 import importlib.metadata
+import io
 import re
 import subprocess
 import sys
+import zipfile
 from pathlib import Path
 
 import pytest
+from openpyxl import Workbook
 
 from curvestudio.cli import main
 from curvestudio.fitting import FitResult, FitStatus
@@ -231,3 +234,95 @@ def test_python_dash_m_smoke() -> None:
     )
     assert proc.returncode == 0
     assert "exp_decay_offset" in proc.stdout
+
+
+# --- broken input files reach the user as messages, never tracebacks ---------------------
+
+
+def _make_xlsx(path: Path) -> None:
+    workbook = Workbook()
+    sheet = workbook.active
+    assert sheet is not None
+    sheet.append(["x", "y"])
+    sheet.append([1.0, 2.1])
+    sheet.append([2.0, 3.9])
+    workbook.save(path)
+
+
+def _truncate_sheet_xml(path: Path) -> None:
+    with zipfile.ZipFile(path) as archive:
+        members = [(info, archive.read(info.filename)) for info in archive.infolist()]
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as archive:
+        for info, data in members:
+            cut = data[: len(data) // 2] if info.filename.endswith("sheet1.xml") else data
+            archive.writestr(info, cut)
+
+
+def _corrupt_sheet_deflate(path: Path) -> None:
+    raw = path.read_bytes()
+    with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+        info = next(i for i in archive.infolist() if i.filename.endswith("sheet1.xml"))
+        start = info.header_offset
+    name_len = int.from_bytes(raw[start + 26 : start + 28], "little")
+    extra_len = int.from_bytes(raw[start + 28 : start + 30], "little")
+    data_start = start + 30 + name_len + extra_len
+    corrupted = bytearray(raw)
+    for position in range(data_start + 10, min(data_start + 60, data_start + info.compress_size)):
+        corrupted[position] ^= 0xFF
+    path.write_bytes(bytes(corrupted))
+
+
+def _fit_in_process(path: Path) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "curvestudio.cli",
+            "fit",
+            str(path),
+            "--x",
+            "x",
+            "--y",
+            "y",
+            "--poly",
+            "1",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=REPO,
+    )
+
+
+def test_cli_truncated_sheet_xml_exits_2_without_traceback(tmp_path: Path) -> None:
+    path = tmp_path / "truncated.xlsx"
+    _make_xlsx(path)
+    _truncate_sheet_xml(path)
+    proc = _fit_in_process(path)
+    assert proc.returncode == 2
+    assert "PARSE_ERROR" in proc.stderr
+    assert "Traceback" not in proc.stderr
+
+
+def test_cli_corrupt_deflate_stream_exits_2_without_traceback(tmp_path: Path) -> None:
+    path = tmp_path / "corrupt.xlsx"
+    _make_xlsx(path)
+    _corrupt_sheet_deflate(path)
+    proc = _fit_in_process(path)
+    assert proc.returncode == 2
+    assert "PARSE_ERROR" in proc.stderr
+    assert "Traceback" not in proc.stderr
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="chmod is not a permission barrier on Windows")
+def test_cli_permission_denied_exits_2_without_traceback(tmp_path: Path) -> None:
+    path = tmp_path / "locked.xlsx"
+    _make_xlsx(path)
+    path.chmod(0o000)
+    try:
+        proc = _fit_in_process(path)
+    finally:
+        path.chmod(0o644)
+    assert proc.returncode == 2
+    assert "FILE_UNREADABLE" in proc.stderr
+    assert "Traceback" not in proc.stderr
