@@ -38,7 +38,7 @@ The scientific engine in `packages/core` never imports Qt, FastAPI or React, and
 
 | Phase | Deliverable | Status |
 |---|---|---|
-| 0 | Foundation: workspace, CI, licence, community files | In progress |
+| 0 | Foundation: workspace, CI, licence, community files | Done |
 | 1 | Data: import, validation, reversible cleaning | Planned |
 | 2 | Fitting core: linear, polynomial, nonlinear, NIST validation, CLI | Planned |
 | 3 | Statistics and diagnostics | Planned |
