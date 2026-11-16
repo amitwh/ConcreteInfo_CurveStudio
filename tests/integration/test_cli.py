@@ -244,6 +244,31 @@ def test_poly_rejects_model_only_options(capsys: pytest.CaptureFixture[str]) -> 
     assert "--method" in captured.err
 
 
+@pytest.mark.parametrize("value", ["0", "-1", "1001", "1000000000"])
+def test_starts_out_of_bounds_exits_2(value: str, capsys: pytest.CaptureFixture[str]) -> None:
+    # --starts allocates one start vector per restart; a billion used to reach
+    # generate_starts and die with a MemoryError traceback.
+    code = main(
+        ["fit", str(DECAY), "--x", "x", "--y", "y", "--model", "exp_growth", "--starts", value]
+    )
+    captured = capsys.readouterr()
+    assert code == 2
+    assert "--starts" in captured.err
+    assert "between 1 and 1000" in captured.err
+    assert "Traceback" not in captured.err
+
+
+@pytest.mark.parametrize("value", ["0", "-3", "11", "50"])
+def test_poly_degree_out_of_bounds_exits_2(value: str, capsys: pytest.CaptureFixture[str]) -> None:
+    # The spec's polynomial family is degrees 1..10; beyond that the design matrix
+    # is numerically meaningless.
+    code = main(["fit", str(DECAY), "--x", "x", "--y", "y", "--poly", value])
+    captured = capsys.readouterr()
+    assert code == 2
+    assert "--poly" in captured.err
+    assert "between 1 and 10" in captured.err
+
+
 def test_robust_loss_flag_reaches_the_report(capsys: pytest.CaptureFixture[str]) -> None:
     code = main(
         [

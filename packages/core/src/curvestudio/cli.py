@@ -19,6 +19,7 @@ of ``invalid_input``: too few observations, or a model that does not apply),
 import argparse
 import difflib
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -37,6 +38,12 @@ from curvestudio.models import get_model, list_models
 EXIT_OK = 0
 EXIT_INVALID = 2
 EXIT_NOT_CONVERGED = 3
+
+MAX_STARTS = 1000
+"""Upper bound for --starts: multistart cost and memory grow linearly in it."""
+
+MAX_POLY_DEGREE = 10
+"""Upper bound for --poly: the spec's polynomial family is degrees 1..10."""
 
 _ERROR_PREFIX = "curvestudio: error:"
 _ROW_NOTE = (
@@ -62,11 +69,18 @@ def _non_negative_int(text: str) -> int:
     return value
 
 
-def _positive_int(text: str) -> int:
-    value = _parse_int(text)
-    if value < 1:
-        raise argparse.ArgumentTypeError(f"must be an integer >= 1, got {text!r}")
-    return value
+def _bounded_int(low: int, high: int, flag: str) -> Callable[[str], int]:
+    """An argparse ``type`` that enforces ``low <= value <= high`` for ``flag``."""
+
+    def parse(text: str) -> int:
+        value = _parse_int(text)
+        if not low <= value <= high:
+            raise argparse.ArgumentTypeError(
+                f"{flag} must be an integer between {low} and {high}, got {text!r}"
+            )
+        return value
+
+    return parse
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -95,9 +109,9 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     target.add_argument(
         "--poly",
-        type=_non_negative_int,
+        type=_bounded_int(1, MAX_POLY_DEGREE, "--poly"),
         metavar="N",
-        help="fit a degree-N polynomial by (weighted) least squares",
+        help=f"fit a degree-N polynomial by (weighted) least squares (1-{MAX_POLY_DEGREE})",
     )
     fit_command.add_argument("--weights", metavar="COL", help="column holding positive weights")
     fit_command.add_argument(
@@ -114,9 +128,9 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     fit_command.add_argument(
         "--starts",
-        type=_positive_int,
+        type=_bounded_int(1, MAX_STARTS, "--starts"),
         metavar="N",
-        help="number of starts for a multistart fit (default: 1)",
+        help=f"number of starts for a multistart fit (1-{MAX_STARTS}; default: 1)",
     )
     fit_command.add_argument(
         "--seed",
