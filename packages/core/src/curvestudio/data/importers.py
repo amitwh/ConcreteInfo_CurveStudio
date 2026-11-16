@@ -233,6 +233,11 @@ def _read_xlsx(path: Path, sheet: str | int, limits: ImportLimits) -> Dataset:
                     if not 0 <= sheet < len(names):
                         raise DataError("UNKNOWN_SHEET", f"No sheet at index {sheet}")
                     worksheet = workbook[names[sheet]]
+                # Ignore the sheet's <dimension> tag: read-only openpyxl pads every row
+                # to that declared width and materialises every gap row, so a lying or
+                # corrupt tag turns a 5 KB workbook into ~20 minutes of CPU (the cells
+                # that exist are yielded either way).
+                worksheet.reset_dimensions()
                 raw = _collect(worksheet.iter_rows(values_only=True), limits)
             finally:
                 workbook.close()
@@ -304,17 +309,35 @@ def _collect(raw_rows: Iterable[Sequence[Any]], limits: ImportLimits) -> _Raw:
 
     Stops with ``TOO_MANY_COLS`` / ``TOO_MANY_ROWS`` as soon as a limit is crossed. One
     row more than ``max_rows`` is tolerated here because the first row may be a header.
+
+    Two budgets bound the scan on pathological inputs (a crafted or corrupt workbook
+    can stream enormous blank regions): blank rows are capped at ``max_rows`` and raw
+    cells at ``max_rows * max_cols``; past either, the import stops with
+    ``TOO_MANY_ROWS`` instead of grinding through the padding.
     """
     rows: list[list[Any]] = []
     blank = 0
+    cells = 0
     widest_raw = widest = 0
+    cell_budget = limits.max_rows * limits.max_cols
     for raw in raw_rows:
         row = [_clean(cell) for cell in raw]
         raw_width = len(row)
+        cells += raw_width
+        if cells > cell_budget:
+            raise DataError(
+                "TOO_MANY_ROWS",
+                f"More than {cell_budget:,} cells (max_rows x max_cols) before the table "
+                "ended; the input is pathologically large or padded",
+            )
         while row and row[-1] is None:
             row.pop()
         if not row:
             blank += 1
+            if blank > limits.max_rows:
+                raise DataError(
+                    "TOO_MANY_ROWS", f"More than {limits.max_rows:,} blank rows in the input"
+                )
             continue
         _check_cols(len(row), limits)
         widest_raw, widest = max(widest_raw, raw_width), max(widest, len(row))

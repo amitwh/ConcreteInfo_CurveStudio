@@ -4,7 +4,9 @@ import datetime
 import io
 import json
 import math
+import re
 import sys
+import time
 import zipfile
 from collections.abc import Callable
 from pathlib import Path
@@ -417,6 +419,64 @@ def _corrupt_member_payload(path: Path, name: str) -> None:
     for position in range(data_start + 10, min(data_start + 60, data_start + info.compress_size)):
         corrupted[position] ^= 0xFF
     path.write_bytes(bytes(corrupted))
+
+
+def _lying_dimension(path: Path, ref: str) -> None:
+    """Set the first sheet's <dimension> tag to ``ref``, inserting one if absent."""
+
+    def patch(data: bytes) -> bytes:
+        lying = f'<dimension ref="{ref}"/>'.encode()
+        patched = re.sub(rb'<dimension ref="[^"]*"\s*/>', lying, data)
+        if patched != data:
+            return patched
+        tag = f'<dimension ref="{ref}"/>'.encode()
+        assert b"<sheetData" in data, "no sheetData element to anchor the dimension tag"
+        return data.replace(b"<sheetData", tag + b"<sheetData", 1)
+
+    _rewrite_member(path, "xl/worksheets/sheet1.xml", patch)
+
+
+def test_xlsx_with_a_lying_dimension_imports_fast(tmp_path: Path) -> None:
+    # A tiny workbook whose only cell sits at A20000 while <dimension> claims
+    # A1:XFD20000: read-only openpyxl pads every one of the 19,999 gap rows to 16,384
+    # cells, which cost ~22 s of CPU for a 5 KB file (replayed 16/11/2026) and recorded
+    # a bogus "dropped 16382 blank column(s)" note. reset_dimensions() must ignore the
+    # tag so the import finishes fast, keeps the real cell and adds no such note.
+    workbook = Workbook()
+    sheet = workbook.active
+    assert sheet is not None
+    sheet["A20000"] = 42.0
+    path = tmp_path / "sparse.xlsx"
+    workbook.save(path)
+    _lying_dimension(path, "A1:XFD20000")
+    start = time.perf_counter()
+    ds = read_dataset(path)
+    elapsed = time.perf_counter() - start
+    assert elapsed < 3.0, f"import took {elapsed:.1f} s"
+    assert ds.original.to_numpy().tolist() == [[42.0]]
+    assert not any("blank column" in note for note in ds.import_notes)
+
+
+def test_blank_row_budget_stops_the_scan(tmp_path: Path) -> None:
+    # Blank rows are work too: beyond max_rows of them the import stops instead of
+    # grinding through an unbounded gap.
+    path = tmp_path / "blanks.csv"
+    path.write_text("x,y\n1,2\n" + "\n" * 10)
+    with pytest.raises(DataError) as excinfo:
+        read_dataset(path, limits=ImportLimits(max_rows=5))
+    assert code_of(excinfo) == "TOO_MANY_ROWS"
+
+
+def test_cell_budget_stops_the_scan(tmp_path: Path) -> None:
+    # Total raw cells are capped at max_rows * max_cols: this table is within both
+    # per-row/per-column limits but floods the cell budget (101 rows x 100 cells).
+    path = tmp_path / "wide.csv"
+    lines = [",".join(f"c{j}" for j in range(100))]
+    lines += [",".join(str(j) for j in range(100)) for _ in range(100)]
+    path.write_text("\n".join(lines) + "\n")
+    with pytest.raises(DataError) as excinfo:
+        read_dataset(path, limits=ImportLimits(max_rows=100, max_cols=100))
+    assert code_of(excinfo) == "TOO_MANY_ROWS"
 
 
 def test_xlsx_with_truncated_sheet_xml_is_a_parse_error(sample_xlsx: Path) -> None:
