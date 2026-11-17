@@ -4,7 +4,7 @@ version = "0.1.0.dev0"
 description = "CurveStudio workspace root (not published)"
 requires-python = ">=3.14"
 license = "AGPL-3.0-or-later"
-dependencies = ["curvestudio-core", "curvestudio-models"]
+dependencies = ["curvestudio-core", "curvestudio-models", "curvestudio-engineering"]
 
 [tool.uv]
 package = false
@@ -15,6 +15,7 @@ members = ["packages/*"]
 [tool.uv.sources]
 curvestudio-core = { workspace = true }
 curvestudio-models = { workspace = true }
+curvestudio-engineering = { workspace = true }
 
 [dependency-groups]
 dev = [
@@ -38,7 +39,7 @@ markers = [
 [tool.ruff]
 line-length = 100
 target-version = "py314"
-src = ["packages/core/src", "packages/model_library/src", "tests"]
+src = ["packages/core/src", "packages/model_library/src", "packages/engineering/src", "tests"]
 extend-exclude = ["docs"]
 
 [tool.ruff.lint]
@@ -46,11 +47,11 @@ select = ["E", "F", "W", "I", "B", "UP", "SIM", "C4", "RUF"]
 
 [tool.mypy]
 python_version = "3.14"
-mypy_path = "packages/core/src:packages/model_library/src"
+mypy_path = "packages/core/src:packages/model_library/src:packages/engineering/src"
 strict = true
 
 [tool.importlinter]
-root_packages = ["curvestudio", "curvestudio_models"]
+root_packages = ["curvestudio", "curvestudio_models", "curvestudio_engineering"]
 include_external_packages = true
 
 [[tool.importlinter.contracts]]
@@ -176,6 +177,12 @@ forbidden_modules = ["curvestudio.discovery"]
 name = "Core never imports the model catalogues (they register through the entry point)"
 type = "forbidden"
 source_modules = ["curvestudio"]
+forbidden_modules = ["curvestudio_models", "curvestudio_engineering"]
+
+[[tool.importlinter.contracts]]
+name = "The engineering library does not import the general model library"
+type = "forbidden"
+source_modules = ["curvestudio_engineering"]
 forbidden_modules = ["curvestudio_models"]
 
 # scipy.odr (deprecated) cannot be a contract here: import-linter rejects subpackages of

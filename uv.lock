@@ -13,6 +13,7 @@ resolution-markers = [
 [manifest]
 members = [
     "curvestudio-core",
+    "curvestudio-engineering",
     "curvestudio-models",
     "curvestudio-workspace",
 ]
@@ -220,6 +221,17 @@ requires-dist = [
 ]
 
 [[package]]
+name = "curvestudio-engineering"
+version = "0.1.0.dev0"
+source = { editable = "packages/engineering" }
+dependencies = [
+    { name = "curvestudio-core" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "curvestudio-core", editable = "packages/core" }]
+
+[[package]]
 name = "curvestudio-models"
 version = "0.1.0.dev0"
 source = { editable = "packages/model_library" }
@@ -236,6 +248,7 @@ version = "0.1.0.dev0"
 source = { virtual = "." }
 dependencies = [
     { name = "curvestudio-core" },
+    { name = "curvestudio-engineering" },
     { name = "curvestudio-models" },
 ]
 
@@ -253,6 +266,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "curvestudio-core", editable = "packages/core" },
+    { name = "curvestudio-engineering", editable = "packages/engineering" },
     { name = "curvestudio-models", editable = "packages/model_library" },
 ]
 
