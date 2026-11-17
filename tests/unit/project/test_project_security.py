@@ -9,6 +9,7 @@ import io
 import json
 import random
 import stat
+import sys
 import time
 import zipfile
 from collections.abc import Callable, Sequence
@@ -148,6 +149,9 @@ def test_absolute_path_entry_is_refused() -> None:
     )
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="zipfile rewrites backslashes to slashes on Windows"
+)
 def test_backslash_entry_is_refused() -> None:
     expect_error(
         zipped([("manifest.json", b"{}"), ("datasets\\ds1\\original.csv", b"x")]),

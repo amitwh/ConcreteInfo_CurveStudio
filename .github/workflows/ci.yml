@@ -56,6 +56,14 @@ jobs:
             -v curvestudio-smoke-data:/data \
             --read-only --tmpfs /tmp \
             curvestudio:ci
+      - name: Wait for the container to be healthy
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8000/api/v1/health >/dev/null 2>&1; then echo healthy; exit 0; fi
+            sleep 2
+          done
+          docker logs curvestudio-smoke | tail -50
+          exit 1
       - name: Smoke test
         run: deploy/smoke.sh http://127.0.0.1:8000
       - name: Clean up

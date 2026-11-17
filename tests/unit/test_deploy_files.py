@@ -136,6 +136,10 @@ def test_caddyfile_proxy_shape() -> None:
 
 
 @pytest.mark.parametrize("name", SCRIPTS)
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="POSIX-only: executable bits are not tracked on Windows checkouts",
+)
 def test_scripts_are_executable_and_strict(name: str) -> None:
     path = DEPLOY / name
     assert path.is_file(), f"deploy/{name} is missing"

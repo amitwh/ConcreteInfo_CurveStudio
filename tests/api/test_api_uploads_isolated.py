@@ -86,6 +86,7 @@ def test_a_parser_that_dies_is_a_clean_422(client_factory: Callable[..., TestCli
     assert multiprocessing.active_children() == []
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX-only: RLIMIT_AS")
 def test_the_address_space_cap_turns_a_memory_bomb_into_a_413(
     client_factory: Callable[..., TestClient], settings_factory: Callable[..., Any]
 ) -> None:

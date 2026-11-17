@@ -120,6 +120,10 @@ def test_a_stuck_job_times_out_and_its_worker_is_killed(
     assert len(multiprocessing.active_children()) <= 1
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="POSIX-only: job processes are exercised on Linux, the only supported API platform",
+)
 def test_a_crashed_worker_fails_the_job_and_the_pool_is_rebuilt(
     client_factory: Callable[..., TestClient],
 ) -> None:
@@ -136,6 +140,10 @@ def test_a_crashed_worker_fails_the_job_and_the_pool_is_rebuilt(
     assert client.get(f"{API}/health").status_code == 200  # the API itself is fine
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="POSIX-only: job processes are exercised on Linux, the only supported API platform",
+)
 def test_a_crash_does_not_take_innocent_jobs_down(
     client_factory: Callable[..., TestClient], settings_factory: Callable[..., Any]
 ) -> None:

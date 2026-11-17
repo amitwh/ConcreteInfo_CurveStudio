@@ -156,6 +156,7 @@ def test_cors_origins_are_explicit() -> None:
         Settings(cors_origins=["https://*.example.org"])
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX-only: file modes")
 def test_dev_keys_are_generated_once_and_reused(tmp_path: Path) -> None:
     settings = make_settings(tmp_path)
     first = load_jwt_keys(settings)
