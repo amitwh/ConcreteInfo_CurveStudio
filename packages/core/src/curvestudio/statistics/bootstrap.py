@@ -23,8 +23,8 @@ Conventions:
   (the caller supplies any warm start), and only replicates that return ``CONVERGED``
   with the expected parameters contribute. Failed replicates are counted in ``n_failed``
   and summarised, with counts, in ``reasons``; they are never dropped silently or
-  replaced. If every replicate fails there is nothing to summarise, so
-  ``StatisticsError("NO_CONVERGED_REPLICATES")`` is raised.
+  replaced. A standard error needs at least two converged replicates, so if fewer than two
+  converge ``StatisticsError("NO_CONVERGED_REPLICATES")`` is raised.
 * Intervals are percentile intervals of the converged replicate estimates at ``level``
   (default 0.95). ``status="unreliable"`` when fewer than ``min_success`` of the
   requested replicates converged; the intervals are then still computed from what exists
@@ -64,9 +64,6 @@ class BootstrapParameter(BaseModel):
     ``estimate`` is the full-data fit value; ``mean`` and ``std_err`` summarise the
     converged replicate estimates (``std_err`` is their sample standard deviation with the
     ``n - 1`` denominator). ``ci_low``/``ci_high`` are the percentile interval bounds.
-    With a single converged replicate ``std_err`` is ``0.0`` and the interval collapses
-    onto that replicate; such a result is ``"unreliable"`` for any sensible
-    ``min_success``.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -177,7 +174,7 @@ def bootstrap(
             ``FIT_NOT_CONVERGED`` (``result`` is not a converged fit of ``data``);
             ``DATA_MISMATCH`` / ``MODEL_MISMATCH`` (``result`` belongs to other data or
             another model); ``NO_DEGREES_OF_FREEDOM`` (``df <= 0``);
-            ``NO_CONVERGED_REPLICATES`` (every replicate failed).
+            ``NO_CONVERGED_REPLICATES`` (fewer than two replicates converged).
         KeyError: a nonlinear result's model id is not registered.
     """
     kind = _check_kind(kind)
@@ -250,22 +247,19 @@ def bootstrap(
 
     n_converged = len(replicates)
     n_failed = n_boot - n_converged
-    if n_converged == 0:
+    if n_converged < 2:
         detail = "; ".join(_reason_lines(failures))
         raise StatisticsError(
             "NO_CONVERGED_REPLICATES",
-            f"all {n_boot} bootstrap replicates failed, so no parameter uncertainty is "
-            f"defined ({detail})",
+            f"only {n_converged} of {n_boot} bootstrap replicates converged; a standard error "
+            f"needs at least two, so no parameter uncertainty is defined ({detail})",
         )
 
     values = np.asarray(replicates, dtype=np.float64)
     tail = (1.0 - level) / 2.0
     lower, upper = np.quantile(values, [tail, 1.0 - tail], axis=0)
     means = values.mean(axis=0)
-    if n_converged >= 2:
-        std_errs = values.std(axis=0, ddof=1)
-    else:  # a one-element sample has no spread; the "unreliable" status flags it
-        std_errs = np.zeros(values.shape[1], dtype=np.float64)
+    std_errs = values.std(axis=0, ddof=1)
 
     parameters = tuple(
         BootstrapParameter(

@@ -354,8 +354,38 @@ def test_all_replicates_failing_raises_with_the_reasons() -> None:
     with pytest.raises(StatisticsError) as info:
         bootstrap(data, AlwaysFailingFitter(), fitted_line(data), n_boot=50)
     assert info.value.code == "NO_CONVERGED_REPLICATES"
-    assert "50 bootstrap replicates failed" in str(info.value)
+    assert "only 0 of 50 bootstrap replicates converged" in str(info.value)
     assert "never converges" in str(info.value)
+
+
+class SucceedsOnceFitter:
+    """Converge on the first call only (the full-data refit is not routed through it)."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+        self._poly = PolynomialFitter(1)
+
+    def fit(self, data: XY) -> FitResult:
+        self.calls += 1
+        result = self._poly.fit(data)
+        if self.calls == 1:
+            return result
+        return result.model_copy(
+            update={"status": FitStatus.NOT_CONVERGED, "termination_reason": "deliberate failure"}
+        )
+
+    def predict(self, result: FitResult, x: Any) -> Any:
+        return self._poly.predict(result, x)
+
+
+def test_a_single_converged_replicate_gives_no_standard_error() -> None:
+    # One replicate has no spread: a standard error of 0.0 would be a fabricated number,
+    # and min_success=0.01 would otherwise let 1/50 pass as "ok".
+    data = line_data(n=20)
+    with pytest.raises(StatisticsError) as info:
+        bootstrap(data, SucceedsOnceFitter(), fitted_line(data), n_boot=50, min_success=0.01)
+    assert info.value.code == "NO_CONVERGED_REPLICATES"
+    assert "only 1 of 50" in str(info.value)
 
 
 @pytest.mark.slow
