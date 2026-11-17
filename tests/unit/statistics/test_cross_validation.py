@@ -129,6 +129,19 @@ def test_same_seed_same_folds_and_rmse() -> None:
         np.testing.assert_array_equal(a, b)
 
 
+def test_pooled_rmse_is_not_the_mean_of_fold_rmses() -> None:
+    # n = 17 in 5 folds -> fold sizes 4, 4, 3, 3, 3; pooled MSE = sum(n_f * MSE_f) / n.
+    data = noisy_quadratic(n=17)
+    cv = k_fold_cv(data, PolynomialFitter(degree=2), folds=5, seed=3)
+
+    sizes = np.array([len(part) for part in np.array_split(np.arange(17), 5)])
+    assert sorted(sizes.tolist()) == [3, 3, 3, 4, 4]
+    fold_rmse = np.array(cv.fold_rmse, dtype=float)
+    assert cv.rmse is not None
+    assert cv.rmse**2 == pytest.approx(float(np.sum(sizes * fold_rmse**2) / 17), rel=1e-12)
+    assert cv.rmse != pytest.approx(float(np.mean(fold_rmse)), rel=1e-9)
+
+
 def test_different_seed_changes_fold_assignment() -> None:
     data = noisy_quadratic(n=24)
     first_rec, second_rec = RecordingFitter(), RecordingFitter()

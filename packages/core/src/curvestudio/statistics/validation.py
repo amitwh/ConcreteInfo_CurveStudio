@@ -217,7 +217,8 @@ def k_fold_cv(data: XY, fitter: Fitter, folds: int = 5, seed: int = 0) -> CrossV
     Each fold fits ``fitter`` on its training points and predicts the held-out ones. A
     fold's RMSE is ``sqrt(sum(w * e**2) / sum(w))`` over its held-out points with the
     data's weights; ``CrossValidation.rmse`` pools the same sums over every held-out point
-    and is ``None`` unless every fold succeeded.
+    and is ``None`` unless every fold succeeded. An exception raised by ``fitter.fit`` fails
+    that fold; one raised by ``fitter.predict`` is a programming error and propagates.
 
     A fold is counted as failed (``None`` in ``fold_rmse``, one entry in ``reasons``, one
     in ``n_failed``) when its training set has at most ``k`` points, when the fit does not
