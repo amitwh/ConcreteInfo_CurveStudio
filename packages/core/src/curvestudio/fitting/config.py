@@ -24,6 +24,14 @@ class FitConfig:
     ``ftol`` defaults to 1e-14, not 1e-10: it bounds the *relative SSE* change, and in an
     ill-conditioned valley the parameters are only resolved to about the square root of
     it, so 1e-10 let fits report ``CONVERGED`` with ~5 correct digits (NIST MGH09).
+
+    ``time_limit`` is an optional wall-clock budget in seconds for the whole multistart
+    run (all starts share it). It is cooperative: the deadline is checked inside the
+    residual evaluation, so a start stops within one model call of the deadline and the
+    limit cannot interrupt a single stuck evaluation. A start that crosses the deadline
+    ends ``NOT_CONVERGED`` with a reason naming the limit; when an earlier start already
+    converged, it stays the winner, the remaining starts are skipped and a warning says
+    so.
     """
 
     method: str = "auto"
@@ -37,6 +45,7 @@ class FitConfig:
     xtol: float = 1e-10
     gtol: float = 1e-10
     confidence_level: float = 0.95
+    time_limit: float | None = None
 
     def __post_init__(self) -> None:
         if not _is_int(self.n_starts) or self.n_starts < 1:
@@ -45,6 +54,10 @@ class FitConfig:
             raise ValueError(f"seed must be an int >= 0, got {self.seed!r}")
         if self.max_nfev is not None and (not _is_int(self.max_nfev) or self.max_nfev < 1):
             raise ValueError(f"max_nfev must be None or an int >= 1, got {self.max_nfev!r}")
+        if self.time_limit is not None and not _is_positive_finite(self.time_limit):
+            raise ValueError(
+                f"time_limit must be None or a finite number > 0, got {self.time_limit!r}"
+            )
         for name in ("ftol", "xtol", "gtol"):
             value = getattr(self, name)
             if not (math.isfinite(value) and value > 0.0):
@@ -63,3 +76,14 @@ class FitConfig:
 
 def _is_int(value: object) -> bool:
     return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _is_positive_finite(value: object) -> bool:
+    """A real number that is finite and strictly positive (``bool`` does not count)."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    try:
+        as_float = float(value)
+    except OverflowError:  # an int beyond the float range is not a usable limit
+        return False
+    return math.isfinite(as_float) and as_float > 0.0
