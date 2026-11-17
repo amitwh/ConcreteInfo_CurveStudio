@@ -30,6 +30,11 @@ CORE_STARTER_PAIRS: tuple[tuple[str, str], ...] = (
 # Same curve under different parametrisations in different family modules (found by the global
 # duplicate hunt after the families were merged); declared here so Auto-fit ties them.
 CROSS_FAMILY_PAIRS: tuple[tuple[str, str], ...] = (
+    ("peak_lorentzian", "physics_lorentzian_resonance"),
+    ("distribution_gamma", "modified_power"),
+    ("distribution_gamma", "kinetics_power_exponential"),
+    ("distribution_cauchy", "physics_lorentzian_resonance"),
+    ("distribution_maxwell_boltzmann", "physics_maxwell_boltzmann_speed"),
     ("exponential_saturation", "kinetics_first_order_conversion"),
     ("kinetics_cabrera_mott_oxidation", "log_one_plus"),
     ("allometric_offset", "generalised_power"),
