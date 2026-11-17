@@ -5,7 +5,10 @@ curve (a registered model or a polynomial) and prints the equation with the fitt
 numbers, a parameter table (value, standard error, 95 % CI), R², adjusted R², RMSE,
 the status line and any warnings; ``--json`` additionally writes the full
 :class:`~curvestudio.fitting.FitResult` machine-readably. ``curvestudio models``
-lists the registry.
+lists the registry. ``curvestudio autofit FILE`` is the headline command: it fits every
+applicable model (:func:`curvestudio.discovery.autofit`) and prints the converged fits ranked
+best to worst, with the candidates that were skipped, did not converge or fit exactly listed
+beside the ranking; ``--json`` prints the whole :class:`~curvestudio.discovery.AutoFitResult`.
 
 This module is the outermost layer of the package: it may import the data, fitting
 and model layers, and nothing imports it. A user mistake (unreadable file, missing
@@ -13,17 +16,32 @@ column, unknown model, data that fails validation, an impossible method/loss
 combination) is reported as a message on stderr, never as a traceback, and drives
 the exit code: ``0`` the fit converged, ``2`` invalid input (including a fit result
 of ``invalid_input``: too few observations, or a model that does not apply),
-``3`` the fit ran but did not converge or failed.
+``3`` the fit ran but did not converge or failed. ``autofit`` exits ``0`` when the run
+completed (whatever it found) and ``1`` when it could not run (an unreadable file, a missing
+column, data that fails validation, or an ``AutoFitError`` such as ``TOO_FEW_POINTS``); a usage
+error is ``2``, as argparse reports it.
 """
 
 import argparse
 import difflib
+import math
+import re
 import sys
+import textwrap
+from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from curvestudio.data import DataError, Issue, read_dataset, validate
+from curvestudio.data import XY, DataError, Issue, read_dataset, validate
+from curvestudio.discovery import (
+    AutoFitConfig,
+    AutoFitError,
+    AutoFitResult,
+    RankBy,
+    RankedFit,
+    autofit,
+)
 from curvestudio.fitting import (
     FitConfig,
     FitResult,
@@ -38,12 +56,17 @@ from curvestudio.models import get_model, list_models
 EXIT_OK = 0
 EXIT_INVALID = 2
 EXIT_NOT_CONVERGED = 3
+EXIT_AUTOFIT_ERROR = 1
+"""``autofit`` could not run: bad file, columns or data, or an ``AutoFitError``."""
 
 MAX_STARTS = 1000
 """Upper bound for --starts: multistart cost and memory grow linearly in it."""
 
 MAX_POLY_DEGREE = 10
 """Upper bound for --poly: the spec's polynomial family is degrees 1..10."""
+
+DEFAULT_TOP = 10
+"""Rows of the ranked table shown unless ``--top`` says otherwise."""
 
 _ERROR_PREFIX = "curvestudio: error:"
 _ROW_NOTE = (
@@ -83,14 +106,24 @@ def _bounded_int(low: int, high: int, flag: str) -> Callable[[str], int]:
     return parse
 
 
+def _positive_float(text: str) -> float:
+    try:
+        value = float(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{text!r} is not a number") from None
+    if not math.isfinite(value) or value <= 0.0:
+        raise argparse.ArgumentTypeError(f"must be a finite number > 0, got {text!r}")
+    return value
+
+
 def _build_parser() -> argparse.ArgumentParser:
-    """The ``curvestudio`` argument parser with the ``fit`` and ``models`` subcommands."""
+    """The ``curvestudio`` argument parser: the ``fit``, ``autofit`` and ``models`` commands."""
     parser = argparse.ArgumentParser(
         prog="curvestudio",
         description="Fit curves to data tables.",
         epilog=f"{_ROW_NOTE} Exit codes: 0 converged, 2 invalid input, 3 not converged.",
     )
-    commands = parser.add_subparsers(dest="command", required=True, metavar="{fit,models}")
+    commands = parser.add_subparsers(dest="command", required=True, metavar="{fit,autofit,models}")
 
     fit_command = commands.add_parser(
         "fit",
@@ -145,12 +178,79 @@ def _build_parser() -> argparse.ArgumentParser:
         help="also write the full fit result (FitResult.to_json) to OUT",
     )
 
+    _add_autofit_command(commands)
+
     commands.add_parser(
         "models",
         help="list the registered models",
         description="List the registered models: id, name and category.",
     )
     return parser
+
+
+def _add_autofit_command(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    command = commands.add_parser(
+        "autofit",
+        help="fit every applicable model and rank them best to worst",
+        description=(
+            "Import FILE, fit every model the data can support (the model library, "
+            "polynomials and generated families) and print the converged fits ranked best "
+            "to worst, with the skipped, not converged and exact candidates listed after them."
+        ),
+        epilog=f"{_ROW_NOTE} Exit codes: 0 completed, 1 could not run, 2 usage error.",
+    )
+    command.add_argument("file", help="input file: csv, tsv, txt, json or xlsx")
+    command.add_argument("--x", required=True, metavar="COL", help="column with the x values")
+    command.add_argument("--y", required=True, metavar="COL", help="column with the y values")
+    command.add_argument("--weights", metavar="COL", help="column holding non-negative weights")
+    command.add_argument(
+        "--rank-by",
+        choices=[rank.value for rank in RankBy],
+        default=RankBy.BEST_OVERALL.value,
+        metavar="CRITERION",
+        help="ordering: " + ", ".join(rank.value for rank in RankBy) + " (default: best_overall)",
+    )
+    command.add_argument(
+        "--top",
+        type=_bounded_int(1, 100_000, "--top"),
+        default=DEFAULT_TOP,
+        metavar="N",
+        help=f"show the N best rows of the table (default: {DEFAULT_TOP})",
+    )
+    command.add_argument(
+        "--workers",
+        type=_bounded_int(1, 256, "--workers"),
+        metavar="N",
+        help="worker processes (default: all but one core; 1 runs in this process)",
+    )
+    command.add_argument(
+        "--n-starts",
+        type=_bounded_int(1, MAX_STARTS, "--n-starts"),
+        metavar="N",
+        help=f"starts per candidate (1-{MAX_STARTS}; default: {AutoFitConfig().n_starts})",
+    )
+    command.add_argument(
+        "--seed",
+        type=_non_negative_int,
+        metavar="S",
+        help="seed of the run (default: 0); the same seed reproduces the same result",
+    )
+    command.add_argument(
+        "--time-limit",
+        type=_positive_float,
+        metavar="S",
+        help=f"seconds allowed per candidate (default: {AutoFitConfig().time_limit:g})",
+    )
+    command.add_argument(
+        "--exhaustive",
+        action="store_true",
+        help="also try the long tail of generated families and models of up to 10 parameters",
+    )
+    command.add_argument(
+        "--json",
+        action="store_true",
+        help="print the whole result (AutoFitResult.to_json) instead of the table",
+    )
 
 
 # --- entry point ------------------------------------------------------------------------
@@ -173,6 +273,8 @@ def main(argv: list[str] | None = None) -> int:
         return exc.code if isinstance(exc.code, int) else 0
     if args.command == "fit":
         return _run_fit(args)
+    if args.command == "autofit":
+        return _run_autofit(args)
     return _run_models()
 
 
@@ -270,6 +372,199 @@ def _run_fit(args: argparse.Namespace) -> int:
     return EXIT_NOT_CONVERGED
 
 
+# --- autofit -----------------------------------------------------------------------------
+
+_ORDERING_LABELS = {
+    RankBy.BEST_OVERALL: (
+        "best overall (lowest AICc first; models within 2 AICc are ordered by "
+        "cross-validation, then fewer parameters)"
+    ),
+    RankBy.R2: "R² (highest first)",
+    RankBy.ADJ_R2: "adjusted R² (highest first)",
+    RankBy.RMSE: "RMSE (lowest first)",
+    RankBy.AICC: "AICc (lowest first)",
+    RankBy.BIC: "BIC (lowest first)",
+    RankBy.CV_RMSE: "cross-validated RMSE (lowest first)",
+}
+
+
+def _load_xy(args: argparse.Namespace) -> tuple[XY, str, list[Issue]] | list[str]:
+    """Read and validate the requested columns: ``(xy, dataset name, warnings)`` or error lines."""
+    try:
+        dataset = read_dataset(args.file)
+        issues = validate(dataset, args.x, args.y, args.weights)
+    except DataError as exc:
+        return [_data_error(exc)]
+    errors = [_issue_line(issue) for issue in issues if issue.severity == "error"]
+    if errors:
+        return errors
+    try:
+        xy = dataset.xy(args.x, args.y, args.weights)
+    except DataError as exc:
+        return [_data_error(exc)]
+    return xy, dataset.name, [issue for issue in issues if issue.severity == "warning"]
+
+
+def _run_autofit(args: argparse.Namespace) -> int:
+    """Import, validate, run Auto-fit and print the ranked table (or the JSON result)."""
+    loaded = _load_xy(args)
+    if isinstance(loaded, list):
+        return _fail_lines(loaded, EXIT_AUTOFIT_ERROR)
+    xy, dataset_name, data_warnings = loaded
+
+    overrides = {
+        "workers": args.workers,
+        "n_starts": args.n_starts,
+        "seed": args.seed,
+        "time_limit": args.time_limit,
+    }
+    try:
+        config = AutoFitConfig(
+            rank_by=RankBy(args.rank_by),
+            exhaustive=args.exhaustive,
+            **{name: value for name, value in overrides.items() if value is not None},
+        )
+        result = autofit(xy, config)
+    except AutoFitError as exc:
+        return _fail(f"{exc.code}: {exc}", EXIT_AUTOFIT_ERROR)
+    except ValueError as exc:
+        return _fail(f"invalid Auto-fit configuration: {exc}", EXIT_AUTOFIT_ERROR)
+
+    if args.json:
+        for issue in data_warnings:
+            print(f"curvestudio: warning: {_issue_line(issue)}", file=sys.stderr)
+        print(result.to_json())
+        return EXIT_OK
+    _print_autofit_report(result, args, dataset_name, data_warnings)
+    return EXIT_OK
+
+
+def _print_autofit_report(
+    result: AutoFitResult, args: argparse.Namespace, dataset_name: str, data_warnings: list[Issue]
+) -> None:
+    """The ranked table, then the skipped, not converged and exact lists and the warnings."""
+    weight_note = "" if args.weights is None else f", weights={args.weights!r}"
+    print(
+        f"Auto-fit: {dataset_name}, {result.n_active} active points, "
+        f"x={args.x!r}, y={args.y!r}{weight_note}"
+    )
+    print(f"Ranked by: {_ORDERING_LABELS[result.config.rank_by]}")
+    print(
+        f"Candidates: {len(result.ranked)} ranked, {len(result.exact_fits)} exact, "
+        f"{len(result.unconverged)} not converged, {len(result.skipped)} skipped "
+        f"({result.elapsed_seconds:.1f} s)"
+    )
+    print()
+    if result.ranked:
+        _print_ranked_table(result.ranked, args.top)
+    else:
+        print("No candidate converged.")
+    print()
+    if result.overfitting_note:
+        print(f"Overfitting warning: {result.overfitting_note}")
+        print()
+    if result.exact_fits:
+        print(
+            f"Exact fits ({len(result.exact_fits)}; the data are reproduced to rounding level, "
+            "so AICc and BIC are not defined for them):"
+        )
+        _print_wrapped(", ".join(result.exact_fits))
+        print()
+    if result.unconverged:
+        print(f"Not converged ({len(result.unconverged)}; never ranked):")
+        by_reason: dict[str, list[str]] = defaultdict(list)
+        for candidate_id, reason in result.unconverged.items():
+            by_reason[reason].append(candidate_id)
+        _print_groups(by_reason)
+        print()
+    if result.skipped:
+        print(f"Skipped ({len(result.skipped)}; the data or the parameter cap rule them out):")
+        by_cause: dict[str, list[str]] = defaultdict(list)
+        for candidate_id, reasons in result.skipped.items():
+            for cause in dict.fromkeys(_reason_head(reason) for reason in reasons):
+                by_cause[cause].append(candidate_id)
+        _print_groups(by_cause)
+        print("  (the full reason of every candidate is in the --json output)")
+        print()
+    lines = [_issue_line(issue) for issue in data_warnings]
+    lines.extend(result.warnings)
+    if lines:
+        print("Warnings:")
+        for line in lines:
+            print(f"  - {line}")
+    else:
+        print("Warnings: none")
+
+
+def _print_ranked_table(ranked: tuple[RankedFit, ...], top: int) -> None:
+    shown = ranked[:top]
+    headers = ("Rank", "Model", "R²", "Adj. R²", "RMSE", "AICc", "BIC", "CV-RMSE", "k")
+    rows = [
+        (
+            str(row.rank),
+            row.model_id,
+            _opt(row.metrics.r2),
+            _opt(row.metrics.adj_r2),
+            _opt(row.metrics.rmse),
+            _opt(row.metrics.aicc),
+            _opt(row.metrics.bic),
+            _opt(row.metrics.cv_rmse),
+            str(row.metrics.k),
+        )
+        for row in shown
+    ]
+    widths = [_column_width(h, [r[i] for r in rows]) for i, h in enumerate(headers)]
+
+    def line(cells: tuple[str, ...]) -> str:
+        left = f"{cells[0]:>{widths[0]}}  {cells[1]:<{widths[1]}}"
+        right = "  ".join(
+            f"{cell:>{width}}" for cell, width in zip(cells[2:], widths[2:], strict=True)
+        )
+        return f"{left}  {right}"
+
+    pad = " " * widths[0]
+    print(line(headers))
+    for row, cells in zip(shown, rows, strict=True):
+        print(line(cells))
+        print(f"{pad}  {row.equation_fitted or '(no fitted equation)'}")
+        if row.same_curve_as:
+            print(f"{pad}  same curve as: {', '.join(row.same_curve_as)}")
+        if row.redundant_with:
+            print(f"{pad}  redundant with {row.redundant_with} (same curve, more parameters)")
+        if row.status == "exact_fit":
+            print(f"{pad}  exact fit: AICc and BIC are not defined")
+        if row.degenerate:
+            print(f"{pad}  degenerate: the optimum collapsed onto a simpler model")
+        if row.overfitting_note:
+            print(f"{pad}  note: {row.overfitting_note}")
+    if len(ranked) > len(shown):
+        print(f"(showing the top {len(shown)} of {len(ranked)} ranked fits; use --top to see more)")
+
+
+def _opt(value: float | None) -> str:
+    """A report number, or ``n/a`` for a quantity that is not defined."""
+    return "n/a" if value is None else _g(value)
+
+
+_REASON_HEAD = re.compile(r"\s+for\s|:|\s*\(")
+
+
+def _reason_head(reason: str) -> str:
+    """The leading clause of a skip reason, so many candidates share one group."""
+    return _REASON_HEAD.split(reason, maxsplit=1)[0].strip() or reason
+
+
+def _print_groups(groups: dict[str, list[str]]) -> None:
+    """One block per distinct reason, with the ids that share it wrapped underneath."""
+    for reason, ids in sorted(groups.items(), key=lambda item: (-len(item[1]), item[0])):
+        print(f"  {reason} ({len(ids)}):")
+        _print_wrapped(", ".join(sorted(ids)), indent="    ")
+
+
+def _print_wrapped(text: str, indent: str = "  ") -> None:
+    print(textwrap.fill(text, width=100, initial_indent=indent, subsequent_indent=indent))
+
+
 # --- models ------------------------------------------------------------------------------
 
 
@@ -351,16 +646,16 @@ def _ci(estimate: ParameterEstimate) -> str:
 # --- error formatting --------------------------------------------------------------------
 
 
-def _fail(message: str) -> int:
+def _fail(message: str, code: int = EXIT_INVALID) -> int:
     print(f"{_ERROR_PREFIX} {message}", file=sys.stderr)
-    return EXIT_INVALID
+    return code
 
 
-def _fail_lines(lines: list[str]) -> int:
-    """Print each validation error on its own line (with row numbers); exit 2."""
+def _fail_lines(lines: list[str], code: int = EXIT_INVALID) -> int:
+    """Print each validation error on its own line (with row numbers); exit ``code``."""
     for line in lines:
         print(f"{_ERROR_PREFIX} {line}", file=sys.stderr)
-    return EXIT_INVALID
+    return code
 
 
 def _data_error(exc: DataError) -> str:
