@@ -32,6 +32,16 @@ export type FitBundle = Schemas["FitBundle"];
 export type FitSummaryOut = Schemas["FitSummaryOut"];
 export type Prediction = Schemas["Prediction"];
 export type FitSpecJson = Schemas["FitSpec"];
+export type RankBy = Schemas["RankBy"];
+export type AutoFitRequest = Schemas["AutoFitRequest"];
+export type AutofitOut = Schemas["AutofitOut"];
+export type AutofitSummaryOut = Schemas["AutofitSummaryOut"];
+export type AutoFitResult = Schemas["AutoFitResult"];
+export type RankedFit = Schemas["RankedFit"];
+export type CandidateOutcome = Schemas["CandidateOutcome"];
+export type ProgressOut = Schemas["ProgressOut"];
+export type RowCurve = Schemas["RowCurve"];
+export type OpenRowOut = Schemas["OpenRowOut"];
 
 export class ApiError extends Error {
   /** HTTP status; 0 means the server could not be reached at all. */

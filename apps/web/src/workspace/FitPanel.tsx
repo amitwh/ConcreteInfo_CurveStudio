@@ -23,6 +23,8 @@ export interface FitPanelProps {
   busy: boolean;
   onFit: (spec: Record<string, unknown>) => void;
   fitError: string | null;
+  /** "Use this model manually" from an Auto-fit row: prefills the picker once. */
+  preset?: { kind: "registered"; id: string } | { kind: "polynomial"; degree: number } | null;
 }
 
 const POLY_VALUE = "__polynomial__";
@@ -63,7 +65,7 @@ function prefillParameters(
   return { initial, lower, upper };
 }
 
-export function FitPanel({ dataset, models, busy, onFit, fitError }: FitPanelProps): ReactElement {
+export function FitPanel({ dataset, models, busy, onFit, fitError, preset }: FitPanelProps): ReactElement {
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<string>("");
   const [degree, setDegree] = useState("1");
@@ -109,6 +111,19 @@ export function FitPanel({ dataset, models, busy, onFit, fitError }: FitPanelPro
   useEffect(() => {
     setAdvanced((current) => ({ ...current, ...prefillParameters(activeModel) }));
   }, [datasetId, activeModel]);
+
+  // An Auto-fit row's "Use this model manually": select that model (or polynomial
+  // degree) once, when the preset arrives.
+  useEffect(() => {
+    if (preset === null || preset === undefined) return;
+    if (preset.kind === "registered") {
+      setSelectedId(preset.id);
+    } else {
+      setSelectedId(POLY_VALUE);
+      setDegree(String(preset.degree));
+    }
+    setErrors([]);
+  }, [preset]);
 
   const parameterRows: Array<{ name: string; description: string; unit: string }> = useMemo(() => {
     if (isRegistered && activeModel !== null) {

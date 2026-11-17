@@ -81,6 +81,69 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/autofits/{autofit_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Autofit
+         * @description The stored run. ``rank_by`` re-orders the rows by another criterion without refitting.
+         */
+        get: operations["get_autofit_api_v1_autofits__autofit_id__get"];
+        put?: never;
+        post?: never;
+        /** Delete Autofit */
+        delete: operations["delete_autofit_api_v1_autofits__autofit_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/autofits/{autofit_id}/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export Autofit
+         * @description Download the run as one CSV table of candidates, or as JSON (the same as ``GET``).
+         */
+        get: operations["export_autofit_api_v1_autofits__autofit_id__export_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/autofits/{autofit_id}/rows/{candidate_id}/open": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Open Row
+         * @description Refit one row with the run's seed into a stored fit (``/fits/{id}``: curve, bands,
+         *     diagnostics, predict, export). Idempotent: a row already opened answers with its fit
+         *     (``fit_id``); one being opened answers with the job already running.
+         */
+        post: operations["open_row_api_v1_autofits__autofit_id__rows__candidate_id__open_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/datasets": {
         parameters: {
             query?: never;
@@ -118,6 +181,46 @@ export interface paths {
          * @description Delete a dataset together with its fits and jobs (running jobs are stopped first).
          */
         delete: operations["delete_dataset_api_v1_datasets__dataset_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/datasets/{dataset_id}/autofit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Autofit
+         * @description Queue an Auto-fit run: every applicable model is fitted and ranked. Follow it with
+         *     ``GET /jobs/{id}`` (progress and the best rows so far); the finished run is an
+         *     ``/autofits/{id}``. A request the engine refuses (too few points, unknown family, an
+         *     unusable custom equation) is a 422 whose ``detail.code`` names the reason.
+         */
+        post: operations["create_autofit_api_v1_datasets__dataset_id__autofit_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/datasets/{dataset_id}/autofits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Autofits */
+        get: operations["list_autofits_api_v1_datasets__dataset_id__autofits_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -267,11 +370,22 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Me */
+        /**
+         * Me
+         * @description The signed-in user with the plan's limits and what the user has used so far.
+         */
         get: operations["me_api_v1_me_get"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Delete Me
+         * @description Delete the account and everything in it.
+         *
+         *     Datasets, fits, jobs and refresh tokens are removed (running jobs are stopped first). The
+         *     audit trail is kept but anonymised: ``audit_logs.user_id`` is set to NULL, the one change
+         *     the append-only trigger allows. A final ``user.delete`` row records that it happened.
+         */
+        delete: operations["delete_me_api_v1_me_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -339,6 +453,227 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         /**
+         * AutoFitConfig
+         * @description Settings of one Auto-fit run.
+         *
+         *     Attributes:
+         *         rank_by: ordering criterion of the result.
+         *         families: keep only models whose category equals one of these or has it as its first
+         *             dotted segment (``"engineering"`` matches ``"engineering.strength"``);
+         *             ``None`` keeps every category.
+         *         include_polynomials: also try polynomials (``polyN`` and ``polyN_origin``).
+         *         include_generated: also try models of lazily generated families.
+         *         exhaustive: include the long tail of generated families and raise the parameter cap.
+         *         max_params: largest parameter count tried. ``None`` means
+         *             ``min(6, max(1, n_active // 4))``, or ``min(10, n_active - 3)`` when exhaustive.
+         *             Whatever the value, a model never gets more than ``n_active - 3`` parameters.
+         *         n_starts: multistart count per candidate.
+         *         seed: base seed; a candidate's seed is derived from it and the candidate id, so
+         *             results do not depend on scheduling order.
+         *         time_limit: seconds allowed per candidate.
+         *         workers: worker processes; ``None`` means ``max(1, cpu_count - 1)`` and ``1`` runs
+         *             in-process.
+         *         cv_folds: folds of the cross-validation RMSE; ``None`` disables it.
+         *         custom_models: user equations to fit alongside the catalogue. They are always
+         *             candidates (neither ``families`` nor ``max_params`` filters them); the data
+         *             alone decides whether one can be fitted. Ids must be unique and must not
+         *             collide with a catalogue or polynomial id.
+         *         curve_top_n: how many top-ranked candidates (under each ranking criterion) get
+         *             their fitted curve and bands sampled into the result so a UI can plot without
+         *             refitting; ``0`` samples none.
+         */
+        AutoFitConfig: {
+            /**
+             * Curve Top N
+             * @default 5
+             */
+            curve_top_n: number;
+            /**
+             * Custom Models
+             * @default []
+             */
+            custom_models: components["schemas"]["CustomModelDefinition-Output"][];
+            /**
+             * Cv Folds
+             * @default 5
+             */
+            cv_folds: number | null;
+            /**
+             * Exhaustive
+             * @default false
+             */
+            exhaustive: boolean;
+            /** Families */
+            families?: string[] | null;
+            /**
+             * Include Generated
+             * @default true
+             */
+            include_generated: boolean;
+            /**
+             * Include Polynomials
+             * @default true
+             */
+            include_polynomials: boolean;
+            /** Max Params */
+            max_params?: number | null;
+            /**
+             * N Starts
+             * @default 8
+             */
+            n_starts: number;
+            /** @default best_overall */
+            rank_by: components["schemas"]["RankBy"];
+            /**
+             * Seed
+             * @default 0
+             */
+            seed: number;
+            /**
+             * Time Limit
+             * @default 20
+             */
+            time_limit: number;
+            /** Workers */
+            workers?: number | null;
+        };
+        /**
+         * AutoFitRequest
+         * @description Settings of one Auto-fit run. The server sets the time limits and the worker count.
+         */
+        AutoFitRequest: {
+            /**
+             * Curve Top N
+             * @default 5
+             */
+            curve_top_n: number;
+            /** Custom Models */
+            custom_models?: components["schemas"]["CustomModelDefinition-Input"][];
+            /**
+             * Cv Folds
+             * @default 5
+             */
+            cv_folds: number;
+            /**
+             * Exhaustive
+             * @default false
+             */
+            exhaustive: boolean;
+            /** Families */
+            families?: string[] | null;
+            /** Max Parameters */
+            max_parameters?: number | null;
+            /**
+             * N Starts
+             * @default 3
+             */
+            n_starts: number;
+            /** @default best_overall */
+            rank_by: components["schemas"]["RankBy"];
+            /**
+             * Seed
+             * @default 0
+             */
+            seed: number;
+        };
+        /**
+         * AutoFitResult
+         * @description Everything one Auto-fit run found.
+         *
+         *     ``ranked`` holds the converged candidates ordered by ``config.rank_by``; ``outcomes``
+         *     holds every candidate (ordered by id) with its kind and reason; ``skipped`` maps a
+         *     candidate the data cannot support (or that was never fitted because the run was
+         *     cancelled) to its reasons; ``unconverged`` maps every candidate that was fitted but did
+         *     not converge (not converged, failed, timed out) to the reason; ``exact_fits`` lists the
+         *     candidates that reproduce the data exactly (no information criteria exist for them).
+         *     ``curves`` holds the sampled curve and bands of the top ``config.curve_top_n`` candidates
+         *     under every ranking criterion, so a UI can plot any ordering without refitting.
+         *     ``cancelled`` is true for a partial result.
+         */
+        AutoFitResult: {
+            /** Cancelled */
+            cancelled: boolean;
+            config: components["schemas"]["AutoFitConfig"];
+            /** Curves */
+            curves?: {
+                [key: string]: components["schemas"]["RowCurve"];
+            };
+            /** Dataset Fingerprint */
+            dataset_fingerprint: string;
+            /**
+             * Elapsed Seconds
+             * @default 0
+             */
+            elapsed_seconds: number;
+            /** Exact Fits */
+            exact_fits: string[];
+            /** N Active */
+            n_active: number;
+            /** Outcomes */
+            outcomes: components["schemas"]["CandidateOutcome"][];
+            /** Overfitting Note */
+            overfitting_note?: string | null;
+            /** Ranked */
+            ranked: components["schemas"]["RankedFit"][];
+            /** Skipped */
+            skipped: {
+                [key: string]: string[];
+            };
+            /** Unconverged */
+            unconverged: {
+                [key: string]: string;
+            };
+            /** Warnings */
+            warnings: string[];
+        };
+        /**
+         * AutofitOut
+         * @description A stored Auto-fit run. ``result.ranked`` follows ``rank_by``; ``partial`` is true when
+         *     the run was stopped at its time budget, so some candidates were never fitted.
+         */
+        AutofitOut: {
+            /** Best Model Id */
+            best_model_id: string | null;
+            /** Created At */
+            created_at: string;
+            /**
+             * Dataset Id
+             * Format: uuid
+             */
+            dataset_id: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** N Candidates */
+            n_candidates: number;
+            /** Partial */
+            partial: boolean;
+            rank_by: components["schemas"]["RankBy"];
+            result: components["schemas"]["AutoFitResult"];
+        };
+        /** AutofitSummaryOut */
+        AutofitSummaryOut: {
+            /** Best Model Id */
+            best_model_id: string | null;
+            /** Created At */
+            created_at: string;
+            /**
+             * Dataset Id
+             * Format: uuid
+             */
+            dataset_id: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** N Candidates */
+            n_candidates: number;
+            rank_by: components["schemas"]["RankBy"];
+        };
+        /**
          * Band
          * @description A pointwise band around the fitted curve at the requested ``x`` values.
          *
@@ -390,6 +725,74 @@ export interface components {
             y_column?: string | null;
         };
         /**
+         * CandidateMetrics
+         * @description Goodness-of-fit numbers of one fitted candidate; ``None`` means not defined.
+         */
+        CandidateMetrics: {
+            /** Adj R2 */
+            adj_r2?: number | null;
+            /** Aicc */
+            aicc?: number | null;
+            /** Bic */
+            bic?: number | null;
+            /** Cv Rmse */
+            cv_rmse?: number | null;
+            /** K */
+            k: number;
+            /** N */
+            n: number;
+            /** R2 */
+            r2?: number | null;
+            /** Rmse */
+            rmse?: number | null;
+        };
+        /**
+         * CandidateOutcome
+         * @description What happened to one candidate.
+         *
+         *     ``reason`` explains every kind except a plain ``converged`` one (where it is empty unless
+         *     cross-validation was incomplete). ``fit`` is kept for every candidate that was fitted,
+         *     including the ones that did not converge, so the parameters it stopped at can be
+         *     inspected. ``same_curve_as`` lists the fitted candidates whose curve coincides with
+         *     this one.
+         */
+        CandidateOutcome: {
+            /** Candidate Id */
+            candidate_id: string;
+            /**
+             * Category
+             * @default
+             */
+            category: string;
+            /**
+             * Elapsed Seconds
+             * @default 0
+             */
+            elapsed_seconds: number;
+            fit?: components["schemas"]["FitResult"] | null;
+            metrics?: components["schemas"]["CandidateMetrics"] | null;
+            /**
+             * Name
+             * @default
+             */
+            name: string;
+            /**
+             * Outcome
+             * @enum {string}
+             */
+            outcome: "converged" | "not_converged" | "failed" | "timed_out" | "skipped" | "exact_fit";
+            /**
+             * Reason
+             * @default
+             */
+            reason: string;
+            /**
+             * Same Curve As
+             * @default []
+             */
+            same_curve_as: string[];
+        };
+        /**
          * CrossValidation
          * @description Outcome of one cross-validation run; ``None`` means a statistic is not defined.
          *
@@ -428,6 +831,48 @@ export interface components {
             x: number[];
             /** Y */
             y: number[];
+        };
+        /**
+         * CustomModelDefinition
+         * @description A user equation as storable data; ``parameters=None`` infers them from the text.
+         */
+        "CustomModelDefinition-Input": {
+            /** Expression */
+            expression: string;
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Parameters */
+            parameters?: components["schemas"]["ParameterDefinition-Input"][] | null;
+            /**
+             * Variables
+             * @default [
+             *       "x"
+             *     ]
+             */
+            variables: string[];
+        };
+        /**
+         * CustomModelDefinition
+         * @description A user equation as storable data; ``parameters=None`` infers them from the text.
+         */
+        "CustomModelDefinition-Output": {
+            /** Expression */
+            expression: string;
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Parameters */
+            parameters?: components["schemas"]["ParameterDefinition-Output"][] | null;
+            /**
+             * Variables
+             * @default [
+             *       "x"
+             *     ]
+             */
+            variables: string[];
         };
         /**
          * CustomRef
@@ -876,7 +1321,10 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "fit" | "autofit";
+            kind: "fit" | "autofit" | "open_row";
+            progress?: components["schemas"]["ProgressOut"] | null;
+            /** Result Id */
+            result_id?: string | null;
             /** Result Ref */
             result_ref: string | null;
             /** Spec */
@@ -900,6 +1348,22 @@ export interface components {
              * Format: password
              */
             password: string;
+        };
+        /** MeOut */
+        MeOut: {
+            /** Created At */
+            created_at: string;
+            /** Email */
+            email: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            plan: components["schemas"]["PlanOut"];
+            usage: components["schemas"]["UsageOut"];
         };
         /**
          * ModelInfo
@@ -926,6 +1390,77 @@ export interface components {
             references: string[];
             /** Variables */
             variables: string[];
+        };
+        /**
+         * OpenRowOut
+         * @description ``fit_id`` is set when the row was opened before: the fit already exists.
+         */
+        OpenRowOut: {
+            /** Fit Id */
+            fit_id?: string | null;
+            /**
+             * Job Id
+             * Format: uuid
+             */
+            job_id: string;
+        };
+        /**
+         * ParameterDefinition
+         * @description A fitted parameter as the user declares it: start value, bounds, unit, help text.
+         *
+         *     Bounds are floats, unbounded by default; ``None`` is accepted on input and produced
+         *     on serialisation for an infinite bound, so a definition is always valid strict JSON.
+         *     Frozen, so a :class:`CustomModelDefinition` that holds parameters stays hashable (the
+         *     Auto-fit planner caches the compiled model by definition).
+         */
+        "ParameterDefinition-Input": {
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Initial */
+            initial?: number | null;
+            /** Lower */
+            lower?: number;
+            /** Name */
+            name: string;
+            /**
+             * Unit
+             * @default
+             */
+            unit: string;
+            /** Upper */
+            upper?: number;
+        };
+        /**
+         * ParameterDefinition
+         * @description A fitted parameter as the user declares it: start value, bounds, unit, help text.
+         *
+         *     Bounds are floats, unbounded by default; ``None`` is accepted on input and produced
+         *     on serialisation for an infinite bound, so a definition is always valid strict JSON.
+         *     Frozen, so a :class:`CustomModelDefinition` that holds parameters stays hashable (the
+         *     Auto-fit planner caches the compiled model by definition).
+         */
+        "ParameterDefinition-Output": {
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Initial */
+            initial?: number | null;
+            /** Lower */
+            lower?: number | null;
+            /** Name */
+            name: string;
+            /**
+             * Unit
+             * @default
+             */
+            unit: string;
+            /** Upper */
+            upper?: number | null;
         };
         /**
          * ParameterEstimate
@@ -958,6 +1493,17 @@ export interface components {
             unit: string;
             /** Upper */
             upper: number | null;
+        };
+        /** PlanOut */
+        PlanOut: {
+            /** Max Dataset Bytes */
+            max_dataset_bytes: number;
+            /** Max Datasets */
+            max_datasets: number;
+            /** Max Fits */
+            max_fits: number;
+            /** Name */
+            name: string;
         };
         /**
          * PointsOut
@@ -1021,6 +1567,31 @@ export interface components {
             y: (number | null)[];
         };
         /**
+         * ProgressOut
+         * @description A running Auto-fit job's progress: counts, and the best rows found so far.
+         */
+        ProgressOut: {
+            /** Converged */
+            converged: number;
+            /** Done */
+            done: number;
+            /** Elapsed S */
+            elapsed_s: number;
+            /** Failed */
+            failed: number;
+            /**
+             * Partial
+             * @default false
+             */
+            partial: boolean;
+            /** Skipped */
+            skipped: number;
+            /** Top */
+            top: components["schemas"]["RankedFit"][];
+            /** Total */
+            total: number;
+        };
+        /**
          * Provenance
          * @description What produced a result: software versions, input data identity, time and seed.
          */
@@ -1035,6 +1606,60 @@ export interface components {
             software_versions: {
                 [key: string]: string;
             };
+        };
+        /**
+         * RankBy
+         * @description Criterion the final list is ordered by.
+         * @enum {string}
+         */
+        RankBy: "best_overall" | "r2" | "adj_r2" | "rmse" | "aicc" | "bic" | "cv_rmse";
+        /**
+         * RankedFit
+         * @description One row of the ranked result.
+         *
+         *     ``rank`` starts at 1; rows whose fitted curves coincide (``same_curve_as`` lists the
+         *     others) share the rank of the best of them. ``status`` is the candidate's fit status as
+         *     text (``"exact_fit"`` for a fit with SSE = 0). ``parameters`` are the fitted estimates;
+         *     ``warnings`` are the fit's own; ``overfitting_note`` names a much simpler candidate that
+         *     fits almost as well, when there is one.
+         */
+        RankedFit: {
+            /**
+             * Category
+             * @default
+             */
+            category: string;
+            /** Equation Fitted */
+            equation_fitted?: string | null;
+            metrics: components["schemas"]["CandidateMetrics"];
+            /** Model Id */
+            model_id: string;
+            /** Name */
+            name: string;
+            /** Overfitting Note */
+            overfitting_note?: string | null;
+            /**
+             * Parameters
+             * @default []
+             */
+            parameters: components["schemas"]["ParameterEstimate"][];
+            /** Rank */
+            rank: number;
+            /**
+             * Same Curve As
+             * @default []
+             */
+            same_curve_as: string[];
+            /**
+             * Status
+             * @default converged
+             */
+            status: string;
+            /**
+             * Warnings
+             * @default []
+             */
+            warnings: string[];
         };
         /** ReadyOut */
         ReadyOut: {
@@ -1135,6 +1760,35 @@ export interface components {
             /** X */
             x: number[];
         };
+        /**
+         * RowCurve
+         * @description A fitted curve at ``CURVE_POINTS`` x values with its 95 % bands.
+         *
+         *     The x range is the data range plus a 5 % margin on each side, trimmed on a side where
+         *     the model is not defined (``ln(x)`` below zero, say). The band lists are ``None`` when
+         *     the fit has no covariance; ``bands_reason`` then says why. Bands are pointwise.
+         */
+        RowCurve: {
+            /** Bands Reason */
+            bands_reason?: string | null;
+            /** Confidence Lower */
+            confidence_lower?: number[] | null;
+            /** Confidence Upper */
+            confidence_upper?: number[] | null;
+            /**
+             * Notes
+             * @default []
+             */
+            notes: string[];
+            /** Prediction Lower */
+            prediction_lower?: number[] | null;
+            /** Prediction Upper */
+            prediction_upper?: number[] | null;
+            /** X */
+            x: number[];
+            /** Y */
+            y: number[];
+        };
         /** TokenOut */
         TokenOut: {
             /** Access Token */
@@ -1149,6 +1803,15 @@ export interface components {
              * @constant
              */
             token_type: "bearer";
+        };
+        /** UsageOut */
+        UsageOut: {
+            /** Dataset Bytes */
+            dataset_bytes: number;
+            /** Datasets */
+            datasets: number;
+            /** Fits */
+            fits: number;
         };
         /** UserOut */
         UserOut: {
@@ -1316,6 +1979,134 @@ export interface operations {
             };
         };
     };
+    get_autofit_api_v1_autofits__autofit_id__get: {
+        parameters: {
+            query?: {
+                rank_by?: components["schemas"]["RankBy"] | null;
+            };
+            header?: never;
+            path: {
+                autofit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutofitOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_autofit_api_v1_autofits__autofit_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                autofit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_autofit_api_v1_autofits__autofit_id__export_get: {
+        parameters: {
+            query?: {
+                format?: "json" | "csv";
+                rank_by?: components["schemas"]["RankBy"] | null;
+            };
+            header?: never;
+            path: {
+                autofit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    open_row_api_v1_autofits__autofit_id__rows__candidate_id__open_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                autofit_id: string;
+                candidate_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenRowOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_datasets_api_v1_datasets_get: {
         parameters: {
             query?: never;
@@ -1420,6 +2211,72 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_autofit_api_v1_datasets__dataset_id__autofit_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AutoFitRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobCreatedOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_autofits_api_v1_datasets__dataset_id__autofits_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutofitSummaryOut"][];
+                };
             };
             /** @description Validation Error */
             422: {
@@ -1723,8 +2580,26 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["UserOut"];
+                    "application/json": components["schemas"]["MeOut"];
                 };
+            };
+        };
+    };
+    delete_me_api_v1_me_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
