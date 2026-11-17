@@ -1,0 +1,18 @@
+[project]
+name = "curvestudio-plotting"
+version = "0.1.0.dev0"
+description = "CurveStudio publication plotting: Matplotlib figures of fits, bands and residuals"
+readme = "README.md"
+requires-python = ">=3.14"
+license = "AGPL-3.0-or-later"
+dependencies = [
+    "curvestudio-core",
+    "matplotlib>=3.11.2",
+]
+
+[build-system]
+requires = ["hatchling>=1.33.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/curvestudio_plotting"]
