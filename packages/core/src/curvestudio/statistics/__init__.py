@@ -10,14 +10,26 @@ from curvestudio.statistics.criteria import (
 )
 from curvestudio.statistics.errors import StatisticsError
 from curvestudio.statistics.profile import ProfileInterval, ProfileResult, profile_likelihood
+from curvestudio.statistics.validation import (
+    CrossValidation,
+    Fitter,
+    NonlinearFitter,
+    PolynomialFitter,
+    k_fold_cv,
+    loo_cv,
+)
 from curvestudio.statistics.view import FitView, build_view
 
 __all__ = [
     "Band",
     "ComparisonRow",
+    "CrossValidation",
     "FitView",
+    "Fitter",
     "InformationCriteria",
     "ModelComparison",
+    "NonlinearFitter",
+    "PolynomialFitter",
     "ProfileInterval",
     "ProfileResult",
     "StatisticsError",
@@ -25,6 +37,8 @@ __all__ = [
     "compare_models",
     "confidence_band",
     "information_criteria",
+    "k_fold_cv",
+    "loo_cv",
     "prediction_band",
     "profile_likelihood",
 ]
