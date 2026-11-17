@@ -150,6 +150,26 @@ forbidden_modules = [
 ]
 allow_indirect_imports = true
 
+[[tool.importlinter.contracts]]
+name = "Discovery sits above fitting, statistics and models, below the apps"
+type = "forbidden"
+source_modules = ["curvestudio.discovery"]
+forbidden_modules = ["curvestudio.cli", "curvestudio.diagnostics", "curvestudio.workflow"]
+
+[[tool.importlinter.contracts]]
+name = "Nothing below discovery imports it"
+type = "forbidden"
+source_modules = [
+    "curvestudio.data",
+    "curvestudio.fitting",
+    "curvestudio.models",
+    "curvestudio.expressions",
+    "curvestudio.testing",
+    "curvestudio.statistics",
+    "curvestudio.diagnostics",
+]
+forbidden_modules = ["curvestudio.discovery"]
+
 # scipy.odr (deprecated) cannot be a contract here: import-linter rejects subpackages of
 # external packages. tests/unit/test_architecture.py::test_forbidden_odr_import enforces it.
 
