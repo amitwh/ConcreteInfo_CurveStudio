@@ -53,7 +53,11 @@ class ParameterDefinition(BaseModel):
 
     Bounds are floats, unbounded by default; ``None`` is accepted on input and produced
     on serialisation for an infinite bound, so a definition is always valid strict JSON.
+    Frozen, so a :class:`CustomModelDefinition` that holds parameters stays hashable (the
+    Auto-fit planner caches the compiled model by definition).
     """
+
+    model_config = ConfigDict(frozen=True)
 
     name: str
     initial: float | None = None

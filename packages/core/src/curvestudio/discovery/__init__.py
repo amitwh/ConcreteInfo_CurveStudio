@@ -30,6 +30,7 @@ from curvestudio.discovery.types import (
     RegisteredRef,
 )
 from curvestudio.discovery.worker import CandidateJob, candidate_seed, fit_candidate, run_candidate
+from curvestudio.models import CustomModelDefinition
 
 __all__ = [
     "AutoFitConfig",
@@ -40,6 +41,7 @@ __all__ = [
     "CandidateMetrics",
     "CandidateOutcome",
     "CandidateRef",
+    "CustomModelDefinition",
     "CustomRef",
     "ModelRef",
     "PolynomialRef",

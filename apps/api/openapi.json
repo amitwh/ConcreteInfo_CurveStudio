@@ -1,6 +1,405 @@
 {
   "components": {
     "schemas": {
+      "AutoFitConfig": {
+        "additionalProperties": false,
+        "description": "Settings of one Auto-fit run.\n\nAttributes:\n    rank_by: ordering criterion of the result.\n    families: keep only models whose category equals one of these or has it as its first\n        dotted segment (``\"engineering\"`` matches ``\"engineering.strength\"``);\n        ``None`` keeps every category.\n    include_polynomials: also try polynomials (``polyN`` and ``polyN_origin``).\n    include_generated: also try models of lazily generated families.\n    exhaustive: include the long tail of generated families and raise the parameter cap.\n    max_params: largest parameter count tried. ``None`` means\n        ``min(6, max(1, n_active // 4))``, or ``min(10, n_active - 3)`` when exhaustive.\n        Whatever the value, a model never gets more than ``n_active - 3`` parameters.\n    n_starts: multistart count per candidate.\n    seed: base seed; a candidate's seed is derived from it and the candidate id, so\n        results do not depend on scheduling order.\n    time_limit: seconds allowed per candidate.\n    workers: worker processes; ``None`` means ``max(1, cpu_count - 1)`` and ``1`` runs\n        in-process.\n    cv_folds: folds of the cross-validation RMSE; ``None`` disables it.\n    custom_models: user equations to fit alongside the catalogue. They are always\n        candidates (neither ``families`` nor ``max_params`` filters them); the data\n        alone decides whether one can be fitted. Ids must be unique and must not\n        collide with a catalogue or polynomial id.\n    curve_top_n: how many top-ranked candidates (under each ranking criterion) get\n        their fitted curve and bands sampled into the result so a UI can plot without\n        refitting; ``0`` samples none.",
+        "properties": {
+          "curve_top_n": {
+            "default": 5,
+            "maximum": 50.0,
+            "minimum": 0.0,
+            "title": "Curve Top N",
+            "type": "integer"
+          },
+          "custom_models": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/CustomModelDefinition-Output"
+            },
+            "title": "Custom Models",
+            "type": "array"
+          },
+          "cv_folds": {
+            "anyOf": [
+              {
+                "minimum": 2.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": 5,
+            "title": "Cv Folds"
+          },
+          "exhaustive": {
+            "default": false,
+            "title": "Exhaustive",
+            "type": "boolean"
+          },
+          "families": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Families"
+          },
+          "include_generated": {
+            "default": true,
+            "title": "Include Generated",
+            "type": "boolean"
+          },
+          "include_polynomials": {
+            "default": true,
+            "title": "Include Polynomials",
+            "type": "boolean"
+          },
+          "max_params": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Params"
+          },
+          "n_starts": {
+            "default": 8,
+            "minimum": 1.0,
+            "title": "N Starts",
+            "type": "integer"
+          },
+          "rank_by": {
+            "$ref": "#/components/schemas/RankBy",
+            "default": "best_overall"
+          },
+          "seed": {
+            "default": 0,
+            "title": "Seed",
+            "type": "integer"
+          },
+          "time_limit": {
+            "default": 20.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Time Limit",
+            "type": "number"
+          },
+          "workers": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workers"
+          }
+        },
+        "title": "AutoFitConfig",
+        "type": "object"
+      },
+      "AutoFitRequest": {
+        "additionalProperties": false,
+        "description": "Settings of one Auto-fit run. The server sets the time limits and the worker count.",
+        "properties": {
+          "curve_top_n": {
+            "default": 5,
+            "maximum": 10.0,
+            "minimum": 1.0,
+            "title": "Curve Top N",
+            "type": "integer"
+          },
+          "custom_models": {
+            "items": {
+              "$ref": "#/components/schemas/CustomModelDefinition-Input"
+            },
+            "maxItems": 10,
+            "title": "Custom Models",
+            "type": "array"
+          },
+          "cv_folds": {
+            "default": 5,
+            "maximum": 10.0,
+            "minimum": 2.0,
+            "title": "Cv Folds",
+            "type": "integer"
+          },
+          "exhaustive": {
+            "default": false,
+            "title": "Exhaustive",
+            "type": "boolean"
+          },
+          "families": {
+            "anyOf": [
+              {
+                "items": {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "maxItems": 50,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Families"
+          },
+          "max_parameters": {
+            "anyOf": [
+              {
+                "maximum": 10.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Parameters"
+          },
+          "n_starts": {
+            "default": 3,
+            "maximum": 8.0,
+            "minimum": 1.0,
+            "title": "N Starts",
+            "type": "integer"
+          },
+          "rank_by": {
+            "$ref": "#/components/schemas/RankBy",
+            "default": "best_overall"
+          },
+          "seed": {
+            "default": 0,
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Seed",
+            "type": "integer"
+          }
+        },
+        "title": "AutoFitRequest",
+        "type": "object"
+      },
+      "AutoFitResult": {
+        "additionalProperties": false,
+        "description": "Everything one Auto-fit run found.\n\n``ranked`` holds the converged candidates ordered by ``config.rank_by``; ``outcomes``\nholds every candidate (ordered by id) with its kind and reason; ``skipped`` maps a\ncandidate the data cannot support (or that was never fitted because the run was\ncancelled) to its reasons; ``unconverged`` maps every candidate that was fitted but did\nnot converge (not converged, failed, timed out) to the reason; ``exact_fits`` lists the\ncandidates that reproduce the data exactly (no information criteria exist for them).\n``curves`` holds the sampled curve and bands of the top ``config.curve_top_n`` candidates\nunder every ranking criterion, so a UI can plot any ordering without refitting.\n``cancelled`` is true for a partial result.",
+        "properties": {
+          "cancelled": {
+            "title": "Cancelled",
+            "type": "boolean"
+          },
+          "config": {
+            "$ref": "#/components/schemas/AutoFitConfig"
+          },
+          "curves": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/RowCurve"
+            },
+            "title": "Curves",
+            "type": "object"
+          },
+          "dataset_fingerprint": {
+            "title": "Dataset Fingerprint",
+            "type": "string"
+          },
+          "elapsed_seconds": {
+            "default": 0.0,
+            "title": "Elapsed Seconds",
+            "type": "number"
+          },
+          "exact_fits": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Exact Fits",
+            "type": "array"
+          },
+          "n_active": {
+            "title": "N Active",
+            "type": "integer"
+          },
+          "outcomes": {
+            "items": {
+              "$ref": "#/components/schemas/CandidateOutcome"
+            },
+            "title": "Outcomes",
+            "type": "array"
+          },
+          "overfitting_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Overfitting Note"
+          },
+          "ranked": {
+            "items": {
+              "$ref": "#/components/schemas/RankedFit"
+            },
+            "title": "Ranked",
+            "type": "array"
+          },
+          "skipped": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "title": "Skipped",
+            "type": "object"
+          },
+          "unconverged": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Unconverged",
+            "type": "object"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "config",
+          "dataset_fingerprint",
+          "n_active",
+          "ranked",
+          "outcomes",
+          "skipped",
+          "unconverged",
+          "exact_fits",
+          "warnings",
+          "cancelled"
+        ],
+        "title": "AutoFitResult",
+        "type": "object"
+      },
+      "AutofitOut": {
+        "description": "A stored Auto-fit run. ``result.ranked`` follows ``rank_by``; ``partial`` is true when\nthe run was stopped at its time budget, so some candidates were never fitted.",
+        "properties": {
+          "best_model_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Best Model Id"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "dataset_id": {
+            "format": "uuid",
+            "title": "Dataset Id",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "n_candidates": {
+            "title": "N Candidates",
+            "type": "integer"
+          },
+          "partial": {
+            "title": "Partial",
+            "type": "boolean"
+          },
+          "rank_by": {
+            "$ref": "#/components/schemas/RankBy"
+          },
+          "result": {
+            "$ref": "#/components/schemas/AutoFitResult"
+          }
+        },
+        "required": [
+          "id",
+          "dataset_id",
+          "created_at",
+          "best_model_id",
+          "n_candidates",
+          "rank_by",
+          "partial",
+          "result"
+        ],
+        "title": "AutofitOut",
+        "type": "object"
+      },
+      "AutofitSummaryOut": {
+        "properties": {
+          "best_model_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Best Model Id"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "dataset_id": {
+            "format": "uuid",
+            "title": "Dataset Id",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "n_candidates": {
+            "title": "N Candidates",
+            "type": "integer"
+          },
+          "rank_by": {
+            "$ref": "#/components/schemas/RankBy"
+          }
+        },
+        "required": [
+          "id",
+          "dataset_id",
+          "created_at",
+          "best_model_id",
+          "n_candidates",
+          "rank_by"
+        ],
+        "title": "AutofitSummaryOut",
+        "type": "object"
+      },
       "Band": {
         "additionalProperties": false,
         "description": "A pointwise band around the fitted curve at the requested ``x`` values.\n\n``extrapolated[i]`` is true where ``x[i]`` lies outside the range of the active\n(weight > 0) fitted points, where the band relies on the model form alone.",
@@ -144,6 +543,168 @@
         "title": "Body_create_dataset_api_v1_datasets_post",
         "type": "object"
       },
+      "CandidateMetrics": {
+        "additionalProperties": false,
+        "description": "Goodness-of-fit numbers of one fitted candidate; ``None`` means not defined.",
+        "properties": {
+          "adj_r2": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Adj R2"
+          },
+          "aicc": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aicc"
+          },
+          "bic": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bic"
+          },
+          "cv_rmse": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cv Rmse"
+          },
+          "k": {
+            "title": "K",
+            "type": "integer"
+          },
+          "n": {
+            "title": "N",
+            "type": "integer"
+          },
+          "r2": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "R2"
+          },
+          "rmse": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rmse"
+          }
+        },
+        "required": [
+          "k",
+          "n"
+        ],
+        "title": "CandidateMetrics",
+        "type": "object"
+      },
+      "CandidateOutcome": {
+        "additionalProperties": false,
+        "description": "What happened to one candidate.\n\n``reason`` explains every kind except a plain ``converged`` one (where it is empty unless\ncross-validation was incomplete). ``fit`` is kept for every candidate that was fitted,\nincluding the ones that did not converge, so the parameters it stopped at can be\ninspected. ``same_curve_as`` lists the fitted candidates whose curve coincides with\nthis one.",
+        "properties": {
+          "candidate_id": {
+            "title": "Candidate Id",
+            "type": "string"
+          },
+          "category": {
+            "default": "",
+            "title": "Category",
+            "type": "string"
+          },
+          "elapsed_seconds": {
+            "default": 0.0,
+            "title": "Elapsed Seconds",
+            "type": "number"
+          },
+          "fit": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FitResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "metrics": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CandidateMetrics"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "default": "",
+            "title": "Name",
+            "type": "string"
+          },
+          "outcome": {
+            "enum": [
+              "converged",
+              "not_converged",
+              "failed",
+              "timed_out",
+              "skipped",
+              "exact_fit"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "reason": {
+            "default": "",
+            "title": "Reason",
+            "type": "string"
+          },
+          "same_curve_as": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Same Curve As",
+            "type": "array"
+          }
+        },
+        "required": [
+          "candidate_id",
+          "outcome"
+        ],
+        "title": "CandidateOutcome",
+        "type": "object"
+      },
       "CrossValidation": {
         "additionalProperties": false,
         "description": "Outcome of one cross-validation run; ``None`` means a statistic is not defined.\n\n``fold_rmse`` holds the weighted held-out RMSE of each fold in fold order, with\n``None`` for a failed fold. ``rmse`` pools all held-out points and is ``None`` unless\nevery fold succeeded. ``n_failed`` counts failed folds and ``reasons`` names each one,\nso no fold is silently dropped or replaced. ``status`` is ``\"ok\"`` only when no fold\nfailed. Note that ``\"ok\"`` means the estimate is complete, not that the model is valid:\ncross-validation quantifies predictive accuracy, it does not confirm the model.",
@@ -237,6 +798,102 @@
           "y"
         ],
         "title": "CurveSamples",
+        "type": "object"
+      },
+      "CustomModelDefinition-Input": {
+        "description": "A user equation as storable data; ``parameters=None`` infers them from the text.",
+        "properties": {
+          "expression": {
+            "title": "Expression",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "parameters": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ParameterDefinition-Input"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parameters"
+          },
+          "variables": {
+            "default": [
+              "x"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "title": "Variables",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "expression"
+        ],
+        "title": "CustomModelDefinition",
+        "type": "object"
+      },
+      "CustomModelDefinition-Output": {
+        "description": "A user equation as storable data; ``parameters=None`` infers them from the text.",
+        "properties": {
+          "expression": {
+            "title": "Expression",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "parameters": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ParameterDefinition-Output"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parameters"
+          },
+          "variables": {
+            "default": [
+              "x"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "title": "Variables",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "expression"
+        ],
+        "title": "CustomModelDefinition",
         "type": "object"
       },
       "CustomRef": {
@@ -1353,10 +2010,33 @@
           "kind": {
             "enum": [
               "fit",
-              "autofit"
+              "autofit",
+              "open_row"
             ],
             "title": "Kind",
             "type": "string"
+          },
+          "progress": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProgressOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "result_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result Id"
           },
           "result_ref": {
             "anyOf": [
@@ -1541,6 +2221,133 @@
           "is_family"
         ],
         "title": "ModelInfo",
+        "type": "object"
+      },
+      "OpenRowOut": {
+        "description": "``fit_id`` is set when the row was opened before: the fit already exists.",
+        "properties": {
+          "fit_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fit Id"
+          },
+          "job_id": {
+            "format": "uuid",
+            "title": "Job Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id"
+        ],
+        "title": "OpenRowOut",
+        "type": "object"
+      },
+      "ParameterDefinition-Input": {
+        "description": "A fitted parameter as the user declares it: start value, bounds, unit, help text.\n\nBounds are floats, unbounded by default; ``None`` is accepted on input and produced\non serialisation for an infinite bound, so a definition is always valid strict JSON.\nFrozen, so a :class:`CustomModelDefinition` that holds parameters stays hashable (the\nAuto-fit planner caches the compiled model by definition).",
+        "properties": {
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "initial": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Initial"
+          },
+          "lower": {
+            "title": "Lower",
+            "type": "number"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "unit": {
+            "default": "",
+            "title": "Unit",
+            "type": "string"
+          },
+          "upper": {
+            "title": "Upper",
+            "type": "number"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "ParameterDefinition",
+        "type": "object"
+      },
+      "ParameterDefinition-Output": {
+        "description": "A fitted parameter as the user declares it: start value, bounds, unit, help text.\n\nBounds are floats, unbounded by default; ``None`` is accepted on input and produced\non serialisation for an infinite bound, so a definition is always valid strict JSON.\nFrozen, so a :class:`CustomModelDefinition` that holds parameters stays hashable (the\nAuto-fit planner caches the compiled model by definition).",
+        "properties": {
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "initial": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Initial"
+          },
+          "lower": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lower"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "unit": {
+            "default": "",
+            "title": "Unit",
+            "type": "string"
+          },
+          "upper": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Upper"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "ParameterDefinition",
         "type": "object"
       },
       "ParameterEstimate": {
@@ -1899,6 +2706,58 @@
         "title": "Prediction",
         "type": "object"
       },
+      "ProgressOut": {
+        "description": "A running Auto-fit job's progress: counts, and the best rows found so far.",
+        "properties": {
+          "converged": {
+            "title": "Converged",
+            "type": "integer"
+          },
+          "done": {
+            "title": "Done",
+            "type": "integer"
+          },
+          "elapsed_s": {
+            "title": "Elapsed S",
+            "type": "number"
+          },
+          "failed": {
+            "title": "Failed",
+            "type": "integer"
+          },
+          "partial": {
+            "default": false,
+            "title": "Partial",
+            "type": "boolean"
+          },
+          "skipped": {
+            "title": "Skipped",
+            "type": "integer"
+          },
+          "top": {
+            "items": {
+              "$ref": "#/components/schemas/RankedFit"
+            },
+            "title": "Top",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "done",
+          "total",
+          "converged",
+          "failed",
+          "skipped",
+          "elapsed_s",
+          "top"
+        ],
+        "title": "ProgressOut",
+        "type": "object"
+      },
       "Provenance": {
         "additionalProperties": false,
         "description": "What produced a result: software versions, input data identity, time and seed.",
@@ -1930,6 +2789,105 @@
           "seed"
         ],
         "title": "Provenance",
+        "type": "object"
+      },
+      "RankBy": {
+        "description": "Criterion the final list is ordered by.",
+        "enum": [
+          "best_overall",
+          "r2",
+          "adj_r2",
+          "rmse",
+          "aicc",
+          "bic",
+          "cv_rmse"
+        ],
+        "title": "RankBy",
+        "type": "string"
+      },
+      "RankedFit": {
+        "additionalProperties": false,
+        "description": "One row of the ranked result.\n\n``rank`` starts at 1; rows whose fitted curves coincide (``same_curve_as`` lists the\nothers) share the rank of the best of them. ``status`` is the candidate's fit status as\ntext (``\"exact_fit\"`` for a fit with SSE = 0). ``parameters`` are the fitted estimates;\n``warnings`` are the fit's own; ``overfitting_note`` names a much simpler candidate that\nfits almost as well, when there is one.",
+        "properties": {
+          "category": {
+            "default": "",
+            "title": "Category",
+            "type": "string"
+          },
+          "equation_fitted": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Equation Fitted"
+          },
+          "metrics": {
+            "$ref": "#/components/schemas/CandidateMetrics"
+          },
+          "model_id": {
+            "title": "Model Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "overfitting_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Overfitting Note"
+          },
+          "parameters": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ParameterEstimate"
+            },
+            "title": "Parameters",
+            "type": "array"
+          },
+          "rank": {
+            "title": "Rank",
+            "type": "integer"
+          },
+          "same_curve_as": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Same Curve As",
+            "type": "array"
+          },
+          "status": {
+            "default": "converged",
+            "title": "Status",
+            "type": "string"
+          },
+          "warnings": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "rank",
+          "model_id",
+          "name",
+          "metrics"
+        ],
+        "title": "RankedFit",
         "type": "object"
       },
       "ReadyOut": {
@@ -2193,6 +3151,107 @@
           "flagged_high_influence"
         ],
         "title": "ResidualSet",
+        "type": "object"
+      },
+      "RowCurve": {
+        "additionalProperties": false,
+        "description": "A fitted curve at ``CURVE_POINTS`` x values with its 95 % bands.\n\nThe x range is the data range plus a 5 % margin on each side, trimmed on a side where\nthe model is not defined (``ln(x)`` below zero, say). The band lists are ``None`` when\nthe fit has no covariance; ``bands_reason`` then says why. Bands are pointwise.",
+        "properties": {
+          "bands_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bands Reason"
+          },
+          "confidence_lower": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence Lower"
+          },
+          "confidence_upper": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence Upper"
+          },
+          "notes": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Notes",
+            "type": "array"
+          },
+          "prediction_lower": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prediction Lower"
+          },
+          "prediction_upper": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prediction Upper"
+          },
+          "x": {
+            "items": {
+              "type": "number"
+            },
+            "title": "X",
+            "type": "array"
+          },
+          "y": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Y",
+            "type": "array"
+          }
+        },
+        "required": [
+          "x",
+          "y"
+        ],
+        "title": "RowCurve",
         "type": "object"
       },
       "TokenOut": {
@@ -2490,6 +3549,245 @@
         ]
       }
     },
+    "/api/v1/autofits/{autofit_id}": {
+      "delete": {
+        "operationId": "delete_autofit_api_v1_autofits__autofit_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "autofit_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Autofit Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Autofit",
+        "tags": [
+          "autofit"
+        ]
+      },
+      "get": {
+        "description": "The stored run. ``rank_by`` re-orders the rows by another criterion without refitting.",
+        "operationId": "get_autofit_api_v1_autofits__autofit_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "autofit_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Autofit Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "rank_by",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/RankBy"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Rank By"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutofitOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Autofit",
+        "tags": [
+          "autofit"
+        ]
+      }
+    },
+    "/api/v1/autofits/{autofit_id}/export": {
+      "get": {
+        "description": "Download the run as one CSV table of candidates, or as JSON (the same as ``GET``).",
+        "operationId": "export_autofit_api_v1_autofits__autofit_id__export_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "autofit_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Autofit Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "format",
+            "required": false,
+            "schema": {
+              "default": "csv",
+              "enum": [
+                "json",
+                "csv"
+              ],
+              "title": "Format",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "rank_by",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/RankBy"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Rank By"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Export Autofit",
+        "tags": [
+          "autofit"
+        ]
+      }
+    },
+    "/api/v1/autofits/{autofit_id}/rows/{candidate_id}/open": {
+      "post": {
+        "description": "Refit one row with the run's seed into a stored fit (``/fits/{id}``: curve, bands,\ndiagnostics, predict, export). Idempotent: a row already opened answers with its fit\n(``fit_id``); one being opened answers with the job already running.",
+        "operationId": "open_row_api_v1_autofits__autofit_id__rows__candidate_id__open_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "autofit_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Autofit Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "candidate_id",
+            "required": true,
+            "schema": {
+              "title": "Candidate Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenRowOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Open Row",
+        "tags": [
+          "autofit"
+        ]
+      }
+    },
     "/api/v1/datasets": {
       "get": {
         "operationId": "list_datasets_api_v1_datasets_get",
@@ -2664,6 +3962,117 @@
         "summary": "Get Dataset",
         "tags": [
           "datasets"
+        ]
+      }
+    },
+    "/api/v1/datasets/{dataset_id}/autofit": {
+      "post": {
+        "description": "Queue an Auto-fit run: every applicable model is fitted and ranked. Follow it with\n``GET /jobs/{id}`` (progress and the best rows so far); the finished run is an\n``/autofits/{id}``. A request the engine refuses (too few points, unknown family, an\nunusable custom equation) is a 422 whose ``detail.code`` names the reason.",
+        "operationId": "create_autofit_api_v1_datasets__dataset_id__autofit_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dataset_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Dataset Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AutoFitRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobCreatedOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Autofit",
+        "tags": [
+          "autofit"
+        ]
+      }
+    },
+    "/api/v1/datasets/{dataset_id}/autofits": {
+      "get": {
+        "operationId": "list_autofits_api_v1_datasets__dataset_id__autofits_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dataset_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Dataset Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AutofitSummaryOut"
+                  },
+                  "title": "Response List Autofits Api V1 Datasets  Dataset Id  Autofits Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Autofits",
+        "tags": [
+          "autofit"
         ]
       }
     },

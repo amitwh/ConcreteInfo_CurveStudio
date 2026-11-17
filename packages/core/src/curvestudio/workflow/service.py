@@ -404,7 +404,9 @@ def _check_spec_matches(result: FitResult, spec: FitSpec) -> ModelSpec | None:
     ref = spec.model
     is_polynomial_result = _POLYNOMIAL_ID.fullmatch(result.model_id) is not None
     if isinstance(ref, PolynomialRef):
-        if not is_polynomial_result or len(result.parameters) != ref.degree + 1:
+        # A polynomial through the origin (Auto-fit's ``polyN_origin``) has no constant term.
+        n_terms = ref.degree if result.model_id.endswith("_origin") else ref.degree + 1
+        if not is_polynomial_result or len(result.parameters) != n_terms:
             raise WorkflowError(
                 "MODEL_MISMATCH",
                 f"the fit is {result.model_id!r}, not a polynomial of degree {ref.degree}",

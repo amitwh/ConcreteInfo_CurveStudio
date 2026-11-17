@@ -2,22 +2,23 @@
 
 import json
 import uuid
+from collections.abc import Callable
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Query, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy import func, select
-from sqlalchemy.orm import defer
+from sqlalchemy.orm import Session, defer
 
 from curvestudio.data import XY
 from curvestudio.workflow import FitBundle, FitSpec, Prediction, WorkflowError, predict
 from curvestudio_api import audit, quotas
-from curvestudio_api.deps import Ctx, CurrentUser, Db, own_dataset, own_fit, own_job
+from curvestudio_api.deps import Context, Ctx, CurrentUser, Db, own_dataset, own_fit, own_job
 from curvestudio_api.errors import ApiError
 from curvestudio_api.export import csv_chunks
 from curvestudio_api.jobs import ACTIVE, Task
 from curvestudio_api.logging_setup import request_id_var
-from curvestudio_api.orm import Dataset, Fit, Job
+from curvestudio_api.orm import Dataset, Fit, Job, User
 from curvestudio_api.schemas import FitSummaryOut, JobCreatedOut, JobOut, PredictIn
 from curvestudio_api.specs import check_spec
 from curvestudio_api.storage import decode_payload
@@ -26,6 +27,30 @@ from curvestudio_api.workflow_errors import api_error
 router = APIRouter(tags=["fits"])
 
 MAX_ACTIVE_JOBS_PER_USER = 20
+
+
+def admit_job(db: Session, ctx: Context, user: User, check_quota: Callable[[], None]) -> None:
+    """Refuse a new job when the user already has too many in flight, when ``check_quota``
+    (the job kind's own quota) says no, or when the server's queue is full."""
+    active = db.scalar(
+        select(func.count()).select_from(Job).where(Job.user_id == user.id, Job.status.in_(ACTIVE))
+    )
+    if (active or 0) >= MAX_ACTIVE_JOBS_PER_USER:
+        raise ApiError(
+            429,
+            "RATE_LIMITED",
+            f"{MAX_ACTIVE_JOBS_PER_USER} jobs are already waiting or running; wait for one",
+            {"code": "TOO_MANY_JOBS"},
+        )
+    check_quota()
+    if not ctx.jobs.queue_has_room():
+        raise ApiError(
+            503,
+            "QUEUE_FULL",
+            "the server is busy: too many fits are waiting; try again shortly",
+            {"code": "QUEUE_FULL"},
+            {"Retry-After": "30"},
+        )
 
 
 def job_out(job: Job) -> JobOut:
@@ -37,6 +62,8 @@ def job_out(job: Job) -> JobOut:
             "dataset_id": job.dataset_id,
             "spec": job.spec,
             "result_ref": job.result_ref,
+            "result_id": job.result_ref if job.status == "succeeded" else None,
+            "progress": job.progress,
             "error_code": job.error_code,
             "error_message": job.error_message,
             "created_at": job.created_at,
@@ -81,25 +108,7 @@ def create_fit(
         check_spec(spec, weighted=dataset.weight_column is not None)
     except WorkflowError as exc:
         raise api_error(exc) from exc
-    active = db.scalar(
-        select(func.count()).select_from(Job).where(Job.user_id == user.id, Job.status.in_(ACTIVE))
-    )
-    if (active or 0) >= MAX_ACTIVE_JOBS_PER_USER:
-        raise ApiError(
-            429,
-            "RATE_LIMITED",
-            f"{MAX_ACTIVE_JOBS_PER_USER} jobs are already waiting or running; wait for one",
-            {"code": "TOO_MANY_JOBS"},
-        )
-    quotas.check(db, ctx.settings, user.id, "fits")
-    if not ctx.jobs.queue_has_room():
-        raise ApiError(
-            503,
-            "QUEUE_FULL",
-            "the server is busy: too many fits are waiting; try again shortly",
-            {"code": "QUEUE_FULL"},
-            {"Retry-After": "30"},
-        )
+    admit_job(db, ctx, user, lambda: quotas.check(db, ctx.settings, user.id, "fits"))
     budget = ctx.settings.job_timeout_s
     effective = spec.model_copy(update={"time_limit": min(spec.time_limit or budget, budget)})
     job = Job(
