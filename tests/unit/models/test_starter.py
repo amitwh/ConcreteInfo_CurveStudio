@@ -273,11 +273,14 @@ def test_register_starter_models_is_idempotent(clean_registry: None) -> None:
 
 
 def test_importing_models_package_registers_starter_set() -> None:
-    """A fresh interpreter (untouched registry) sees all nine models after import."""
+    """A fresh interpreter (untouched registry) sees all nine starter models after import."""
     code = (
         "from curvestudio.models import list_models; print(','.join(m.id for m in list_models()))"
     )
     done = subprocess.run(
         [sys.executable, "-I", "-c", code], capture_output=True, text=True, check=True
     )
-    assert done.stdout.strip().split(",") == list(EXPECTED_IDS)
+    # Installed catalogue plugins (curvestudio-models) register more models; the starter set
+    # must be there, in its own order.
+    ids = done.stdout.strip().split(",")
+    assert [i for i in ids if i in EXPECTED_IDS] == list(EXPECTED_IDS)
