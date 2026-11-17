@@ -92,6 +92,31 @@ def reference_fit(entry: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def information_criteria_references(entry: dict[str, Any]) -> dict[str, Any]:
+    """Statsmodels AIC/BIC/log-likelihood for polynomial degrees 1-4 of one dataset.
+
+    Statsmodels charges ``df_model + k_constant`` parameters and does not count the error
+    variance, so the cross-check compares differences and a known constant offset rather
+    than the absolute values.
+    """
+    x: FloatArray = entry["x"]
+    references: dict[str, Any] = {}
+    for degree in (1, 2, 3, 4):
+        design = np.vander(x, degree + 1, increasing=True)
+        if entry["w"] is None:
+            res = sm.OLS(entry["y"], design).fit()
+        else:
+            res = sm.WLS(entry["y"], design, weights=entry["w"]).fit()
+        references[str(degree)] = {
+            "aic": float(res.aic),
+            "bic": float(res.bic),
+            "llf": float(res.llf),
+            "nobs": int(res.nobs),
+            "df_model": int(res.df_model),
+        }
+    return references
+
+
 def build_fixtures() -> dict[str, Any]:
     datasets: dict[str, Any] = {}
     for name, entry in build_datasets().items():
@@ -103,6 +128,8 @@ def build_fixtures() -> dict[str, Any]:
             "w": None if entry["w"] is None else entry["w"].tolist(),
             "fit": reference_fit(entry),
         }
+        if name in ("linear30", "quad40", "heavy60"):
+            datasets[name]["criteria"] = information_criteria_references(entry)
     return {
         "meta": {
             "generator": "scripts/make_crosscheck_fixtures.py",
