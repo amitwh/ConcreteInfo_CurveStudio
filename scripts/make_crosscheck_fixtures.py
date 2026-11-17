@@ -21,6 +21,7 @@ from typing import Any
 import numpy as np
 import statsmodels.api as sm
 from numpy.typing import NDArray
+from statsmodels.stats.outliers_influence import OLSInfluence
 
 FloatArray = NDArray[np.float64]
 
@@ -125,6 +126,34 @@ def reference_bands(entry: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def reference_influence(entry: dict[str, Any]) -> dict[str, Any]:
+    """Statsmodels ``OLSInfluence`` keys for the residual-set cross-check (Task 3.4).
+
+    ``OLSInfluence`` is only right for OLS: given a WLS result it builds the hat diagonal
+    from the unweighted design and scales raw residuals by the weighted scale. So weighted
+    data go through the equivalent OLS fit of the whitened data (``sqrt(w) * y`` on
+    ``sqrt(w) * X``), whose leverage, studentized residuals and Cook's distance are the
+    weighted-fit definitions. The PRESS residual is reported in the units of y (raw residual
+    over ``1 - h``), i.e. the whitened PRESS residual divided by ``sqrt(w)``.
+    """
+    x: FloatArray = entry["x"]
+    design = np.vander(x, entry["degree"] + 1, increasing=True)
+    if entry["w"] is None:
+        root_w = np.ones(x.size)
+        whitened = sm.OLS(entry["y"], design).fit()
+    else:
+        root_w = np.sqrt(entry["w"])
+        whitened = sm.OLS(root_w * entry["y"], root_w[:, None] * design).fit()
+    influence = OLSInfluence(whitened)
+    return {
+        "hat_matrix_diag": influence.hat_matrix_diag.tolist(),
+        "resid_press": (influence.resid_press / root_w).tolist(),
+        "cooks_distance": influence.cooks_distance[0].tolist(),
+        "resid_studentized_internal": influence.resid_studentized_internal.tolist(),
+        "resid_studentized_external": influence.resid_studentized_external.tolist(),
+    }
+
+
 def build_fixtures() -> dict[str, Any]:
     datasets: dict[str, Any] = {}
     for name, entry in build_datasets().items():
@@ -136,6 +165,7 @@ def build_fixtures() -> dict[str, Any]:
             "w": None if entry["w"] is None else entry["w"].tolist(),
             "fit": reference_fit(entry),
             "bands": reference_bands(entry),
+            "influence": reference_influence(entry),
         }
     return {
         "meta": {
