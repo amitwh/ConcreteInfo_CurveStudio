@@ -15,6 +15,7 @@ from numpy.typing import NDArray
 from pydantic import BaseModel, ConfigDict
 from scipy import stats as sps
 
+from curvestudio.statistics._checks import check_level, check_x
 from curvestudio.statistics.errors import StatisticsError
 from curvestudio.statistics.view import FitView
 
@@ -47,22 +48,6 @@ class Band(BaseModel):
     df: int
     pointwise: bool = True
     note: str
-
-
-def _check_level(level: float) -> None:
-    if not (np.isfinite(level) and 0.0 < level < 1.0):
-        raise StatisticsError(
-            "INVALID_LEVEL", f"level must lie strictly between 0 and 1, got {level}"
-        )
-
-
-def _check_x(x: FloatArray) -> FloatArray:
-    points = np.asarray(x, dtype=np.float64)
-    if points.ndim != 1 or points.size == 0:
-        raise StatisticsError("INVALID_X", "x must be a non-empty one-dimensional array")
-    if not np.all(np.isfinite(points)):
-        raise StatisticsError("INVALID_X", "x must contain only finite values")
-    return points
 
 
 def _check_new_weight(new_weight: float | FloatArray, n_points: int) -> FloatArray:
@@ -122,8 +107,8 @@ def confidence_band(view: FitView, x: FloatArray, level: float = 0.95) -> Band:
             non-1-D, non-finite ``x``, or a model that is not finite there);
             ``NO_DEGREES_OF_FREEDOM`` / ``NO_COVARIANCE`` (the fit gives no uncertainty).
     """
-    _check_level(level)
-    points = _check_x(x)
+    check_level(level)
+    points = check_x(x)
     return _build_band(view, points, level, "confidence", None)
 
 
@@ -139,8 +124,8 @@ def prediction_band(
         StatisticsError: as :func:`confidence_band`, plus ``INVALID_WEIGHT`` (``new_weight``
             not finite and positive, or of the wrong shape).
     """
-    _check_level(level)
-    points = _check_x(x)
+    check_level(level)
+    points = check_x(x)
     weights = _check_new_weight(new_weight, points.size)
     view.require_covariance()  # raises NO_DEGREES_OF_FREEDOM / NO_COVARIANCE before s2 is used
     assert view.s2 is not None  # df > 0 was just ensured

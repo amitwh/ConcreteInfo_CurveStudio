@@ -21,6 +21,7 @@ from numpy.typing import NDArray
 from pydantic import BaseModel, ConfigDict
 
 from curvestudio.fitting.metrics import FiniteFloat
+from curvestudio.statistics._checks import check_level, check_x
 from curvestudio.statistics.bands import Band
 from curvestudio.statistics.errors import StatisticsError
 from curvestudio.statistics.view import FitView
@@ -51,22 +52,6 @@ class Propagation(BaseModel):
     ci_low: FiniteFloat
     ci_high: FiniteFloat
     n_nonfinite: int
-
-
-def _check_level(level: float) -> None:
-    if not (np.isfinite(level) and 0.0 < level < 1.0):
-        raise StatisticsError(
-            "INVALID_LEVEL", f"level must lie strictly between 0 and 1, got {level}"
-        )
-
-
-def _check_x(x: FloatArray) -> FloatArray:
-    points = np.asarray(x, dtype=np.float64)
-    if points.ndim != 1 or points.size == 0:
-        raise StatisticsError("INVALID_X", "x must be a non-empty one-dimensional array")
-    if not np.all(np.isfinite(points)):
-        raise StatisticsError("INVALID_X", "x must contain only finite values")
-    return points
 
 
 def _check_n(n: int) -> None:
@@ -148,7 +133,7 @@ def propagate(
             not in (0, 1)) and ``PROPAGATION_UNSTABLE`` (too few draws gave a finite
             result).
     """
-    _check_level(level)
+    check_level(level)
     samples = sample_parameters(view, n=n, seed=seed)
     values = np.empty(samples.shape[0], dtype=np.float64)
     n_nonfinite = 0
@@ -231,8 +216,8 @@ def monte_carlo_band(
             that is not finite there) and ``PROPAGATION_UNSTABLE`` (more than half of the
             draws gave no finite model value at one of the requested ``x``).
     """
-    _check_level(level)
-    points = _check_x(x)
+    check_level(level)
+    points = check_x(x)
     samples = sample_parameters(view, n=n, seed=seed)
     fitted = view.predict(points)
     if not np.all(np.isfinite(fitted)):

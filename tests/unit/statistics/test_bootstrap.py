@@ -9,8 +9,11 @@ import pytest
 
 from curvestudio.data import XY
 from curvestudio.fitting import FitResult, FitStatus, fit_polynomial
+from curvestudio.models import ModelSpec, Parameter, register
+from curvestudio.models.registry import _clear_registry
 from curvestudio.statistics import (
     BootstrapResult,
+    NonlinearFitter,
     PolynomialFitter,
     StatisticsError,
     bootstrap,
@@ -176,6 +179,49 @@ def test_distinct_failure_reasons_are_counted_separately() -> None:
     assert sum(counts) == boot.n_failed
 
 
+class RenamingFitter:
+    """Converge, but rename the parameters of every ``every``-th replicate's result."""
+
+    def __init__(self, every: int = 4) -> None:
+        self.every = every
+        self.calls = 0
+        self._poly = PolynomialFitter(1)
+
+    def fit(self, data: XY) -> FitResult:
+        self.calls += 1
+        result = self._poly.fit(data)
+        if self.calls % self.every != 0:
+            return result
+        renamed = tuple(
+            parameter.model_copy(update={"name": f"renamed_{parameter.name}"})
+            for parameter in result.parameters
+        )
+        return result.model_copy(update={"parameters": renamed})
+
+    def predict(self, result: FitResult, x: Any) -> Any:
+        return self._poly.predict(result, x)
+
+
+def test_replicate_with_foreign_parameter_names_is_failed_not_used() -> None:
+    # Replicates are summarised by parameter position, so a converged result whose
+    # parameter names differ from the original fit's must not enter the pool silently.
+    data = line_data(n=30, seed=8)
+    result = fitted_line(data)
+
+    boot = bootstrap(data, RenamingFitter(every=4), result, n_boot=100, seed=5, min_success=0.5)
+
+    assert boot.status == "ok"  # 75/100 converged is above min_success=0.5
+    assert boot.n_converged == 75
+    assert boot.n_failed == 25
+    assert len(boot.replicates) == 75
+    assert all(len(row) == 2 for row in boot.replicates)
+    assert len(boot.reasons) == 1
+    assert "fit returned parameters" in boot.reasons[0]
+    assert "renamed_b0" in boot.reasons[0] and "renamed_b1" in boot.reasons[0]
+    assert "expected ['b0', 'b1']" in boot.reasons[0]
+    assert "25 replicate(s)" in boot.reasons[0]
+
+
 def test_ci_contains_estimate_and_orders_correctly() -> None:
     data = line_data(n=40, seed=5)
     result = fitted_line(data)
@@ -189,6 +235,45 @@ def test_ci_contains_estimate_and_orders_correctly() -> None:
         assert parameter.ci_low <= parameter.mean <= parameter.ci_high
         assert parameter.ci_low <= parameter.estimate <= parameter.ci_high
         assert parameter.std_err > 0.0
+
+
+EXPONENTIAL_DECAY = ModelSpec(
+    id="exp_decay_boot_r1",
+    name="Exponential decay",
+    category="test",
+    expression="a*exp(-b*x)",
+    parameters=(Parameter("a"), Parameter("b")),
+    initial_guess=lambda x, y: {"a": float(np.max(y)), "b": 0.5},
+)
+
+
+def exponential_decay_data(n: int = 25, seed: int = 21) -> XY:
+    rng = np.random.default_rng(seed)
+    x = np.linspace(0.0, 5.0, n)
+    return make_xy(x, 3.0 * np.exp(-0.4 * x) + rng.normal(0.0, 0.05, n), fingerprint="fp-exp-decay")
+
+
+def test_bootstrap_with_nonlinear_fitter_on_a_registered_model() -> None:
+    _clear_registry()
+    register(EXPONENTIAL_DECAY)
+    try:
+        data = exponential_decay_data()
+        fitter = NonlinearFitter(EXPONENTIAL_DECAY, start={"a": 3.0, "b": 0.4})
+        result = fitter.fit(data)
+        assert result.status is FitStatus.CONVERGED
+
+        boot = bootstrap(data, fitter, result, n_boot=50, seed=13)
+
+        assert boot.status == "ok"
+        assert boot.n_requested == 50
+        assert boot.n_converged + boot.n_failed == 50
+        assert [parameter.name for parameter in boot.parameters] == ["a", "b"]
+        for parameter in boot.parameters:
+            assert parameter.ci_low is not None and parameter.ci_high is not None
+            assert parameter.ci_low <= parameter.ci_high
+            assert parameter.std_err > 0.0
+    finally:
+        _clear_registry()
 
 
 def test_zero_weight_points_are_not_resampled() -> None:
