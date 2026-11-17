@@ -195,11 +195,11 @@ def test_propagate_matches_the_delta_method_for_a_linear_function() -> None:
 def test_propagate_counts_nonfinite_results() -> None:
     view = line_view()
 
-    def half_the_time(p: Mapping[str, float]) -> float:
+    def upper_tail_is_nan(p: Mapping[str, float]) -> float:
         value = p["a"] + p["b"]
         return value if value < 4.0 else math.nan
 
-    result = propagate(view, half_the_time, n=20_000, seed=2)
+    result = propagate(view, upper_tail_is_nan, n=20_000, seed=2)
 
     assert 0 < result.n_nonfinite < result.n // 10
     # the non-finite draws are left out of the statistics, not counted as zero
@@ -217,6 +217,31 @@ def test_propagate_reports_a_draw_that_raised() -> None:
         propagate(view, always_raises, n=100, seed=1)
     assert info.value.code == "PROPAGATION_UNSTABLE"
     assert "no such thing" in str(info.value)
+
+
+def test_a_bug_in_the_function_is_not_counted_as_a_nonfinite_draw() -> None:
+    view = line_view()
+
+    def buggy(p: Mapping[str, float]) -> float:
+        # fails only for some parameter sets, which a catch-all would hide in n_nonfinite
+        return p["a"] + p["c_missing"] if p["a"] + p["b"] > 4.0 else p["a"]
+
+    with pytest.raises(KeyError):
+        propagate(view, buggy, n=2000, seed=2)
+
+
+def test_arithmetic_errors_count_as_nonfinite_draws() -> None:
+    view = line_view()
+    assert view.cov is not None
+    cutoff = float(view.theta[0] + 1.28 * np.sqrt(view.cov[0, 0]))  # ~10 % of draws lie above
+
+    def divides_by_zero_in_the_upper_tail(p: Mapping[str, float]) -> float:
+        if p["a"] > cutoff:
+            return 1.0 / (p["a"] - p["a"])
+        return p["a"]
+
+    result = propagate(view, divides_by_zero_in_the_upper_tail, n=5000, seed=4)
+    assert 0.05 * 5000 < result.n_nonfinite < 0.15 * 5000
 
 
 def test_propagate_refuses_an_unstable_propagation() -> None:

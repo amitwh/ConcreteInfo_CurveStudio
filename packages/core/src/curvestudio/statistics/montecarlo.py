@@ -130,9 +130,12 @@ def propagate(
 
     ``func`` is called once per draw with a mapping of parameter name to value and
     returns the derived quantity. A draw that does not give a finite number -- because
-    ``func`` returned NaN or infinity, or because it raised, the quantity being undefined
-    for that parameter set -- is counted in ``n_nonfinite`` and left out of the
-    statistics. When more than half of the draws fail the propagation is refused as
+    ``func`` returned NaN or infinity, or raised an arithmetic or domain error
+    (``ArithmeticError`` such as division by zero or overflow, or ``ValueError`` such as
+    ``math.sqrt`` of a negative number), the quantity being undefined for that parameter
+    set -- is counted in ``n_nonfinite`` and left out of the statistics. Any other exception
+    (``KeyError``, ``NameError``, ``TypeError`` ...) is a bug in ``func`` and propagates
+    unchanged. When more than half of the draws fail the propagation is refused as
     unstable rather than reported from the few that survived.
 
     The reported interval is the central ``level`` interval of the propagated
@@ -153,7 +156,7 @@ def propagate(
     for index, row in enumerate(samples):
         try:
             value = float(func(dict(zip(view.names, row.tolist(), strict=True))))
-        except Exception as exc:  # the quantity is undefined for this parameter set
+        except (ArithmeticError, ValueError) as exc:  # undefined for this parameter set
             value = math.nan
             if first_failure is None:
                 first_failure = exc
