@@ -6,6 +6,8 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from curvestudio.fitting.metrics import FiniteFloat
+from curvestudio.fitting.result import ParameterEstimate
+from curvestudio.models.custom import CustomModelDefinition
 
 
 class AutoFitError(ValueError):
@@ -56,6 +58,13 @@ class AutoFitConfig(BaseModel):
         workers: worker processes; ``None`` means ``max(1, cpu_count - 1)`` and ``1`` runs
             in-process.
         cv_folds: folds of the cross-validation RMSE; ``None`` disables it.
+        custom_models: user equations to fit alongside the catalogue. They are always
+            candidates (neither ``families`` nor ``max_params`` filters them); the data
+            alone decides whether one can be fitted. Ids must be unique and must not
+            collide with a catalogue or polynomial id.
+        curve_top_n: how many top-ranked candidates (under each ranking criterion) get
+            their fitted curve and bands sampled into the result so a UI can plot without
+            refitting; ``0`` samples none.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -71,6 +80,8 @@ class AutoFitConfig(BaseModel):
     time_limit: Annotated[float, Field(gt=0.0, allow_inf_nan=False)] = 20.0
     workers: Annotated[int, Field(ge=1)] | None = None
     cv_folds: Annotated[int, Field(ge=2)] | None = 5
+    custom_models: tuple[CustomModelDefinition, ...] = ()
+    curve_top_n: Annotated[int, Field(ge=0, le=50)] = 5
 
     @field_validator("families")
     @classmethod
@@ -114,13 +125,22 @@ class RegisteredRef(BaseModel):
 ModelRef = RegisteredRef
 """Name used by the plan for :class:`RegisteredRef`."""
 
-CandidateRef = Annotated[PolynomialRef | RegisteredRef, Field(discriminator="kind")]
-"""What one worker needs to rebuild a candidate; each variant has ``kind`` and ``id``.
 
-The ``CustomRef`` variant (a user-defined equation) is added by Task 4.14, which brings
-``CustomModelDefinition``: one more class with ``kind: Literal["custom"]`` and one more
-member of this union, so existing code keeps working unchanged.
-"""
+class CustomRef(BaseModel):
+    """A user-defined equation; the definition travels with the job so a worker can build it."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: Literal["custom"] = "custom"
+    definition: CustomModelDefinition
+
+    @property
+    def id(self) -> str:
+        return self.definition.id
+
+
+CandidateRef = Annotated[PolynomialRef | RegisteredRef | CustomRef, Field(discriminator="kind")]
+"""What one worker needs to rebuild a candidate; each variant has ``kind`` and ``id``."""
 
 
 class CandidateMetrics(BaseModel):
@@ -142,8 +162,10 @@ class RankedFit(BaseModel):
     """One row of the ranked result.
 
     ``rank`` starts at 1; rows whose fitted curves coincide (``same_curve_as`` lists the
-    others) share the rank of the best of them. ``status`` is the candidate's fit status
-    as text.
+    others) share the rank of the best of them. ``status`` is the candidate's fit status as
+    text (``"exact_fit"`` for a fit with SSE = 0). ``parameters`` are the fitted estimates;
+    ``warnings`` are the fit's own; ``overfitting_note`` names a much simpler candidate that
+    fits almost as well, when there is one.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -151,7 +173,11 @@ class RankedFit(BaseModel):
     rank: int
     model_id: str
     name: str
+    category: str = ""
     equation_fitted: str | None = None
+    parameters: tuple[ParameterEstimate, ...] = ()
     metrics: CandidateMetrics
     same_curve_as: tuple[str, ...] = ()
     status: str = "converged"
+    warnings: tuple[str, ...] = ()
+    overfitting_note: str | None = None

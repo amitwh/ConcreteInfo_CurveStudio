@@ -114,7 +114,7 @@ def test_best_overall_boundary_delta_of_exactly_two_is_a_tie() -> None:
     assert ids(best_overall_order(rows)) == ["b", "a"]
 
 
-def test_best_overall_breaks_ties_by_cv_then_k_then_id() -> None:
+def test_best_overall_breaks_ties_by_k_then_cv_then_id() -> None:
     rows = [
         row("z", 3, aicc=50.0, cv_rmse=None),
         row("y", 3, aicc=50.5, cv_rmse=2.0),
@@ -122,8 +122,8 @@ def test_best_overall_breaks_ties_by_cv_then_k_then_id() -> None:
         row("w", 3, aicc=50.1, cv_rmse=2.0),
         row("v", 4, aicc=50.3, cv_rmse=1.0),
     ]
-    # cv 1.0 first; then cv 2.0 by k (x with 2) then id (w, y); cv None last
-    assert ids(best_overall_order(rows)) == ["v", "x", "w", "y", "z"]
+    # fewest parameters first (x); then k = 3 by cv (w, y at 2.0, z with no cv last); then v
+    assert ids(best_overall_order(rows)) == ["x", "w", "y", "z", "v"]
 
 
 def test_rows_without_aicc_rank_after_rows_with_one() -> None:

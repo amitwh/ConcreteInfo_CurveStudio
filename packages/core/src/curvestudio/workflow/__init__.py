@@ -6,6 +6,7 @@ never NaN or infinity); every user-caused problem is a :class:`WorkflowError` wi
 code.
 """
 
+from curvestudio.workflow.autofit import bundle_for_candidate
 from curvestudio.workflow.bundle import (
     MAX_PREDICT_POINTS,
     CurveSamples,
@@ -41,6 +42,7 @@ __all__ = [
     "Prediction",
     "RegisteredRef",
     "WorkflowError",
+    "bundle_for_candidate",
     "fit_dataset",
     "get_model",
     "import_dataset",
