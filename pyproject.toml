@@ -88,6 +88,33 @@ type = "forbidden"
 source_modules = ["curvestudio.statistics"]
 forbidden_modules = ["curvestudio.diagnostics", "curvestudio.cli"]
 
+[[tool.importlinter.contracts]]
+name = "Expressions are a pure grammar layer"
+type = "forbidden"
+source_modules = ["curvestudio.expressions"]
+forbidden_modules = [
+    "curvestudio.data",
+    "curvestudio.fitting",
+    "curvestudio.models",
+    "curvestudio.testing",
+    "curvestudio.statistics",
+    "curvestudio.diagnostics",
+    "curvestudio.cli",
+]
+
+[[tool.importlinter.contracts]]
+name = "Models import expressions only"
+type = "forbidden"
+source_modules = ["curvestudio.models"]
+forbidden_modules = [
+    "curvestudio.data",
+    "curvestudio.fitting",
+    "curvestudio.testing",
+    "curvestudio.statistics",
+    "curvestudio.diagnostics",
+    "curvestudio.cli",
+]
+
 # scipy.odr (deprecated) cannot be a contract here: import-linter rejects subpackages of
 # external packages. tests/unit/test_architecture.py::test_forbidden_odr_import enforces it.
 

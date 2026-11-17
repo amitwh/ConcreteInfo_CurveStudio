@@ -82,3 +82,66 @@ def test_forbidden_odr_import() -> None:
         if "scipy.odr" in find_forbidden_imports(path.read_text(encoding="utf-8")):
             offenders.append(str(path.relative_to(CORE_SRC)))
     assert not offenders, f"scipy.odr imported in core: {offenders}"
+
+
+SOURCE_ROOTS = tuple(sorted((Path(__file__).resolve().parents[2] / "packages").glob("*/src")))
+"""Every workspace package's ``src`` directory (``packages/*/src``)."""
+
+DYNAMIC_CALLS = frozenset({"eval", "exec", "parse_expr", "sympify"})
+"""Names that run text as code; ``compile`` is checked separately (``re.compile`` is fine)."""
+
+DYNAMIC_MODULES = frozenset({"pickle", "cPickle", "dill", "marshal"})
+
+
+def find_dynamic_execution(source: str) -> list[str]:
+    """Return uses of dynamic execution in ``source``: eval/exec/parse_expr/sympify/compile/pickle.
+
+    ``eval``/``exec``/``parse_expr``/``sympify`` are flagged as a bare name or as an attribute
+    (``sympy.sympify``). The builtin ``compile`` is flagged only as a bare call, so
+    ``re.compile`` is allowed. Importing or naming ``pickle`` is flagged. ``lambdify`` is
+    allowed: it is fed source printed from a SymPy tree with grammar-checked identifiers.
+    """
+    found: list[str] = []
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Name) and (node.id in DYNAMIC_CALLS or node.id in DYNAMIC_MODULES):
+            found.append(node.id)
+        elif isinstance(node, ast.Attribute) and node.attr in DYNAMIC_CALLS:
+            found.append(node.attr)
+        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            if node.func.id == "compile":
+                found.append("compile")
+        elif isinstance(node, ast.Import | ast.ImportFrom):
+            modules = [alias.name for alias in node.names] if isinstance(node, ast.Import) else []
+            if isinstance(node, ast.ImportFrom):
+                found.extend(a.name for a in node.names if a.name in DYNAMIC_CALLS)
+                if node.module and node.level == 0:
+                    modules.append(node.module)
+            found.extend(m for m in modules if m.split(".")[0] in DYNAMIC_MODULES)
+    return found
+
+
+def test_no_dynamic_execution_in_source() -> None:
+    files = sorted(path for root in SOURCE_ROOTS for path in root.rglob("*.py"))
+    assert files, "no python files found under packages/*/src; the guard would be vacuous"
+    offenders: list[str] = []
+    for path in files:
+        for name in find_dynamic_execution(path.read_text(encoding="utf-8")):
+            offenders.append(f"{path.name}: {name}")
+    assert not offenders, f"dynamic execution in source: {offenders}"
+
+
+def test_dynamic_execution_checker_flags_each_spelling() -> None:
+    assert find_dynamic_execution("eval('1')") == ["eval"]
+    assert find_dynamic_execution("exec('1')") == ["exec"]
+    assert find_dynamic_execution("import builtins\nbuiltins.eval('1')") == ["eval"]
+    assert find_dynamic_execution("from sympy import sympify") == ["sympify"]
+    assert find_dynamic_execution("sympy.sympify('x')") == ["sympify"]
+    assert find_dynamic_execution("compile('1', '', 'eval')") == ["compile"]
+    assert find_dynamic_execution("import pickle") == ["pickle"]
+    assert find_dynamic_execution("from pickle import loads") == ["pickle"]
+
+
+def test_dynamic_execution_checker_allows_safe_spellings() -> None:
+    assert find_dynamic_execution("import re\nre.compile('a')") == []
+    assert find_dynamic_execution("import ast\nast.literal_eval('1')") == []
+    assert find_dynamic_execution("import sympy\nsympy.lambdify([], 1)") == []
