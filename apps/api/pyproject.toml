@@ -1,0 +1,32 @@
+[project]
+name = "curvestudio-api"
+version = "0.1.0.dev0"
+description = "CurveStudio API: FastAPI backend (auth, datasets, fit jobs) over the curvestudio.workflow layer"
+readme = "README.md"
+requires-python = ">=3.14"
+license = "AGPL-3.0-or-later"
+dependencies = [
+    "curvestudio-core",
+    "fastapi>=0.163.1",
+    "uvicorn[standard]>=0.54.0",
+    "sqlalchemy>=2.0.57",
+    "alembic>=1.20.1",
+    "psycopg[binary]>=3.3.9",
+    "argon2-cffi>=25.1.0",
+    "pyjwt[crypto]>=2.15.1",
+    "python-multipart>=0.0.34",
+    "pydantic-settings>=2.16.3",
+]
+
+[tool.uv.sources]
+curvestudio-core = { workspace = true }
+
+[project.scripts]
+curvestudio-api = "curvestudio_api.main:run"
+
+[build-system]
+requires = ["hatchling>=1.33.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/curvestudio_api"]

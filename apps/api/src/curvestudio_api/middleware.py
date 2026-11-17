@@ -1,0 +1,139 @@
+"""ASGI middleware: request id + access log + security headers, and request body limits."""
+
+import logging
+import re
+import time
+import uuid
+from typing import Any
+
+from starlette.datastructures import Headers, MutableHeaders
+from starlette.responses import JSONResponse
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
+
+from curvestudio_api.errors import ApiError, envelope
+from curvestudio_api.logging_setup import get_logger, log_fields, request_id_var
+
+CSP = (
+    "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; "
+    "script-src 'self'"
+)
+SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "no-referrer",
+    "Content-Security-Policy": CSP,
+}
+HSTS = "max-age=31536000; includeSubDomains"
+_REQUEST_ID = re.compile(r"[A-Za-z0-9._-]{1,64}")
+_log = get_logger("http")
+
+
+class RequestContextMiddleware:
+    """Outermost layer: assigns ``request_id``, adds headers, logs one line per request and
+    turns an unhandled exception into the ``INTERNAL_ERROR`` envelope."""
+
+    def __init__(self, app: ASGIApp, *, hsts: bool = False) -> None:
+        self.app = app
+        self.hsts = hsts
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        supplied = Headers(scope=scope).get("x-request-id")
+        request_id = supplied if supplied and _REQUEST_ID.fullmatch(supplied) else uuid.uuid4().hex
+        request_id_var.set(request_id)
+        started = time.perf_counter()
+        state: dict[str, Any] = {"status": 500, "started": False}
+
+        async def send_with_headers(message: Message) -> None:
+            if message["type"] == "http.response.start":
+                state["started"] = True
+                state["status"] = message["status"]
+                headers = MutableHeaders(scope=message)
+                headers["X-Request-ID"] = request_id
+                for name, value in SECURITY_HEADERS.items():
+                    headers.setdefault(name, value)
+                if self.hsts:
+                    headers.setdefault("Strict-Transport-Security", HSTS)
+            await send(message)
+
+        try:
+            await self.app(scope, receive, send_with_headers)
+        except Exception:
+            _log.exception("unhandled error")
+            if state["started"]:
+                raise
+            response = JSONResponse(
+                envelope("INTERNAL_ERROR", "an internal error occurred"), status_code=500
+            )
+            await response(scope, receive, send_with_headers)
+        finally:
+            _log.log(
+                logging.INFO,
+                "request",
+                extra=log_fields(
+                    method=scope["method"],
+                    path=scope["path"],
+                    status=state["status"],
+                    duration_ms=round((time.perf_counter() - started) * 1000, 1),
+                ),
+            )
+
+
+class BodyLimitMiddleware:
+    """Rejects oversized request bodies while they stream in, before anything is parsed.
+
+    A declared ``Content-Length`` over the limit is refused without reading a byte; a body
+    that exceeds it anyway (chunked, or a lying header) stops at the limit with a 413.
+    """
+
+    def __init__(
+        self,
+        app: ASGIApp,
+        *,
+        default_limit: int,
+        upload_limit: int,
+        upload_path: str,
+    ) -> None:
+        self.app = app
+        self.default_limit = default_limit
+        self.upload_limit = upload_limit
+        self.upload_path = upload_path
+
+    def _limit(self, scope: Scope) -> int:
+        if scope["method"] == "POST" and scope["path"] == self.upload_path:
+            return self.upload_limit
+        return self.default_limit
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        limit = self._limit(scope)
+        declared = Headers(scope=scope).get("content-length")
+        if declared is not None and declared.isdigit() and int(declared) > limit:
+            response = JSONResponse(
+                envelope("TOO_LARGE", _too_large_message(limit), {"code": "TOO_LARGE"}),
+                status_code=413,
+            )
+            await response(scope, receive, send)
+            return
+        seen = 0
+
+        async def counting_receive() -> Message:
+            nonlocal seen
+            message = await receive()
+            if message["type"] == "http.request":
+                seen += len(message.get("body", b""))
+                if seen > limit:
+                    raise ApiError(
+                        413, "TOO_LARGE", _too_large_message(limit), {"code": "TOO_LARGE"}
+                    )
+            return message
+
+        await self.app(scope, counting_receive, send)
+
+
+def _too_large_message(limit: int) -> str:
+    return f"the request body is larger than the limit of {limit:,} bytes"
