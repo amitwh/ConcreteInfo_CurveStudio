@@ -82,28 +82,50 @@ class ModelExample:
             raise ValueError("example parameter values must be finite")
 
 
-def _compile(spec: ModelSpec) -> _Compiled:
+def _symbols_for(spec: ModelSpec) -> dict[str, sympy.Symbol]:
+    """One real-valued symbol per variable and parameter name, keyed by name."""
     names = frozenset(spec.variables) | frozenset(p.name for p in spec.parameters)
-    symbols = {name: sympy.Symbol(name, real=True) for name in sorted(names)}
+    return {name: sympy.Symbol(name, real=True) for name in sorted(names)}
+
+
+def _compile(spec: ModelSpec) -> _Compiled:
+    symbols = _symbols_for(spec)
     expr = to_sympy(spec.expression, symbols)
-    # lambdify compiles source that SymPy prints from the tree; that tree was built from the
-    # whitelist, so no user text is executed. Its namespace also contains one entry per
-    # argument name, which would shadow printed helper names (reduce, select, numpy, ...) if a
-    # user called a parameter that. The compiled copy therefore uses private argument names.
+    derivatives = tuple(sympy.diff(expr, symbols[p.name]) for p in spec.parameters)
+    return _lambdified(spec, symbols, expr, derivatives)
+
+
+def _lambdified(
+    spec: ModelSpec,
+    symbols: Mapping[str, sympy.Symbol],
+    expr: sympy.Expr,
+    derivatives: tuple[sympy.Expr, ...],
+) -> _Compiled:
+    """Compile a parsed expression and its parameter derivatives to NumPy callables.
+
+    ``expr`` (and each derivative, one per parameter in order) is in terms of ``symbols``,
+    the model's own names. lambdify compiles source that SymPy prints from the tree; that
+    tree was built from the whitelist, so no user text is executed. Its namespace also
+    contains one entry per argument name, which would shadow printed helper names (reduce,
+    select, numpy, ...) if a user called a parameter that. The compiled copy therefore uses
+    private argument names.
+    """
     ordered = [*spec.variables, *(p.name for p in spec.parameters)]
     # Numbered in sorted-name order so SymPy orders terms exactly as it would for the user's
-    # names (floating-point summation order, and so fitted digits, stay unchanged).
+    # names (floating-point summation order, and so fitted digits, stay unchanged). The
+    # numbering preserves the sorted order of the user's names, so renaming a derivative
+    # tree gives exactly the tree differentiating the renamed expression would.
     private = {
         name: sympy.Symbol(f"_arg{i:04d}", real=True) for i, name in enumerate(sorted(ordered))
     }
-    compiled = expr.xreplace({symbols[name]: private[name] for name in ordered})
+    rename = {symbols[name]: private[name] for name in ordered}
     args = [private[name] for name in ordered]
     return _Compiled(
         expr=expr,
-        value=sympy.lambdify(args, compiled, modules=_LAMBDIFY_MODULES),
+        value=sympy.lambdify(args, expr.xreplace(rename), modules=_LAMBDIFY_MODULES),
         derivatives=tuple(
-            sympy.lambdify(args, sympy.diff(compiled, private[p.name]), modules=_LAMBDIFY_MODULES)
-            for p in spec.parameters
+            sympy.lambdify(args, derivative.xreplace(rename), modules=_LAMBDIFY_MODULES)
+            for derivative in derivatives
         ),
     )
 
@@ -205,11 +227,15 @@ class ModelSpec:
         compiled = self._compiled
         if compiled is not None:
             return compiled
+        return self._install(lambda: _compile(self))
+
+    def _install(self, build: Callable[[], _Compiled]) -> _Compiled:
+        """Fill the compilation cache exactly once, thread-safely, with uniform errors."""
         with self._compile_lock:  # concurrent first uses compile exactly once
             if self._compiled is not None:
                 return self._compiled
             try:
-                compiled = _compile(self)
+                compiled = build()
             except ValueError:
                 raise
             except Exception as exc:  # SymPy raises many types; report them uniformly
@@ -219,6 +245,22 @@ class ModelSpec:
                 ) from exc
             object.__setattr__(self, "_compiled", compiled)
             return compiled
+
+    def _adopt_compilation(
+        self,
+        symbols: Mapping[str, sympy.Symbol],
+        expr: sympy.Expr,
+        derivatives: tuple[sympy.Expr, ...],
+    ) -> None:
+        """Install a compilation the caller already paid for; lazy compile reuses it.
+
+        The custom-equation builder differentiates the expression once for its derivative
+        complexity cap and hands the trees over here (one derivative per parameter, in
+        ``parameters`` order, in terms of ``symbols``), so the lazy path never recomputes
+        them — differentiating the largest admissible expressions is the slowest step of
+        a build.
+        """
+        self._install(lambda: _lambdified(self, symbols, expr, derivatives))
 
     # -- evaluation -------------------------------------------------------------------
 
