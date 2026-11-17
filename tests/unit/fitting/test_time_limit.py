@@ -162,3 +162,26 @@ def test_no_limit_changes_nothing() -> None:
     generous = fit(EXP_DECAY, prd_data(), FitConfig(**base, time_limit=60.0)).to_json()
     assert _without_created_at(without_field) == _without_created_at(explicit_none)
     assert _without_created_at(without_field) == _without_created_at(generous)
+
+
+def test_last_start_cut_short_still_warns(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Two starts: start 1 sits on the truth and converges at once; start 2 (the LAST one)
+    # is slow and crosses the deadline. The converged start is kept, and the user must
+    # still be told the multistart was truncated.
+    original = ModelSpec.evaluate
+
+    def slow_away_from_truth(self: ModelSpec, x: FloatArray, **params: float) -> FloatArray:
+        if abs(params["b"] - 0.4) > 1e-9:
+            time.sleep(0.05)
+        return original(self, x, **params)
+
+    monkeypatch.setattr(ModelSpec, "evaluate", slow_away_from_truth)
+    x = np.linspace(0.0, 10.0, 100)
+    data = make_xy(x, 5.0 * np.exp(-0.4 * x) + 2.0)
+    res = fit(
+        EXP_DECAY,
+        data,
+        FitConfig(initial={"a": 5.0, "b": 0.4, "c": 2.0}, n_starts=2, seed=0, time_limit=0.25),
+    )
+    assert res.status is FitStatus.CONVERGED, res.termination_reason
+    assert any("cut short" in w for w in res.warnings), res.warnings

@@ -41,11 +41,11 @@ class FitConfig:
     n_starts: int = 1
     seed: int = 0
     max_nfev: int | None = None
-    time_limit: float | None = None
     ftol: float = 1e-14
     xtol: float = 1e-10
     gtol: float = 1e-10
     confidence_level: float = 0.95
+    time_limit: float | None = None
 
     def __post_init__(self) -> None:
         if not _is_int(self.n_starts) or self.n_starts < 1:

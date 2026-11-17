@@ -487,6 +487,11 @@ def fit_nonlinear(
             break
     if stopped_after is not None:
         warnings.append(f"time limit reached after {stopped_after} of {len(starts)} starts")
+    elif any(run.message.startswith("time limit of") for run in runs):
+        warnings.append(
+            f"time limit reached during start {len(runs)} of {len(starts)}; "
+            "that start was cut short"
+        )
     winner = _pick_winner(runs)
     initial = problem.params(winner.start)
     if winner.status is FitStatus.FAILED or winner.theta is None:
