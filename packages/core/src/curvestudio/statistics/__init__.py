@@ -10,6 +10,12 @@ from curvestudio.statistics.criteria import (
     information_criteria,
 )
 from curvestudio.statistics.errors import StatisticsError
+from curvestudio.statistics.montecarlo import (
+    Propagation,
+    monte_carlo_band,
+    propagate,
+    sample_parameters,
+)
 from curvestudio.statistics.profile import ProfileInterval, ProfileResult, profile_likelihood
 from curvestudio.statistics.validation import (
     CrossValidation,
@@ -35,6 +41,7 @@ __all__ = [
     "PolynomialFitter",
     "ProfileInterval",
     "ProfileResult",
+    "Propagation",
     "StatisticsError",
     "bootstrap",
     "build_view",
@@ -43,6 +50,9 @@ __all__ = [
     "information_criteria",
     "k_fold_cv",
     "loo_cv",
+    "monte_carlo_band",
     "prediction_band",
     "profile_likelihood",
+    "propagate",
+    "sample_parameters",
 ]
