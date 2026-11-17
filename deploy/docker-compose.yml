@@ -1,0 +1,74 @@
+# CurveStudio self-hosting stack: the app (API + SPA in one container), PostgreSQL, and Caddy
+# with automatic HTTPS. See deploy/README.md for the full walk-through.
+#
+#   cd deploy && cp .env.example .env   # edit: domain, database password, JWT keys
+#   docker compose up -d --build
+#
+# One app container on purpose: the API's fit jobs and rate limiter are in-process, so the
+# correct way to scale is CURVESTUDIO_JOB_WORKERS, never more app replicas (one API process
+# per database).
+
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: curvestudio-app
+    env_file: .env
+    init: true # reaps anything a spawned worker leaves behind
+    restart: unless-stopped
+    volumes:
+      - curvestudio-data:/data
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "/app/.venv/bin/python",
+          "-c",
+          "import sys, urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=4).status == 200 else 1)",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${CURVESTUDIO_DB_USER:-curvestudio}
+      POSTGRES_PASSWORD: ${CURVESTUDIO_DB_PASSWORD:?set CURVESTUDIO_DB_PASSWORD in deploy/.env}
+      POSTGRES_DB: ${CURVESTUDIO_DB_NAME:-curvestudio}
+    volumes:
+      - curvestudio-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    # Not published: only the app container talks to the database.
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      CURVESTUDIO_DOMAIN: ${CURVESTUDIO_DOMAIN:?set CURVESTUDIO_DOMAIN in deploy/.env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-caddydata:/data # certificates
+      - caddy-config:/config
+    depends_on:
+      - app
+
+volumes:
+  curvestudio-data:
+  curvestudio-db:
+  caddy-caddydata:
+  caddy-config:

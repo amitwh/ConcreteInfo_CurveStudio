@@ -38,3 +38,28 @@ jobs:
         run: uv run lint-imports
       - name: Tests
         run: uv run pytest -m "not slow"
+
+  image:
+    name: container image (build + smoke)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Build the image
+        run: docker build -f deploy/Dockerfile -t curvestudio:ci .
+      - name: Run the container (dev env, SQLite, read-only root filesystem)
+        run: |
+          docker run -d --name curvestudio-smoke \
+            -p 127.0.0.1:8000:8000 \
+            -e CURVESTUDIO_ENV=dev \
+            -e CURVESTUDIO_DATABASE_URL=sqlite:////data/curvestudio.db \
+            -v curvestudio-smoke-data:/data \
+            --read-only --tmpfs /tmp \
+            curvestudio:ci
+      - name: Smoke test
+        run: deploy/smoke.sh http://127.0.0.1:8000
+      - name: Clean up
+        if: always()
+        run: |
+          docker rm -f curvestudio-smoke || true
+          docker volume rm curvestudio-smoke-data || true

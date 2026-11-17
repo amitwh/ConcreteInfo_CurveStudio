@@ -12,3 +12,5 @@ dist/
 .playwright-mcp/
 ||||||| 096aee7
 data/
+deploy/.env
+deploy/backups/
