@@ -10,11 +10,11 @@ from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
 from curvestudio.expressions import validate_expression
-from curvestudio.expressions.grammar import BINARY_FUNCTIONS, UNARY_FUNCTIONS
+from curvestudio.expressions.grammar import FUNCTIONS
 
 CORPUS = Path(__file__).resolve().parents[2] / "data" / "expressions" / "adversarial.txt"
 NAMES = frozenset({"a", "b", "x", "y", "z"})
-WHITELIST = frozenset(UNARY_FUNCTIONS) | frozenset(BINARY_FUNCTIONS)
+WHITELIST = frozenset(FUNCTIONS)
 
 
 def _corpus() -> list[str]:

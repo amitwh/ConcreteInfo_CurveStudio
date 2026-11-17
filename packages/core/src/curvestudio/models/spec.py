@@ -18,8 +18,12 @@ import sympy
 from numpy.typing import NDArray
 
 from curvestudio.expressions import RESERVED_NAMES, to_sympy
+from curvestudio.expressions.special import NUMPY_CALLABLES
 
 FloatArray = NDArray[np.float64]
+
+_LAMBDIFY_MODULES: list[Any] = [NUMPY_CALLABLES, "scipy", "numpy"]
+"""Namespaces for compiled expressions: our special functions, then SciPy, then NumPy."""
 
 _NUMBER = r"(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?"
 _TOKEN = re.compile(rf"{_NUMBER}|[A-Za-z_][A-Za-z0-9_]*")
@@ -50,14 +54,23 @@ def _compile(spec: ModelSpec) -> _Compiled:
     names = frozenset(spec.variables) | frozenset(p.name for p in spec.parameters)
     symbols = {name: sympy.Symbol(name, real=True) for name in sorted(names)}
     expr = to_sympy(spec.expression, symbols)
-    args = [symbols[name] for name in (*spec.variables, *(p.name for p in spec.parameters))]
-    # lambdify compiles source that SymPy prints from `expr`; that tree was built from the
-    # whitelist and its symbols have grammar-checked identifiers, so no user text is executed.
+    # lambdify compiles source that SymPy prints from the tree; that tree was built from the
+    # whitelist, so no user text is executed. Its namespace also contains one entry per
+    # argument name, which would shadow printed helper names (reduce, select, numpy, ...) if a
+    # user called a parameter that. The compiled copy therefore uses private argument names.
+    ordered = [*spec.variables, *(p.name for p in spec.parameters)]
+    # Numbered in sorted-name order so SymPy orders terms exactly as it would for the user's
+    # names (floating-point summation order, and so fitted digits, stay unchanged).
+    private = {
+        name: sympy.Symbol(f"_arg{i:04d}", real=True) for i, name in enumerate(sorted(ordered))
+    }
+    compiled = expr.xreplace({symbols[name]: private[name] for name in ordered})
+    args = [private[name] for name in ordered]
     return _Compiled(
         expr=expr,
-        value=sympy.lambdify(args, expr, modules="numpy"),
+        value=sympy.lambdify(args, compiled, modules=_LAMBDIFY_MODULES),
         derivatives=tuple(
-            sympy.lambdify(args, sympy.diff(expr, symbols[p.name]), modules="numpy")
+            sympy.lambdify(args, sympy.diff(compiled, private[p.name]), modules=_LAMBDIFY_MODULES)
             for p in spec.parameters
         ),
     )
