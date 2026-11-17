@@ -7,8 +7,8 @@ assumption holds, and no test result certifies the fit.
 
 The routines work on a *weighted* residual vector ``r = sqrt(w) * (y - fitted)``.  The
 order of that vector matters for the autocorrelation tests, so the caller decides it:
-:func:`run_diagnostics` sorts by ascending ``x`` (ties keep the input order) before
-calling them.
+:func:`run_diagnostics` sorts by ascending ``x`` (ties broken by the residual value)
+before calling them.
 
 Data that cannot support a test is never an exception: constant residuals, non-finite
 values or a sample that is too small give ``status="not_applicable"`` with a ``reason``.
@@ -21,6 +21,7 @@ from typing import Literal
 import numpy as np
 from numpy.typing import NDArray
 from pydantic import BaseModel, ConfigDict
+from scipy import special as scipy_special
 from scipy import stats as scipy_stats
 
 from curvestudio.fitting import FitStatus
@@ -43,6 +44,12 @@ _SHAPIRO_LARGE_N = 5000
 
 _EXACT_FIT_RATIO = 1e-10
 """The fit counts as exact when the residuals are this small relative to the data scale."""
+
+_OFFSET_FLOOR_RATIO = 1e-4
+"""Rounding in a large ``y`` offset reaches this fraction of ``max|y|``; it floors the scale."""
+
+_CONSTANT_FITTED_RATIO = 1e-12
+"""Fitted values spanning less than this fraction of their magnitude count as constant."""
 
 _NORMALITY_NULL = (
     "The residuals are drawn from a normal distribution (mean and variance estimated)."
@@ -128,8 +135,9 @@ _METADATA: dict[str, tuple[str, tuple[str, ...], tuple[str, ...]]] = {
 }
 
 _TIED_X_LIMITATION = (
-    "The data contain duplicated x values, so the ascending-x order is not unique and the "
-    "statistic depends on how the ties are broken."
+    "The data contain duplicated x values, so the ascending-x order is not unique; ties are "
+    "broken by the residual value, which is deterministic but arbitrary, so the result "
+    "depends on that choice."
 )
 
 _TEST_NAMES = (
@@ -285,23 +293,21 @@ def shapiro_wilk(residuals: FloatArray) -> DiagnosticTest:
     )
 
 
-def _anderson_darling_statistic(values: FloatArray) -> tuple[float, float] | None:
+def _anderson_darling_statistic(values: FloatArray) -> tuple[float, float]:
     """The small-sample adjusted ``A*^2`` and its Stephens (1974) p-value.
 
-    ``None`` when the fitted normal quantiles underflow, which makes the logarithm of the
-    statistic undefined.
+    The logarithms of the normal CDF are taken with ``log_ndtr`` so that a very extreme
+    residual gives a large finite statistic instead of an underflowed quantile.  The
+    caller guarantees at least 8 non-constant residuals, so the spread is positive.
     """
     n = int(values.size)
     ordered = np.sort(values)
-    spread = float(np.std(ordered, ddof=1))
-    if spread <= 0.0:
-        return None
-    quantiles = scipy_stats.norm.cdf((ordered - float(np.mean(ordered))) / spread)
-    if not bool(np.all((quantiles > 0.0) & (quantiles < 1.0))):
-        return None
+    z = (ordered - float(np.mean(ordered))) / float(np.std(ordered, ddof=1))
     index = np.arange(1, n + 1, dtype=np.float64)
     total = float(
-        np.sum((2.0 * index - 1.0) / n * (np.log(quantiles) + np.log1p(-quantiles[::-1])))
+        np.sum(
+            (2.0 * index - 1.0) / n * (scipy_special.log_ndtr(z) + scipy_special.log_ndtr(-z)[::-1])
+        )
     )
     a2 = -n - total
     adjusted = a2 * (1.0 + 0.75 / n + 2.25 / n**2)
@@ -338,14 +344,7 @@ def anderson_darling(residuals: FloatArray) -> DiagnosticTest:
             "anderson_darling",
             f"the Anderson-Darling test needs at least {_ANDERSON_MIN_N} residuals, got {n}",
         )
-    computed = _anderson_darling_statistic(values)
-    if computed is None:
-        return _not_applicable(
-            "anderson_darling",
-            "the residuals are so extreme that the fitted normal quantiles underflow, so the "
-            "statistic is not defined",
-        )
-    adjusted, p_value = computed
+    adjusted, p_value = _anderson_darling_statistic(values)
     return _ok(
         "anderson_darling",
         statistic=adjusted,
@@ -384,9 +383,20 @@ def breusch_pagan(residuals: FloatArray, fitted: FloatArray) -> DiagnosticTest:
             "breusch_pagan",
             f"the Breusch-Pagan test needs at least 3 residuals, got {n}",
         )
+    fitted_scale = max(1.0, float(np.max(np.abs(fitted_values))))
+    if float(np.ptp(fitted_values)) <= _CONSTANT_FITTED_RATIO * fitted_scale:
+        return _not_applicable(
+            "breusch_pagan",
+            "the fitted values are constant, so the auxiliary regression has no regressor",
+        )
     squared = values**2
     design = np.column_stack([np.ones(n), fitted_values])
-    solution, _residuals, _rank, _singular = np.linalg.lstsq(design, squared, rcond=None)
+    solution, _residuals, rank, _singular = np.linalg.lstsq(design, squared, rcond=None)
+    if int(rank) < design.shape[1]:
+        return _not_applicable(
+            "breusch_pagan",
+            "the regressors of the auxiliary regression are collinear, so it is not defined",
+        )
     leftover = squared - design @ solution
     sum_squares = float(leftover @ leftover)
     total = float(np.sum((squared - float(np.mean(squared))) ** 2))
@@ -395,7 +405,7 @@ def breusch_pagan(residuals: FloatArray, fitted: FloatArray) -> DiagnosticTest:
             "breusch_pagan",
             "the squared residuals are constant, so the auxiliary regression explains nothing",
         )
-    statistic = n * (1.0 - sum_squares / total)
+    statistic = max(0.0, n * (1.0 - sum_squares / total))
     return _ok(
         "breusch_pagan",
         statistic=statistic,
@@ -404,11 +414,14 @@ def breusch_pagan(residuals: FloatArray, fitted: FloatArray) -> DiagnosticTest:
     )
 
 
-def ljung_box(residuals: FloatArray, lags: int | None = None) -> DiagnosticTest:
+def ljung_box(
+    residuals: FloatArray, lags: int | None = None, *, tied_x: bool = False
+) -> DiagnosticTest:
     """Ljung-Box test for serial correlation of the residuals.
 
     ``lags`` defaults to ``min(10, n // 5)`` and is clamped to ``1 <= lags <= n - 1``; a
-    clamp is stated in ``reason``.  The statistic is
+    clamp is stated in ``reason``.  ``tied_x`` says that the ordering used has duplicated
+    x values, which makes that order ambiguous.  The statistic is
     ``Q = n (n + 2) sum(rho_k**2 / (n - k))`` over ``k = 1..lags``, with the ``rho_k`` the
     autocorrelations of the demeaned residuals, and it is compared with a chi-square with
     ``lags`` degrees of freedom.
@@ -418,10 +431,6 @@ def ljung_box(residuals: FloatArray, lags: int | None = None) -> DiagnosticTest:
     if unusable is not None:
         return _not_applicable("ljung_box", unusable)
     n = int(values.size)
-    if n < 2:
-        return _not_applicable(
-            "ljung_box", f"the Ljung-Box test needs at least 2 residuals, got {n}"
-        )
     requested = min(10, n // 5) if lags is None else int(lags)
     used = max(1, min(requested, n - 1))
     reason = None
@@ -432,10 +441,6 @@ def ljung_box(residuals: FloatArray, lags: int | None = None) -> DiagnosticTest:
         )
     centred = values - float(np.mean(values))
     denominator = float(centred @ centred)
-    if denominator <= 0.0:
-        return _not_applicable(
-            "ljung_box", "the residuals are constant, so the test statistic is not defined"
-        )
     total = 0.0
     for lag in range(1, used + 1):
         rho = float(centred[: n - lag] @ centred[lag:]) / denominator
@@ -447,6 +452,7 @@ def ljung_box(residuals: FloatArray, lags: int | None = None) -> DiagnosticTest:
         p_value=float(scipy_stats.chi2.sf(statistic, used)),
         df=float(used),
         reason=reason,
+        extra_limitations=(_TIED_X_LIMITATION,) if tied_x else (),
     )
 
 
@@ -461,17 +467,8 @@ def durbin_watson(residuals: FloatArray, *, tied_x: bool = False) -> DiagnosticT
     unusable = _unusable(values)
     if unusable is not None:
         return _not_applicable("durbin_watson", unusable)
-    n = int(values.size)
-    if n < 2:
-        return _not_applicable(
-            "durbin_watson", f"the Durbin-Watson statistic needs at least 2 residuals, got {n}"
-        )
     differences = np.diff(values)
     denominator = float(values @ values)
-    if denominator <= 0.0:
-        return _not_applicable(
-            "durbin_watson", "the residuals are all zero, so the statistic is not defined"
-        )
     extra = (_TIED_X_LIMITATION,) if tied_x else ()
     return _ok(
         "durbin_watson",
@@ -486,8 +483,9 @@ def run_diagnostics(view: FitView, lags: int | None = None) -> DiagnosticsReport
     """Run the five residual tests on a converged fit.
 
     The weighted residuals ``r = sqrt(w) * (y - fitted)`` are sorted by ascending ``x``
-    (ties keep the input order) so that the autocorrelation tests see a deterministic
-    order, and every test is run on them.  ``lags`` is passed to the Ljung-Box test.
+    (ties are broken by the residual value) so that the autocorrelation tests see an order
+    that does not depend on the order of the input rows, and every test is run on them.
+    ``lags`` is passed to the Ljung-Box test.
 
     Raises:
         StatisticsError: ``FIT_NOT_CONVERGED`` when the fit did not converge.
@@ -497,8 +495,8 @@ def run_diagnostics(view: FitView, lags: int | None = None) -> DiagnosticsReport
             "FIT_NOT_CONVERGED",
             f"diagnostics need a converged fit; the status is {view.result.status.value!r}",
         )
-    order = np.argsort(view.x, kind="stable")
     weighted = np.sqrt(view.w) * view.residuals
+    order = np.lexsort((weighted, view.x))
     residuals = weighted[order]
     fitted = view.fitted[order]
     tied = bool(np.unique(view.x).size != view.x.size)
@@ -515,7 +513,7 @@ def run_diagnostics(view: FitView, lags: int | None = None) -> DiagnosticsReport
             shapiro_wilk(residuals),
             anderson_darling(residuals),
             breusch_pagan(residuals, fitted),
-            ljung_box(residuals, lags),
+            ljung_box(residuals, lags, tied_x=tied),
             durbin_watson(residuals, tied_x=tied),
         )
     )
@@ -523,6 +521,6 @@ def run_diagnostics(view: FitView, lags: int | None = None) -> DiagnosticsReport
 
 def _is_exact_fit(view: FitView) -> bool:
     """Whether the residuals are zero to machine precision relative to the data scale."""
-    data_scale = float(np.max(np.abs(view.y - float(np.mean(view.y)))))
+    data_scale = max(float(np.ptp(view.y)), _OFFSET_FLOOR_RATIO * float(np.max(np.abs(view.y))))
     residual_scale = float(np.max(np.abs(view.residuals)))
     return residual_scale <= _EXACT_FIT_RATIO * data_scale

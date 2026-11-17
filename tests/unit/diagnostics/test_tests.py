@@ -302,3 +302,102 @@ def test_a_diagnostic_test_refuses_a_not_a_number_statistic() -> None:
             limitations=("l",),
             note=NOTE,
         )
+
+
+def test_breusch_pagan_is_not_applicable_for_constant_fitted_values() -> None:
+    residuals = np.random.default_rng(8).normal(size=30)
+    for level in (0.0, 3.7, 1.0e6):
+        result = breusch_pagan(residuals, np.full(30, level))
+        assert result.status == "not_applicable", level
+        assert result.statistic is None and result.p_value is None and result.df is None
+        assert result.reason is not None
+        assert "fitted values are constant" in result.reason
+
+
+def test_breusch_pagan_statistic_is_never_negative() -> None:
+    # fitted values explain the squared residuals perfectly, so 1 - ssr / total sits at
+    # rounding level around zero or one; the statistic must still be a valid chi-square
+    fitted = np.linspace(1.0, 4.0, 25)
+    residuals = np.sqrt(fitted)
+    result = breusch_pagan(residuals * np.where(np.arange(25) % 2 == 0, 1.0, -1.0), fitted)
+    assert result.status == "ok"
+    assert result.statistic is not None and result.statistic >= 0.0
+
+
+def test_a_degree_zero_polynomial_fit_skips_only_breusch_pagan() -> None:
+    x, y = noisy_line()
+    data = make_xy(x, y)
+    report = run_diagnostics(build_view(data, fit_polynomial(data, 0)))
+    by_name = {test.name: test for test in report.tests}
+    assert by_name["breusch_pagan"].status == "not_applicable"
+    assert by_name["breusch_pagan"].reason is not None
+    assert "fitted values are constant" in by_name["breusch_pagan"].reason
+    for name in ("shapiro_wilk", "anderson_darling", "ljung_box", "durbin_watson"):
+        assert by_name[name].status == "ok", name
+
+
+def test_run_diagnostics_is_order_independent_with_replicated_x() -> None:
+    x = np.repeat(np.linspace(0.0, 4.0, 8), 3)
+    y = 1.0 + 0.5 * x + np.random.default_rng(21).normal(0.0, 0.3, x.size)
+    data = make_xy(x, y)
+    ordered = run_diagnostics(build_view(data, fit_polynomial(data, 1)))
+
+    for seed in (1, 2, 3):
+        permutation = np.random.default_rng(seed).permutation(x.size)
+        shuffled_data = make_xy(x[permutation], y[permutation])
+        shuffled = run_diagnostics(build_view(shuffled_data, fit_polynomial(shuffled_data, 1)))
+        for left, right in zip(ordered.tests, shuffled.tests, strict=True):
+            assert left.status == right.status, left.name
+            assert left.statistic == pytest.approx(right.statistic, rel=1e-9, abs=1e-12)
+            assert left.limitations == right.limitations
+
+
+def test_tied_x_is_noted_for_both_autocorrelation_tests() -> None:
+    residuals = np.random.default_rng(6).normal(size=20)
+    plain = ljung_box(residuals)
+    tied = ljung_box(residuals, tied_x=True)
+    assert plain.statistic == tied.statistic
+    assert not any("duplicate" in text.lower() for text in plain.limitations)
+    assert any("duplicate" in text.lower() for text in tied.limitations)
+
+    x = np.repeat(np.linspace(0.0, 4.0, 8), 3)
+    y = 1.0 + 0.5 * x + np.random.default_rng(21).normal(0.0, 0.3, x.size)
+    data = make_xy(x, y)
+    report = run_diagnostics(build_view(data, fit_polynomial(data, 1)))
+    for test in report.tests:
+        if test.name in ("ljung_box", "durbin_watson"):
+            assert any("duplicate" in text.lower() for text in test.limitations), test.name
+
+
+def test_anderson_darling_rejects_normality_for_one_huge_outlier() -> None:
+    residuals = np.append(np.random.default_rng(31).normal(size=200), 1.0e4)
+    result = anderson_darling(residuals)
+    assert result.status == "ok"
+    assert result.statistic is not None and result.statistic > 10.0
+    assert result.p_value is not None
+    assert result.p_value == pytest.approx(0.0, abs=1e-9)
+
+
+def test_run_diagnostics_flags_an_exact_fit_despite_a_large_y_offset() -> None:
+    x = np.linspace(0.0, 5.0, 14)
+    for offset in (1.0e6, 1.0e9):
+        data = make_xy(x, offset + 2.0 - 3.0 * x + 0.8 * x**2)
+        report = run_diagnostics(build_view(data, fit_polynomial(data, 2)))
+        assert all(test.status == "not_applicable" for test in report.tests), offset
+
+
+def test_run_diagnostics_still_runs_for_tiny_noise_on_a_wide_range() -> None:
+    x = np.linspace(0.0, 5.0, 40)
+    noise = np.random.default_rng(41).normal(0.0, 1.0e-7, x.size)
+    data = make_xy(x, 2.0 + 3.0 * x + 0.8 * x**2 - 2.0 + noise)
+    report = run_diagnostics(build_view(data, fit_polynomial(data, 2)))
+    assert [test.status for test in report.tests] == ["ok"] * 5
+
+
+def test_shapiro_wilk_states_the_large_sample_caveat_above_5000() -> None:
+    residuals = np.random.default_rng(51).normal(size=5001)
+    result = shapiro_wilk(residuals)
+    assert result.status == "ok"
+    assert any("5000" in text and "SciPy" in text for text in result.limitations)
+    small = shapiro_wilk(residuals[:5000])
+    assert not any("5000" in text for text in small.limitations)
