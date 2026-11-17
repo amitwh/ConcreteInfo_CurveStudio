@@ -145,3 +145,62 @@ def test_dynamic_execution_checker_allows_safe_spellings() -> None:
     assert find_dynamic_execution("import re\nre.compile('a')") == []
     assert find_dynamic_execution("import ast\nast.literal_eval('1')") == []
     assert find_dynamic_execution("import sympy\nsympy.lambdify([], 1)") == []
+
+
+# -- third-party allowlists of the workspace packages ---------------------------------------------
+
+
+PACKAGE_ALLOWLISTS = {
+    "curvestudio_plotting": {"matplotlib", "curvestudio"},
+    # matplotlib: the PDF registers matplotlib's bundled DejaVuSans TTFs as its font
+    "curvestudio_reporting": {
+        "curvestudio",
+        "curvestudio_plotting",
+        "matplotlib",
+        "openpyxl",
+        "reportlab",
+    },
+}
+"""The only third-party packages each workspace package may import (stdlib aside)."""
+
+
+def find_third_party_imports(source: str) -> set[str]:
+    """Top-level module names imported by ``source`` that are neither stdlib nor relative."""
+    import sys
+
+    found: set[str] = set()
+    for node in ast.walk(ast.parse(source)):
+        names: list[str] = []
+        if isinstance(node, ast.Import):
+            names = [alias.name for alias in node.names]
+        elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+            names = [node.module]
+        for name in names:
+            top = name.split(".")[0]
+            if top not in sys.stdlib_module_names and top != "__future__":
+                found.add(top)
+    return found
+
+
+def test_workspace_packages_import_only_allowed_third_party() -> None:
+    offenders: list[str] = []
+    for package, allowed in PACKAGE_ALLOWLISTS.items():
+        root = (
+            Path(__file__).resolve().parents[2] / "packages" / package.removeprefix("curvestudio_")
+        )
+        src = root / "src" / package
+        files = sorted(src.rglob("*.py"))
+        assert files, f"no python files under {src}; the allowlist check would be vacuous"
+        for path in files:
+            for name in find_third_party_imports(path.read_text(encoding="utf-8")):
+                if name not in allowed and name != package:  # own submodules are fine
+                    offenders.append(f"{path.relative_to(root)}: {name}")
+    assert not offenders, f"imports outside the package allowlist: {sorted(offenders)}"
+
+
+def test_third_party_import_checker_flags_and_ignores() -> None:
+    assert find_third_party_imports("import os, sys\nfrom pathlib import Path") == set()
+    assert find_third_party_imports("from __future__ import annotations\nx = 1") == set()
+    assert find_third_party_imports("from matplotlib.figure import Figure") == {"matplotlib"}
+    assert find_third_party_imports("from curvestudio.workflow import FitBundle") == {"curvestudio"}
+    assert find_third_party_imports("from . import sibling\nimport numpy as np") == {"numpy"}
