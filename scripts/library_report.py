@@ -24,12 +24,15 @@ from pathlib import Path
 from curvestudio.models import ModelSpec
 from curvestudio.models.starter import STARTER_MODELS
 from curvestudio.testing.model_recovery import RecoveryReport, check_model_recovery
+from curvestudio_engineering import catalogue as engineering_catalogue
 from curvestudio_models import catalogue
+from curvestudio_models.generated import ids as generated_ids
 from curvestudio_models.register import family_of
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _DEFAULT_OUTPUT = _REPO_ROOT / "tests" / "numerical" / "LIBRARY.md"
 _CORE_FAMILY = "core starter set"
+_ENGINEERING_FAMILY = "engineering"
 
 
 @dataclass(frozen=True)
@@ -59,6 +62,10 @@ def _counts_table(title: str, counts: Counter[str]) -> list[str]:
     return [*lines, ""]
 
 
+def _count(rows: list[Row], family: str) -> int:
+    return sum(r.family == family for r in rows)
+
+
 def render(rows: list[Row]) -> str:
     ok = [r for r in rows if r.report is not None]
     reports = [r.report for r in ok if r.report is not None]
@@ -77,8 +84,15 @@ def render(rows: list[Row]) -> str:
         "",
         "## Summary",
         "",
-        f"- Models: {len(rows)} ({len(rows) - sum(r.family == _CORE_FAMILY for r in rows)} in the "
-        f"library, {sum(r.family == _CORE_FAMILY for r in rows)} in the core starter set)",
+        f"- Models: {len(rows)} ({_count(rows, _CORE_FAMILY)} in the core starter set, "
+        f"{len(rows) - _count(rows, _CORE_FAMILY) - _count(rows, _ENGINEERING_FAMILY)} in the "
+        f"library, {_count(rows, _ENGINEERING_FAMILY)} engineering)",
+        f"- Hand-written models (library and core starter set): "
+        f"{len(rows) - _count(rows, _ENGINEERING_FAMILY)}",
+        f"- Engineering models: {_count(rows, _ENGINEERING_FAMILY)}",
+        f"- Generated model ids: {len(generated_ids())} by default, "
+        f"{len(generated_ids(exhaustive=True))} with the long tail (exhaustive); their recovery "
+        "is checked by `tests/unit/library/test_generated_recovery.py`",
         f"- Recovered by multistart (12 starts, tolerance 1e-6): {_percent(len(ok), len(rows))}",
         f"- Single start converged: {_percent(single_converged, len(ok))}",
         f"- Single start recovered the parameters (tolerance 1e-4): "
@@ -123,6 +137,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     rows = [measure(spec, family_of(spec.id)) for spec in catalogue()]
     rows += [measure(spec, _CORE_FAMILY) for spec in STARTER_MODELS]
+    rows += [measure(spec, _ENGINEERING_FAMILY) for spec in engineering_catalogue()]
     text = render(rows)
     args.output.write_text(text, encoding="utf-8")
     failures = [r.spec.id for r in rows if r.report is None]
