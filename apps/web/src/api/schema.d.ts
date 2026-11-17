@@ -464,9 +464,12 @@ export interface components {
          *         include_polynomials: also try polynomials (``polyN`` and ``polyN_origin``).
          *         include_generated: also try models of lazily generated families.
          *         exhaustive: include the long tail of generated families and raise the parameter cap.
-         *         max_params: largest parameter count tried. ``None`` means
-         *             ``min(6, max(1, n_active // 4))``, or ``min(10, n_active - 3)`` when exhaustive.
-         *             Whatever the value, a model never gets more than ``n_active - 3`` parameters.
+         *         max_params: largest parameter count tried. ``None`` means ``n_active - 3`` when
+         *             ``families`` is explicit (you asked for those models; only the data can rule one
+         *             out), ``min(10, n_active - 3)`` when exhaustive, else
+         *             ``min(6, max(2, n_active // 3))``. Whatever the value, a model never gets more
+         *             than ``n_active - 3`` parameters. Every candidate the cap leaves out is listed in
+         *             the result's ``skipped`` with its parameter count.
          *         n_starts: multistart count per candidate.
          *         seed: base seed; a candidate's seed is derived from it and the candidate id, so
          *             results do not depend on scheduling order.
@@ -474,6 +477,11 @@ export interface components {
          *         workers: worker processes; ``None`` means ``max(1, cpu_count - 1)`` and ``1`` runs
          *             in-process.
          *         cv_folds: folds of the cross-validation RMSE; ``None`` disables it.
+         *         staged_starts: fit every candidate from two starts first and give the full ``n_starts``
+         *             only to those that could still change the ranking (AICc within 10 of the best, or
+         *             not converged but with an SSE within three times the best converged SSE); the
+         *             rest keep their two-start outcome (``stage="screen"``). Turn off to give every
+         *             candidate the full multistart.
          *         custom_models: user equations to fit alongside the catalogue. They are always
          *             candidates (neither ``families`` nor ``max_params`` filters them); the data
          *             alone decides whether one can be fitted. Ids must be unique and must not
@@ -529,6 +537,11 @@ export interface components {
              * @default 0
              */
             seed: number;
+            /**
+             * Staged Starts
+             * @default true
+             */
+            staged_starts: boolean;
             /**
              * Time Limit
              * @default 20
@@ -588,7 +601,9 @@ export interface components {
          *     candidates that reproduce the data exactly (no information criteria exist for them).
          *     ``curves`` holds the sampled curve and bands of the top ``config.curve_top_n`` candidates
          *     under every ranking criterion, so a UI can plot any ordering without refitting.
-         *     ``cancelled`` is true for a partial result.
+         *     ``cancelled`` is true for a partial result. ``subsample_n`` is the size of the subsample
+         *     a very large dataset (over 5000 active points) was screened on, else ``None``; the per-point
+         *     vectors of such a result are kept only for the rows that have a curve.
          */
         AutoFitResult: {
             /** Cancelled */
@@ -619,6 +634,8 @@ export interface components {
             skipped: {
                 [key: string]: string[];
             };
+            /** Subsample N */
+            subsample_n?: number | null;
             /** Unconverged */
             unconverged: {
                 [key: string]: string;
@@ -754,7 +771,10 @@ export interface components {
          *     cross-validation was incomplete). ``fit`` is kept for every candidate that was fitted,
          *     including the ones that did not converge, so the parameters it stopped at can be
          *     inspected. ``same_curve_as`` lists the fitted candidates whose curve coincides with
-         *     this one.
+         *     this one. ``stage`` is ``"screen"`` for a candidate fitted from only a few starts that
+         *     was not promoted to the full multistart (a later outcome of the same candidate with
+         *     stage ``"final"`` replaces it); ``on_subsample`` marks a candidate fitted on the
+         *     deterministic subsample of a very large dataset only.
          */
         CandidateOutcome: {
             /** Candidate Id */
@@ -770,12 +790,22 @@ export interface components {
              */
             elapsed_seconds: number;
             fit?: components["schemas"]["FitResult"] | null;
+            /**
+             * Generated
+             * @default false
+             */
+            generated: boolean;
             metrics?: components["schemas"]["CandidateMetrics"] | null;
             /**
              * Name
              * @default
              */
             name: string;
+            /**
+             * On Subsample
+             * @default false
+             */
+            on_subsample: boolean;
             /**
              * Outcome
              * @enum {string}
@@ -791,6 +821,17 @@ export interface components {
              * @default []
              */
             same_curve_as: string[];
+            /**
+             * Shape Parameters
+             * @default 0
+             */
+            shape_parameters: number;
+            /**
+             * Stage
+             * @default final
+             * @enum {string}
+             */
+            stage: "screen" | "final";
         };
         /**
          * CrossValidation
@@ -1622,15 +1663,41 @@ export interface components {
          *     text (``"exact_fit"`` for a fit with SSE = 0). ``parameters`` are the fitted estimates;
          *     ``warnings`` are the fit's own; ``overfitting_note`` names a much simpler candidate that
          *     fits almost as well, when there is one.
+         *
+         *     ``delta_aicc`` (AICc minus the lowest AICc of the run) and ``akaike_weight`` (relative
+         *     likelihood normalised over every candidate with an AICc) are ``None`` exactly when the
+         *     row has no AICc (exact fits, tiny samples); they use the true AICc, never the ranking
+         *     adjustment for unreliable fits. ``degenerate`` marks a fit whose optimum collapsed onto a
+         *     simpler model (a parameter at its bound with negligible effect, or a singular Jacobian);
+         *     such rows rank below every non-degenerate row. ``generated`` says the model comes from a
+         *     generated family, not a hand-written one. ``shape_parameters`` counts its free-frequency
+         *     parameters, which the ranking charges as extra effective parameters.
+         *     ``redundant_with`` names the canonical row when
+         *     this row draws the same curve as a model with fewer parameters: it is then not tied with
+         *     that row but listed as redundant with it.
          */
         RankedFit: {
+            /** Akaike Weight */
+            akaike_weight?: number | null;
             /**
              * Category
              * @default
              */
             category: string;
+            /**
+             * Degenerate
+             * @default false
+             */
+            degenerate: boolean;
+            /** Delta Aicc */
+            delta_aicc?: number | null;
             /** Equation Fitted */
             equation_fitted?: string | null;
+            /**
+             * Generated
+             * @default false
+             */
+            generated: boolean;
             metrics: components["schemas"]["CandidateMetrics"];
             /** Model Id */
             model_id: string;
@@ -1645,11 +1712,18 @@ export interface components {
             parameters: components["schemas"]["ParameterEstimate"][];
             /** Rank */
             rank: number;
+            /** Redundant With */
+            redundant_with?: string | null;
             /**
              * Same Curve As
              * @default []
              */
             same_curve_as: string[];
+            /**
+             * Shape Parameters
+             * @default 0
+             */
+            shape_parameters: number;
             /**
              * Status
              * @default converged

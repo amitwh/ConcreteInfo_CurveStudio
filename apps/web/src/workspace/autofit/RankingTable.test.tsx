@@ -29,6 +29,9 @@ function row(modelId: string, overrides: Record<string, unknown> = {}): RankedFi
     warnings: [],
     overfitting_note: null,
     parameters: [],
+    degenerate: false,
+    generated: false,
+    shape_parameters: 0,
     ...overrides,
   } as RankedFit;
 }
