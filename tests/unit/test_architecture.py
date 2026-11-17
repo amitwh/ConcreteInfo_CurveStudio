@@ -100,13 +100,27 @@ def find_dynamic_execution(source: str) -> list[str]:
     (``sympy.sympify``). The builtin ``compile`` is flagged only as a bare call, so
     ``re.compile`` is allowed. Importing or naming ``pickle`` is flagged. ``lambdify`` is
     allowed: it is fed source printed from a SymPy tree with grammar-checked identifiers.
+    A zero-argument attribute call ``something.exec()`` is not flagged: real dynamic
+    ``exec`` always receives the code to run as an argument, while Qt's modal-loop
+    methods (``QApplication.exec()``, ``QDialog.exec()``) take none and run no code text.
     """
+    tree = ast.parse(source)
+    qt_modal_loops = {
+        id(call.func)
+        for call in ast.walk(tree)
+        if isinstance(call, ast.Call)
+        and isinstance(call.func, ast.Attribute)
+        and call.func.attr in ("exec", "exec_")
+        and not call.args
+        and not call.keywords
+    }
     found: list[str] = []
-    for node in ast.walk(ast.parse(source)):
+    for node in ast.walk(tree):
         if isinstance(node, ast.Name) and (node.id in DYNAMIC_CALLS or node.id in DYNAMIC_MODULES):
             found.append(node.id)
         elif isinstance(node, ast.Attribute) and node.attr in DYNAMIC_CALLS:
-            found.append(node.attr)
+            if id(node) not in qt_modal_loops:
+                found.append(node.attr)
         elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
             if node.func.id == "compile":
                 found.append("compile")
@@ -139,9 +153,56 @@ def test_dynamic_execution_checker_flags_each_spelling() -> None:
     assert find_dynamic_execution("compile('1', '', 'eval')") == ["compile"]
     assert find_dynamic_execution("import pickle") == ["pickle"]
     assert find_dynamic_execution("from pickle import loads") == ["pickle"]
+    # real dynamic exec receives its code as an argument; Qt's modal loop takes none
+    assert find_dynamic_execution("app.exec()") == []
+    assert find_dynamic_execution("dialog.exec_()") == []
+    assert find_dynamic_execution("builtins.exec('x = 1')") == ["exec"]
 
 
 def test_dynamic_execution_checker_allows_safe_spellings() -> None:
     assert find_dynamic_execution("import re\nre.compile('a')") == []
     assert find_dynamic_execution("import ast\nast.literal_eval('1')") == []
     assert find_dynamic_execution("import sympy\nsympy.lambdify([], 1)") == []
+
+
+APPS_SOURCE_ROOTS = tuple(sorted((Path(__file__).resolve().parents[2] / "apps").glob("*/src")))
+"""Every workspace app's ``src`` directory (``apps/*/src``), as SOURCE_ROOTS does for packages."""
+
+DESKTOP_SRC = Path(__file__).resolve().parents[2] / "apps" / "desktop" / "src"
+
+DESKTOP_ALLOWED_CORE = frozenset(
+    {"curvestudio.workflow", "curvestudio.project", "curvestudio.data"}
+)
+"""The only ``curvestudio`` subpackages the desktop app may import (spec §5.3)."""
+
+
+def find_core_imports(source: str) -> list[str]:
+    """Every ``curvestudio...`` module imported by ``source``, by its second-level name."""
+    found: list[str] = []
+    for node in ast.walk(ast.parse(source)):
+        for name in _imported_names(node):
+            if name == "curvestudio" or name.startswith("curvestudio."):
+                parts = name.split(".")
+                found.append(".".join(parts[:2]))
+    return found
+
+
+def test_desktop_imports_only_allowed_core_layers() -> None:
+    files = sorted(DESKTOP_SRC.rglob("*.py"))
+    assert files, f"no python files found under {DESKTOP_SRC}; the guard would be vacuous"
+    offenders: list[str] = []
+    for path in files:
+        for module in find_core_imports(path.read_text(encoding="utf-8")):
+            if module not in DESKTOP_ALLOWED_CORE:
+                offenders.append(f"{path.relative_to(DESKTOP_SRC)}: {module}")
+    assert not offenders, f"desktop imports outside workflow/project/data: {offenders}"
+
+
+def test_no_dynamic_execution_in_apps() -> None:
+    files = sorted(path for root in APPS_SOURCE_ROOTS for path in root.rglob("*.py"))
+    assert files, "no python files found under apps/*/src; the guard would be vacuous"
+    offenders: list[str] = []
+    for path in files:
+        for name in find_dynamic_execution(path.read_text(encoding="utf-8")):
+            offenders.append(f"{path.name}: {name}")
+    assert not offenders, f"dynamic execution in apps: {offenders}"

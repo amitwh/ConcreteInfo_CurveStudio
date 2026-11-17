@@ -4,7 +4,13 @@ version = "0.1.0.dev0"
 description = "CurveStudio workspace root (not published)"
 requires-python = ">=3.14"
 license = "AGPL-3.0-or-later"
-dependencies = ["curvestudio-core", "curvestudio-models", "curvestudio-api", "curvestudio-engineering"]
+dependencies = [
+    "curvestudio-core",
+    "curvestudio-models",
+    "curvestudio-api",
+    "curvestudio-engineering",
+    "curvestudio-desktop",
+]
 
 [tool.uv]
 package = false
@@ -18,6 +24,7 @@ curvestudio-core = { workspace = true }
 curvestudio-models = { workspace = true }
 curvestudio-api = { workspace = true }
 curvestudio-engineering = { workspace = true }
+curvestudio-desktop = { workspace = true }
 
 [dependency-groups]
 dev = [
@@ -29,6 +36,7 @@ dev = [
     "import-linter>=2.16",
     "statsmodels>=0.15.0",
     "httpx>=0.28.1",
+    "pytest-qt>=4.5",
 ]
 
 [tool.pytest.ini_options]
@@ -42,7 +50,14 @@ markers = [
 [tool.ruff]
 line-length = 100
 target-version = "py314"
-src = ["packages/core/src", "packages/model_library/src", "apps/api/src", "tests", "packages/engineering/src"]
+src = [
+    "packages/core/src",
+    "packages/model_library/src",
+    "apps/api/src",
+    "packages/engineering/src",
+    "apps/desktop/src",
+    "tests",
+]
 extend-exclude = ["docs"]
 
 [tool.ruff.lint]
@@ -54,7 +69,13 @@ mypy_path = "packages/core/src:packages/model_library/src:apps/api/src:packages/
 strict = true
 
 [tool.importlinter]
-root_packages = ["curvestudio", "curvestudio_models", "curvestudio_api", "curvestudio_engineering"]
+root_packages = [
+    "curvestudio",
+    "curvestudio_models",
+    "curvestudio_api",
+    "curvestudio_engineering",
+    "curvestudio_desktop",
+]
 include_external_packages = true
 
 [[tool.importlinter.contracts]]
@@ -208,10 +229,36 @@ type = "forbidden"
 source_modules = ["curvestudio"]
 forbidden_modules = ["curvestudio_api"]
 
+[[tool.importlinter.contracts]]
+name = "Desktop uses the workflow, project and data layers only"
+type = "forbidden"
+source_modules = ["curvestudio_desktop"]
+forbidden_modules = [
+    "curvestudio.cli",
+    "curvestudio.expressions",
+    "curvestudio.fitting",
+    "curvestudio.models",
+    "curvestudio.statistics",
+    "curvestudio.diagnostics",
+    "curvestudio.testing",
+]
+allow_indirect_imports = true  # workflow itself imports models/statistics; that is its business
+
+[[tool.importlinter.contracts]]
+name = "Core never imports the desktop app"
+type = "forbidden"
+source_modules = ["curvestudio"]
+forbidden_modules = ["curvestudio_desktop"]
+allow_indirect_imports = true
+
 # scipy.odr (deprecated) cannot be a contract here: import-linter rejects subpackages of
 # external packages. tests/unit/test_architecture.py::test_forbidden_odr_import enforces it.
 
 
 [[tool.mypy.overrides]]
 module = ["pandas", "pandas.*", "openpyxl", "openpyxl.*", "sympy", "sympy.*", "scipy", "scipy.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["pyqtgraph", "pyqtgraph.*"]
 ignore_missing_imports = true

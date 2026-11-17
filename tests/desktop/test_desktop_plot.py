@@ -1,0 +1,136 @@
+"""PlotView: scatter, log-axis rules, crosshair, reset and export — offscreen."""
+
+import numpy as np
+import pytest
+
+from curvestudio_desktop.views.plot_view import PlotView
+
+
+@pytest.fixture()
+def plot(qtbot) -> PlotView:
+    view = PlotView()
+    qtbot.addWidget(view)
+    return view
+
+
+def test_empty_plot_is_ready(plot: PlotView) -> None:
+    assert plot.scatter_data() == (None, None)
+    assert plot.can_log_x is False and plot.can_log_y is False
+    assert plot.axis_labels() == ("x", "y")
+
+
+def test_set_data_scatter_and_labels(plot: PlotView) -> None:
+    plot.set_data(np.array([1.0, 2.0, 3.0]), np.array([2.0, 4.0, 8.0]), "age", "load")
+    x, y = plot.scatter_data()
+    assert x is not None and y is not None
+    assert list(x) == [1.0, 2.0, 3.0]
+    assert plot.axis_labels() == ("age", "load")
+    assert plot.can_log_x is True and plot.can_log_y is True
+
+
+def test_nonpositive_data_blocks_log_axes(plot: PlotView) -> None:
+    plot.set_data(np.array([1.0, 2.0, 3.0]), np.array([-4.0, 0.0, 8.0]), "x", "y")
+    assert plot.can_log_x is True
+    assert plot.can_log_y is False
+    plot.set_data(np.array([-1.0, 2.0, 3.0]), np.array([1.0, 4.0, 8.0]), "x", "y")
+    assert plot.can_log_x is False
+    assert plot.can_log_y is True
+
+
+def test_log_toggles_apply_and_reset(plot: PlotView) -> None:
+    plot.set_data(np.array([1.0, 10.0, 100.0]), np.array([1.0, 10.0, 100.0]), "x", "y")
+    plot.set_log_x(True)
+    plot.set_log_y(True)
+    assert plot.log_x_enabled is True and plot.log_y_enabled is True
+    plot.set_log_x(False)
+    assert plot.log_x_enabled is False
+
+
+def test_crosshair_readout_formats_coordinates(plot: PlotView) -> None:
+
+    plot.set_data(np.array([1.0, 2.0, 3.0]), np.array([2.0, 4.0, 8.0]), "age", "load")
+    plot.resize(600, 400)
+    plot.show_crosshair_at(plot.scene_position_of(1.5, 3.0))
+    text = plot.crosshair_text()
+    assert "1.5" in text and "3" in text
+
+
+def test_log_axis_crosshair_readout_shows_data_values(plot: PlotView) -> None:
+    """On log axes the crosshair must read out data values (10**view), not log10."""
+    plot.set_data(np.array([1.0, 10.0, 100.0]), np.array([1.0, 10.0, 100.0]), "x", "y")
+    plot.resize(600, 400)
+    plot.set_log_x(True)
+    plot.set_log_y(True)
+    # view space is log10 of the data: the data point (10, 100) sits at view (1, 2)
+    plot.show_crosshair_at(plot.scene_position_of(1.0, 2.0))
+    text = plot.crosshair_text()
+    assert "= 10" in text, text
+    assert "= 100" in text, text
+
+
+def test_crosshair_hides_when_mouse_leaves_the_plot(plot: PlotView) -> None:
+    from PySide6.QtCore import QPointF
+
+    plot.set_data(np.array([1.0, 2.0, 3.0]), np.array([2.0, 4.0, 8.0]), "x", "y")
+    plot.resize(600, 400)
+    plot.show_crosshair_at(plot.scene_position_of(1.5, 3.0))
+    assert plot.crosshair_visible() is True
+    plot._on_mouse_moved([QPointF(-500.0, -500.0)])  # a move outside the plot scene
+    assert plot.crosshair_visible() is False
+    assert plot.crosshair_text() == ""
+
+
+def test_reset_view_reranges(plot: PlotView) -> None:
+    plot.set_data(np.array([0.0, 100.0]), np.array([0.0, 50.0]), "x", "y")
+    plot.reset_view()
+    ranges = plot.view_ranges()
+    assert ranges is not None
+
+
+def test_export_png_and_svg(plot: PlotView, tmp_path) -> None:
+    plot.set_data(np.array([1.0, 2.0, 3.0]), np.array([2.0, 4.0, 8.0]), "x", "y")
+    png = tmp_path / "plot.png"
+    svg = tmp_path / "plot.svg"
+    plot.export_png(png)
+    plot.export_svg(svg)
+    assert png.is_file() and png.stat().st_size > 0
+    assert svg.is_file() and svg.stat().st_size > 0
+
+
+def test_export_refused_without_data(plot: PlotView, tmp_path) -> None:
+    assert plot.export_png(tmp_path / "empty.png") is False
+    assert not (tmp_path / "empty.png").exists()
+
+
+def test_export_png_hides_the_crosshair(plot: PlotView, tmp_path, monkeypatch) -> None:
+    import pyqtgraph.exporters as exporters_module
+
+    seen: dict[str, bool] = {}
+
+    class RecordingExporter:
+        def __init__(self, item: object) -> None:
+            self.item = item
+
+        def export(self, path: str) -> None:
+            seen["v"] = plot.crosshair_visible()
+
+    monkeypatch.setattr(exporters_module, "ImageExporter", RecordingExporter)
+    plot.set_data(np.array([1.0, 2.0]), np.array([2.0, 4.0]), "x", "y")
+    plot.resize(600, 400)
+    plot.show_crosshair_at(plot.scene_position_of(1.5, 3.0))
+    assert plot.crosshair_visible() is True
+    assert plot.export_png(tmp_path / "crosshair-free.png") is True
+    assert seen == {"v": False}, "the crosshair lines must be hidden during export"
+    assert plot.crosshair_visible() is True  # restored afterwards
+
+
+def test_large_scatter_is_not_peak_downsampled(plot: PlotView) -> None:
+    """Peak downsampling assumes sorted x — an unsorted scatter must not use it."""
+    x = np.arange(60_000, dtype=float)
+    shuffled = x.copy()
+    shuffled[::2], shuffled[1::2] = x[1::2], x[::2]  # unsorted but same values
+    plot.set_data(shuffled, shuffled * 2.0, "x", "y")
+    assert plot.is_downsampling() is False
+    shown_x, shown_y = plot.scatter_data()
+    assert shown_x is not None and shown_y is not None
+    assert len(shown_x) == 60_000 and len(shown_y) == 60_000
