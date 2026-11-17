@@ -19,6 +19,7 @@ from functools import cache
 from types import ModuleType
 
 from curvestudio.models import ModelSpec, list_models, register
+from curvestudio_models.generated import register_generated
 
 _log = logging.getLogger(__name__)
 
@@ -132,7 +133,8 @@ def register_all() -> None:
 
     This is the ``curvestudio.models`` entry point. A family whose ids clash with models that
     are already registered is skipped with a warning naming it (and recorded in
-    :func:`family_failures`); the other families are still registered.
+    :func:`family_failures`); the other families are still registered. The generated families
+    (:mod:`curvestudio_models.generated`) are registered last, under the name ``generated``.
     """
     existing = {m.id: m for m in list_models()}
     for family in families():
@@ -147,6 +149,10 @@ def register_all() -> None:
                     existing[spec.id] = spec
         except ValueError as exc:
             _skip(family.name, exc)
+    try:
+        register_generated()
+    except ValueError as exc:
+        _skip("generated", exc)
 
 
 def _skip(name: str, exc: Exception) -> None:

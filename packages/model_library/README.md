@@ -30,4 +30,15 @@ catalogue tests fail until it is fixed.
 Tests that need the installed entry point carry `@pytest.mark.real_plugins`; by default the test
 suite hides installed model plugins.
 
+## Generated families
+
+`curvestudio_models.generated` (not a `families/` module) registers lazily built families with
+`register_family`: rational functions `rat_{m}_{n}`, `invpoly_{d}`, `recip_{d}`, sums of
+exponentials / Gaussians / powers, `fourier_{n}` and TableCurve-style `tc_*` / `tc3_*`. The
+stable-id table, the listing rules (`ids(exhaustive)`) and the models deliberately left out because
+an existing model is the same curve are in the module docstring. `generated_info(id)` returns
+`(family, k, description)` without building the model. Tests: `tests/unit/library/test_generated*.py`.
+Changing the id table means regenerating `tests/unit/library/golden/generated_ids.txt` (command in
+`test_generated.py`).
+
 Licence: AGPL-3.0-or-later.
