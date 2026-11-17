@@ -1,0 +1,3182 @@
+{
+  "components": {
+    "schemas": {
+      "Band": {
+        "additionalProperties": false,
+        "description": "A pointwise band around the fitted curve at the requested ``x`` values.\n\n``extrapolated[i]`` is true where ``x[i]`` lies outside the range of the active\n(weight > 0) fitted points, where the band relies on the model form alone.",
+        "properties": {
+          "df": {
+            "title": "Df",
+            "type": "integer"
+          },
+          "extrapolated": {
+            "items": {
+              "type": "boolean"
+            },
+            "title": "Extrapolated",
+            "type": "array"
+          },
+          "fit": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Fit",
+            "type": "array"
+          },
+          "kind": {
+            "enum": [
+              "confidence",
+              "prediction",
+              "monte_carlo"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "level": {
+            "title": "Level",
+            "type": "number"
+          },
+          "lower": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Lower",
+            "type": "array"
+          },
+          "note": {
+            "title": "Note",
+            "type": "string"
+          },
+          "pointwise": {
+            "default": true,
+            "title": "Pointwise",
+            "type": "boolean"
+          },
+          "upper": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Upper",
+            "type": "array"
+          },
+          "x": {
+            "items": {
+              "type": "number"
+            },
+            "title": "X",
+            "type": "array"
+          }
+        },
+        "required": [
+          "kind",
+          "level",
+          "x",
+          "fit",
+          "lower",
+          "upper",
+          "extrapolated",
+          "df",
+          "note"
+        ],
+        "title": "Band",
+        "type": "object"
+      },
+      "Body_create_dataset_api_v1_datasets_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "description": "csv, tsv, txt, json or xlsx table",
+            "title": "File",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 300,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "weight_column": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Weight Column"
+          },
+          "x_column": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "X Column"
+          },
+          "y_column": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Y Column"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_create_dataset_api_v1_datasets_post",
+        "type": "object"
+      },
+      "CrossValidation": {
+        "additionalProperties": false,
+        "description": "Outcome of one cross-validation run; ``None`` means a statistic is not defined.\n\n``fold_rmse`` holds the weighted held-out RMSE of each fold in fold order, with\n``None`` for a failed fold. ``rmse`` pools all held-out points and is ``None`` unless\nevery fold succeeded. ``n_failed`` counts failed folds and ``reasons`` names each one,\nso no fold is silently dropped or replaced. ``status`` is ``\"ok\"`` only when no fold\nfailed. Note that ``\"ok\"`` means the estimate is complete, not that the model is valid:\ncross-validation quantifies predictive accuracy, it does not confirm the model.",
+        "properties": {
+          "fold_rmse": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Fold Rmse",
+            "type": "array"
+          },
+          "folds": {
+            "title": "Folds",
+            "type": "integer"
+          },
+          "n_failed": {
+            "title": "N Failed",
+            "type": "integer"
+          },
+          "reasons": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Reasons",
+            "type": "array"
+          },
+          "rmse": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rmse"
+          },
+          "seed": {
+            "title": "Seed",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "incomplete"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "folds",
+          "seed",
+          "rmse",
+          "fold_rmse",
+          "n_failed",
+          "status",
+          "reasons"
+        ],
+        "title": "CrossValidation",
+        "type": "object"
+      },
+      "CurveSamples": {
+        "additionalProperties": false,
+        "description": "The fitted curve sampled at ``CURVE_POINTS`` x values; every ``y`` is finite.",
+        "properties": {
+          "x": {
+            "items": {
+              "type": "number"
+            },
+            "title": "X",
+            "type": "array"
+          },
+          "y": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Y",
+            "type": "array"
+          }
+        },
+        "required": [
+          "x",
+          "y"
+        ],
+        "title": "CurveSamples",
+        "type": "object"
+      },
+      "CustomRef": {
+        "additionalProperties": false,
+        "description": "A user equation: ``equation`` is ``y = <expression>`` or just the right-hand side.\n\n``parameters`` are the names to fit; ``variable`` is the independent variable. The text\nis checked by the safe expression grammar and is never evaluated as Python.",
+        "properties": {
+          "equation": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Equation",
+            "type": "string"
+          },
+          "kind": {
+            "const": "custom",
+            "default": "custom",
+            "title": "Kind",
+            "type": "string"
+          },
+          "parameters": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Parameters",
+            "type": "array"
+          },
+          "variable": {
+            "default": "x",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Variable",
+            "type": "string"
+          }
+        },
+        "required": [
+          "equation",
+          "parameters"
+        ],
+        "title": "CustomRef",
+        "type": "object"
+      },
+      "DataSnapshot": {
+        "additionalProperties": false,
+        "description": "The fit input a bundle was computed from, so a bundle stands on its own.\n\n``n_total`` is the number of rows the fit used. With ``subsampled`` the arrays hold an\nevenly strided subset (first and last row included) and are for plotting only.",
+        "properties": {
+          "n_total": {
+            "title": "N Total",
+            "type": "integer"
+          },
+          "subsampled": {
+            "default": false,
+            "title": "Subsampled",
+            "type": "boolean"
+          },
+          "weights": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Weights"
+          },
+          "x": {
+            "items": {
+              "type": "number"
+            },
+            "title": "X",
+            "type": "array"
+          },
+          "x_name": {
+            "title": "X Name",
+            "type": "string"
+          },
+          "y": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Y",
+            "type": "array"
+          },
+          "y_name": {
+            "title": "Y Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "x",
+          "y",
+          "weights",
+          "x_name",
+          "y_name",
+          "n_total"
+        ],
+        "title": "DataSnapshot",
+        "type": "object"
+      },
+      "DatasetDetailOut": {
+        "properties": {
+          "columns": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Columns",
+            "type": "array"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/IssueOut"
+            },
+            "title": "Issues",
+            "type": "array"
+          },
+          "n_rows": {
+            "title": "N Rows",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "points": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PointsOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "weight_column": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Weight Column"
+          },
+          "x_column": {
+            "title": "X Column",
+            "type": "string"
+          },
+          "y_column": {
+            "title": "Y Column",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "n_rows",
+          "columns",
+          "x_column",
+          "y_column",
+          "weight_column",
+          "issues",
+          "created_at",
+          "points"
+        ],
+        "title": "DatasetDetailOut",
+        "type": "object"
+      },
+      "DatasetOut": {
+        "properties": {
+          "columns": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Columns",
+            "type": "array"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/IssueOut"
+            },
+            "title": "Issues",
+            "type": "array"
+          },
+          "n_rows": {
+            "title": "N Rows",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "weight_column": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Weight Column"
+          },
+          "x_column": {
+            "title": "X Column",
+            "type": "string"
+          },
+          "y_column": {
+            "title": "Y Column",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "n_rows",
+          "columns",
+          "x_column",
+          "y_column",
+          "weight_column",
+          "issues",
+          "created_at"
+        ],
+        "title": "DatasetOut",
+        "type": "object"
+      },
+      "DiagnosticTest": {
+        "additionalProperties": false,
+        "description": "One statistical test applied to the residuals of a fit.\n\n``statistic``, ``p_value`` and ``df`` are ``None`` when the test does not produce them:\na test that does not apply, or a statistic-only test such as the Durbin-Watson.\n``status`` is ``\"ok\"`` when the test was computed and ``\"not_applicable\"`` when the\ndata cannot support it; ``reason`` then says why.  ``reason`` may also carry a note on\nhow a test was computed (a clamped lag, for instance) while ``status`` is ``\"ok\"``.\n\n``null_hypothesis`` states what the test assumes, ``assumptions`` what it needs for\nthe result to mean anything and ``limitations`` what it cannot show.  ``note`` is the\nsame on every result.",
+        "properties": {
+          "assumptions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Assumptions",
+            "type": "array"
+          },
+          "df": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Df"
+          },
+          "limitations": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Limitations",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "note": {
+            "title": "Note",
+            "type": "string"
+          },
+          "null_hypothesis": {
+            "title": "Null Hypothesis",
+            "type": "string"
+          },
+          "p_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P Value"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "statistic": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Statistic"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "not_applicable"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "statistic",
+          "p_value",
+          "df",
+          "status",
+          "reason",
+          "null_hypothesis",
+          "assumptions",
+          "limitations",
+          "note"
+        ],
+        "title": "DiagnosticTest",
+        "type": "object"
+      },
+      "DiagnosticsReport": {
+        "additionalProperties": false,
+        "description": "The tests run on one fit, in the order they were run.",
+        "properties": {
+          "tests": {
+            "items": {
+              "$ref": "#/components/schemas/DiagnosticTest"
+            },
+            "title": "Tests",
+            "type": "array"
+          }
+        },
+        "required": [
+          "tests"
+        ],
+        "title": "DiagnosticsReport",
+        "type": "object"
+      },
+      "FitBundle": {
+        "additionalProperties": false,
+        "description": "One fit with everything a UI or report needs.\n\n``result.status`` says whether the fit converged. When it did not (or a quantity is not\ndefined) the matching field is ``None`` and the ``*_reason`` field says why; a curve is\nnever substituted for a failed fit. ``summary`` is the ``describe_fit`` report\n(information criteria, residual diagnostics, tests); ``curve`` covers the data range\nextended by 5 % each side; the bands are pointwise at the curve's x values.",
+        "properties": {
+          "bands_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bands Reason"
+          },
+          "confidence_band": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Band"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "curve": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CurveSamples"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "curve_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Curve Reason"
+          },
+          "data": {
+            "$ref": "#/components/schemas/DataSnapshot"
+          },
+          "equation_text": {
+            "title": "Equation Text",
+            "type": "string"
+          },
+          "prediction_band": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Band"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "result": {
+            "$ref": "#/components/schemas/FitResult"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FitReport"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "summary_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary Reason"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "result",
+          "summary",
+          "summary_reason",
+          "curve",
+          "curve_reason",
+          "confidence_band",
+          "prediction_band",
+          "bands_reason",
+          "equation_text",
+          "warnings",
+          "data"
+        ],
+        "title": "FitBundle",
+        "type": "object"
+      },
+      "FitReport": {
+        "additionalProperties": false,
+        "description": "Everything :func:`describe_fit` computed for one converged fit.\n\n``result_summary`` holds ``model_id`` and ``status`` (strings) and ``n``, ``k``, ``df``,\n``rmse`` plus, where defined, ``r2`` and ``adj_r2`` (numbers). A statistic that is not\ndefined is left out of the mapping, never stored as ``0.0`` or NaN. ``cv`` is ``None``\nwhen no ``fitter`` was supplied. ``warnings`` merges the fit's own warnings with what the\nbundle found: incomplete cross-validation, tests that did not apply and flagged points.\n\nLike :class:`~curvestudio.fitting.FitResult` the model is frozen but its lists are not\ndeep-frozen; :meth:`to_json` re-checks finiteness, so a mutation that sneaks in NaN/inf\nfails loudly instead of writing a file that cannot be read back.",
+        "properties": {
+          "criteria": {
+            "$ref": "#/components/schemas/InformationCriteria"
+          },
+          "cv": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CrossValidation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "diagnostics": {
+            "$ref": "#/components/schemas/DiagnosticsReport"
+          },
+          "residuals": {
+            "$ref": "#/components/schemas/ResidualSet"
+          },
+          "result_summary": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "string"
+                }
+              ]
+            },
+            "title": "Result Summary",
+            "type": "object"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "result_summary",
+          "criteria",
+          "residuals",
+          "diagnostics",
+          "cv",
+          "warnings"
+        ],
+        "title": "FitReport",
+        "type": "object"
+      },
+      "FitResult": {
+        "additionalProperties": false,
+        "description": "Complete, immutable record of one fit.\n\nThe model is frozen, but list/dict fields are not deep-frozen: do not mutate them.\n:meth:`to_json` re-checks finiteness, so a mutation that sneaks in NaN/inf fails\nloudly rather than producing a file that cannot be read back.",
+        "properties": {
+          "correlation": {
+            "anyOf": [
+              {
+                "items": {
+                  "items": {
+                    "type": "number"
+                  },
+                  "type": "array"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Correlation"
+          },
+          "covariance": {
+            "anyOf": [
+              {
+                "items": {
+                  "items": {
+                    "type": "number"
+                  },
+                  "type": "array"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Covariance"
+          },
+          "equation": {
+            "title": "Equation",
+            "type": "string"
+          },
+          "equation_fitted": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Equation Fitted"
+          },
+          "fitted": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Fitted",
+            "type": "array"
+          },
+          "initial_params": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "title": "Initial Params",
+            "type": "object"
+          },
+          "loss": {
+            "title": "Loss",
+            "type": "string"
+          },
+          "method": {
+            "title": "Method",
+            "type": "string"
+          },
+          "model_id": {
+            "title": "Model Id",
+            "type": "string"
+          },
+          "n_starts": {
+            "title": "N Starts",
+            "type": "integer"
+          },
+          "parameters": {
+            "items": {
+              "$ref": "#/components/schemas/ParameterEstimate"
+            },
+            "title": "Parameters",
+            "type": "array"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/Provenance"
+          },
+          "residuals": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Residuals",
+            "type": "array"
+          },
+          "stats": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FitStatistics"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/FitStatus"
+          },
+          "termination_reason": {
+            "title": "Termination Reason",
+            "type": "string"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "model_id",
+          "equation",
+          "equation_fitted",
+          "parameters",
+          "covariance",
+          "correlation",
+          "stats",
+          "fitted",
+          "residuals",
+          "status",
+          "termination_reason",
+          "method",
+          "loss",
+          "initial_params",
+          "n_starts",
+          "warnings",
+          "provenance"
+        ],
+        "title": "FitResult",
+        "type": "object"
+      },
+      "FitSpec": {
+        "additionalProperties": false,
+        "description": "What to fit and how.\n\n``bounds`` maps a parameter to ``(lower, upper)``; ``None`` means unbounded on that side\n(JSON has no infinity). ``initial`` overrides the starting value per parameter; a custom\nequation starts every parameter at 1.0 unless told otherwise. ``use_weights`` weights\nthe fit by the data's weights column (an error if the data has none); with ``False``\nany weights in the data are ignored and a warning says so. ``seed`` (default 0) is\nrecorded in the result. ``time_limit`` is a wall-clock budget in seconds for\nregistered and custom models; a fit that exceeds it is reported ``failed``.\n\nPolynomials are fitted in closed form, so ``method``, ``loss``, ``bounds`` and ``initial``\nmust be left at their defaults for them.",
+        "properties": {
+          "bounds": {
+            "additionalProperties": {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              ],
+              "type": "array"
+            },
+            "title": "Bounds",
+            "type": "object"
+          },
+          "initial": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "title": "Initial",
+            "type": "object"
+          },
+          "loss": {
+            "default": "linear",
+            "title": "Loss",
+            "type": "string"
+          },
+          "method": {
+            "default": "auto",
+            "title": "Method",
+            "type": "string"
+          },
+          "model": {
+            "discriminator": {
+              "mapping": {
+                "custom": "#/components/schemas/CustomRef",
+                "polynomial": "#/components/schemas/PolynomialRef",
+                "registered": "#/components/schemas/RegisteredRef"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PolynomialRef"
+              },
+              {
+                "$ref": "#/components/schemas/RegisteredRef"
+              },
+              {
+                "$ref": "#/components/schemas/CustomRef"
+              }
+            ],
+            "title": "Model"
+          },
+          "seed": {
+            "anyOf": [
+              {
+                "maximum": 9007199254740991.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seed"
+          },
+          "time_limit": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time Limit"
+          },
+          "use_weights": {
+            "default": false,
+            "title": "Use Weights",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "model"
+        ],
+        "title": "FitSpec",
+        "type": "object"
+      },
+      "FitStatistics": {
+        "additionalProperties": false,
+        "description": "Goodness-of-fit summary. ``None`` means \"not defined\", never \"not computed\".\n\n``n`` is the number of observations passed in; the engines pass the active\n(weight > 0) points only, so zero-weight points are excluded from ``n`` and from\n``df = n - k`` in every fit result.",
+        "properties": {
+          "adj_r2": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Adj R2"
+          },
+          "df": {
+            "title": "Df",
+            "type": "integer"
+          },
+          "k": {
+            "title": "K",
+            "type": "integer"
+          },
+          "mae": {
+            "title": "Mae",
+            "type": "number"
+          },
+          "mse": {
+            "title": "Mse",
+            "type": "number"
+          },
+          "n": {
+            "title": "N",
+            "type": "integer"
+          },
+          "r2": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "R2"
+          },
+          "r2_definition": {
+            "enum": [
+              "centered",
+              "uncentered"
+            ],
+            "title": "R2 Definition",
+            "type": "string"
+          },
+          "residual_se": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Residual Se"
+          },
+          "rmse": {
+            "title": "Rmse",
+            "type": "number"
+          },
+          "sse": {
+            "title": "Sse",
+            "type": "number"
+          }
+        },
+        "required": [
+          "n",
+          "k",
+          "df",
+          "sse",
+          "mse",
+          "rmse",
+          "mae",
+          "r2",
+          "adj_r2",
+          "residual_se",
+          "r2_definition"
+        ],
+        "title": "FitStatistics",
+        "type": "object"
+      },
+      "FitStatus": {
+        "description": "Outcome category. A failed fit is reported as such, never as a plausible result.",
+        "enum": [
+          "converged",
+          "not_converged",
+          "failed",
+          "invalid_input"
+        ],
+        "title": "FitStatus",
+        "type": "string"
+      },
+      "FitSummaryOut": {
+        "properties": {
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "dataset_id": {
+            "format": "uuid",
+            "title": "Dataset Id",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "spec": {
+            "additionalProperties": true,
+            "title": "Spec",
+            "type": "object"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "dataset_id",
+          "status",
+          "spec",
+          "created_at"
+        ],
+        "title": "FitSummaryOut",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "HealthOut": {
+        "properties": {
+          "database": {
+            "const": "ok",
+            "title": "Database",
+            "type": "string"
+          },
+          "status": {
+            "const": "ok",
+            "title": "Status",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "database",
+          "version"
+        ],
+        "title": "HealthOut",
+        "type": "object"
+      },
+      "InformationCriteria": {
+        "additionalProperties": false,
+        "description": "AIC, AICc and BIC of one converged fit under the shared Gaussian convention.\n\n``k_total`` is ``k' = k + 1``: the fitted parameters plus the error variance.\n``aicc`` is ``None`` when ``n - k' - 1 <= 0``, because the small-sample correction is\nundefined there (it would divide by zero or turn negative), not because the fit failed.\n``convention`` records the exact formulas so a stored result stays self-describing.",
+        "properties": {
+          "aic": {
+            "title": "Aic",
+            "type": "number"
+          },
+          "aicc": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aicc"
+          },
+          "bic": {
+            "title": "Bic",
+            "type": "number"
+          },
+          "convention": {
+            "title": "Convention",
+            "type": "string"
+          },
+          "k_total": {
+            "title": "K Total",
+            "type": "integer"
+          },
+          "n": {
+            "title": "N",
+            "type": "integer"
+          },
+          "sse": {
+            "title": "Sse",
+            "type": "number"
+          }
+        },
+        "required": [
+          "n",
+          "k_total",
+          "sse",
+          "aic",
+          "aicc",
+          "bic",
+          "convention"
+        ],
+        "title": "InformationCriteria",
+        "type": "object"
+      },
+      "IssueOut": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "rows": {
+            "default": [],
+            "items": {
+              "type": "integer"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "severity": {
+            "enum": [
+              "error",
+              "warning"
+            ],
+            "title": "Severity",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "severity",
+          "message"
+        ],
+        "title": "IssueOut",
+        "type": "object"
+      },
+      "JobCreatedOut": {
+        "properties": {
+          "job_id": {
+            "format": "uuid",
+            "title": "Job Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id"
+        ],
+        "title": "JobCreatedOut",
+        "type": "object"
+      },
+      "JobOut": {
+        "properties": {
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "dataset_id": {
+            "format": "uuid",
+            "title": "Dataset Id",
+            "type": "string"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "fit",
+              "autofit"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "result_ref": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result Ref"
+          },
+          "spec": {
+            "additionalProperties": true,
+            "title": "Spec",
+            "type": "object"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "succeeded",
+              "failed",
+              "cancelled"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "status",
+          "dataset_id",
+          "spec",
+          "result_ref",
+          "error_code",
+          "error_message",
+          "created_at",
+          "started_at",
+          "finished_at"
+        ],
+        "title": "JobOut",
+        "type": "object"
+      },
+      "LoginIn": {
+        "additionalProperties": false,
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "password": {
+            "format": "password",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Password",
+            "type": "string",
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ],
+        "title": "LoginIn",
+        "type": "object"
+      },
+      "ModelInfo": {
+        "additionalProperties": false,
+        "description": "What a UI needs to offer a model: identity, equation and parameters.",
+        "properties": {
+          "assumptions": {
+            "title": "Assumptions",
+            "type": "string"
+          },
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "equation": {
+            "title": "Equation",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "is_family": {
+            "title": "Is Family",
+            "type": "boolean"
+          },
+          "latex": {
+            "title": "Latex",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "parameters": {
+            "items": {
+              "$ref": "#/components/schemas/ParameterInfo"
+            },
+            "title": "Parameters",
+            "type": "array"
+          },
+          "references": {
+            "items": {
+              "type": "string"
+            },
+            "title": "References",
+            "type": "array"
+          },
+          "variables": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Variables",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "category",
+          "equation",
+          "latex",
+          "parameters",
+          "variables",
+          "references",
+          "assumptions",
+          "is_family"
+        ],
+        "title": "ModelInfo",
+        "type": "object"
+      },
+      "ParameterEstimate": {
+        "additionalProperties": false,
+        "description": "One fitted parameter. ``None`` uncertainty means it could not be determined.",
+        "properties": {
+          "ci_high": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ci High"
+          },
+          "ci_low": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ci Low"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "std_err": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Std Err"
+          },
+          "value": {
+            "title": "Value",
+            "type": "number"
+          }
+        },
+        "required": [
+          "name",
+          "value"
+        ],
+        "title": "ParameterEstimate",
+        "type": "object"
+      },
+      "ParameterInfo": {
+        "additionalProperties": false,
+        "description": "A model parameter; ``None`` bounds mean unbounded on that side.",
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "lower": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lower"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "unit": {
+            "title": "Unit",
+            "type": "string"
+          },
+          "upper": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Upper"
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "unit",
+          "lower",
+          "upper"
+        ],
+        "title": "ParameterInfo",
+        "type": "object"
+      },
+      "PointsOut": {
+        "description": "Stride-sampled points; ``w`` is ``None`` when the dataset has no weights.",
+        "properties": {
+          "n_total": {
+            "title": "N Total",
+            "type": "integer"
+          },
+          "w": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "W"
+          },
+          "x": {
+            "items": {
+              "type": "number"
+            },
+            "title": "X",
+            "type": "array"
+          },
+          "y": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Y",
+            "type": "array"
+          }
+        },
+        "required": [
+          "n_total",
+          "x",
+          "y",
+          "w"
+        ],
+        "title": "PointsOut",
+        "type": "object"
+      },
+      "PolynomialRef": {
+        "additionalProperties": false,
+        "description": "``y = b0 + b1*x + ... + b<degree>*x**degree``, fitted by linear least squares.",
+        "properties": {
+          "degree": {
+            "maximum": 10.0,
+            "minimum": 1.0,
+            "title": "Degree",
+            "type": "integer"
+          },
+          "kind": {
+            "const": "polynomial",
+            "default": "polynomial",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "degree"
+        ],
+        "title": "PolynomialRef",
+        "type": "object"
+      },
+      "PredictIn": {
+        "additionalProperties": false,
+        "properties": {
+          "band": {
+            "anyOf": [
+              {
+                "enum": [
+                  "confidence",
+                  "prediction"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Band"
+          },
+          "x": {
+            "items": {
+              "type": "number"
+            },
+            "maxItems": 100000,
+            "title": "X",
+            "type": "array"
+          }
+        },
+        "required": [
+          "x"
+        ],
+        "title": "PredictIn",
+        "type": "object"
+      },
+      "Prediction": {
+        "additionalProperties": false,
+        "description": "Predicted values at the requested ``x`` (same order and length).\n\nA row is ``None`` where it is undefined: a non-finite ``x``, or a model that has no\nreal value there. ``lower``/``upper`` are ``None`` when no band was requested or the\nband is undefined altogether (``band_reason`` says why); individual rows may be ``None``.\n``extrapolated[i]`` is true where ``x[i]`` lies outside the fitted data's range.",
+        "properties": {
+          "band": {
+            "anyOf": [
+              {
+                "enum": [
+                  "confidence",
+                  "prediction"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Band"
+          },
+          "band_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Band Reason"
+          },
+          "extrapolated": {
+            "items": {
+              "type": "boolean"
+            },
+            "title": "Extrapolated",
+            "type": "array"
+          },
+          "level": {
+            "title": "Level",
+            "type": "number"
+          },
+          "lower": {
+            "anyOf": [
+              {
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lower"
+          },
+          "upper": {
+            "anyOf": [
+              {
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Upper"
+          },
+          "x": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "X",
+            "type": "array"
+          },
+          "y": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Y",
+            "type": "array"
+          }
+        },
+        "required": [
+          "x",
+          "y",
+          "band",
+          "level",
+          "lower",
+          "upper",
+          "extrapolated",
+          "band_reason"
+        ],
+        "title": "Prediction",
+        "type": "object"
+      },
+      "Provenance": {
+        "additionalProperties": false,
+        "description": "What produced a result: software versions, input data identity, time and seed.",
+        "properties": {
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "dataset_fingerprint": {
+            "title": "Dataset Fingerprint",
+            "type": "string"
+          },
+          "seed": {
+            "title": "Seed",
+            "type": "integer"
+          },
+          "software_versions": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Software Versions",
+            "type": "object"
+          }
+        },
+        "required": [
+          "software_versions",
+          "dataset_fingerprint",
+          "created_at",
+          "seed"
+        ],
+        "title": "Provenance",
+        "type": "object"
+      },
+      "ReadyOut": {
+        "properties": {
+          "status": {
+            "const": "ready",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "ReadyOut",
+        "type": "object"
+      },
+      "RefreshIn": {
+        "additionalProperties": false,
+        "properties": {
+          "refresh_token": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Refresh Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "refresh_token"
+        ],
+        "title": "RefreshIn",
+        "type": "object"
+      },
+      "RegisterIn": {
+        "additionalProperties": false,
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "name": {
+            "default": "",
+            "maxLength": 100,
+            "title": "Name",
+            "type": "string"
+          },
+          "password": {
+            "format": "password",
+            "maxLength": 128,
+            "minLength": 10,
+            "title": "Password",
+            "type": "string",
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ],
+        "title": "RegisterIn",
+        "type": "object"
+      },
+      "RegisteredRef": {
+        "additionalProperties": false,
+        "description": "A model from the registry, by id (see :func:`curvestudio.workflow.list_models`).",
+        "properties": {
+          "id": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "registered",
+            "default": "registered",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "RegisteredRef",
+        "type": "object"
+      },
+      "ResidualSet": {
+        "additionalProperties": false,
+        "description": "Per-point residual diagnostics and plot-ready series for one fit.\n\nPer-point lists (``x`` to ``scale_location``) hold the active points in input order and\nhave equal length. ``standardized``, ``studentized_external``, ``cooks_distance`` and\n``scale_location`` are ``None`` where undefined (leverage-one points, a zero residual\nvariance, or too few degrees of freedom). ``qq_theoretical``/``qq_ordered`` pair the\nnormal quantiles at the Blom positions ``(i - 0.375)/(n + 0.25)`` with the sorted\nweighted residuals. ``hist_edges``/``hist_counts`` histogram the weighted residuals\n(Freedman-Diaconis bins, Sturges when the IQR is 0, or ``bins`` equal bins).\n\n``acf`` is the demeaned, biased autocorrelation of the weighted residuals taken in\nascending-x order (ties keep input order) at lags ``0..nlags``; it is empty when the\nresiduals have no variance. ``acf_bound`` is ``1.96/sqrt(n)``. ``flagged_high_leverage``\n(``h > 2k/n``) and ``flagged_high_influence`` (Cook's ``> 4/n``) index the active arrays;\nleverage-one points are in both.",
+        "properties": {
+          "acf": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Acf",
+            "type": "array"
+          },
+          "acf_bound": {
+            "title": "Acf Bound",
+            "type": "number"
+          },
+          "cooks_distance": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Cooks Distance",
+            "type": "array"
+          },
+          "cooks_threshold": {
+            "title": "Cooks Threshold",
+            "type": "number"
+          },
+          "fitted": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Fitted",
+            "type": "array"
+          },
+          "flagged_high_influence": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Flagged High Influence",
+            "type": "array"
+          },
+          "flagged_high_leverage": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Flagged High Leverage",
+            "type": "array"
+          },
+          "hist_counts": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Hist Counts",
+            "type": "array"
+          },
+          "hist_edges": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Hist Edges",
+            "type": "array"
+          },
+          "leverage": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Leverage",
+            "type": "array"
+          },
+          "leverage_threshold": {
+            "title": "Leverage Threshold",
+            "type": "number"
+          },
+          "qq_ordered": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Qq Ordered",
+            "type": "array"
+          },
+          "qq_theoretical": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Qq Theoretical",
+            "type": "array"
+          },
+          "residuals": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Residuals",
+            "type": "array"
+          },
+          "scale_location": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Scale Location",
+            "type": "array"
+          },
+          "standardized": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Standardized",
+            "type": "array"
+          },
+          "studentized_external": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Studentized External",
+            "type": "array"
+          },
+          "weighted_residuals": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Weighted Residuals",
+            "type": "array"
+          },
+          "x": {
+            "items": {
+              "type": "number"
+            },
+            "title": "X",
+            "type": "array"
+          }
+        },
+        "required": [
+          "x",
+          "fitted",
+          "residuals",
+          "weighted_residuals",
+          "standardized",
+          "studentized_external",
+          "leverage",
+          "cooks_distance",
+          "scale_location",
+          "qq_theoretical",
+          "qq_ordered",
+          "hist_edges",
+          "hist_counts",
+          "acf",
+          "acf_bound",
+          "leverage_threshold",
+          "cooks_threshold",
+          "flagged_high_leverage",
+          "flagged_high_influence"
+        ],
+        "title": "ResidualSet",
+        "type": "object"
+      },
+      "TokenOut": {
+        "properties": {
+          "access_token": {
+            "title": "Access Token",
+            "type": "string"
+          },
+          "expires_in": {
+            "title": "Expires In",
+            "type": "integer"
+          },
+          "refresh_token": {
+            "title": "Refresh Token",
+            "type": "string"
+          },
+          "token_type": {
+            "const": "bearer",
+            "default": "bearer",
+            "title": "Token Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "access_token",
+          "refresh_token",
+          "expires_in"
+        ],
+        "title": "TokenOut",
+        "type": "object"
+      },
+      "UserOut": {
+        "properties": {
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "name",
+          "created_at"
+        ],
+        "title": "UserOut",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "HTTPBearer": {
+        "description": "RS256 access token from /auth/login",
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "title": "CurveStudio API",
+    "version": "0.1.0.dev0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v1/auth/login": {
+      "post": {
+        "operationId": "login_api_v1_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Login",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "description": "Revoke the refresh token (and anything rotated from it). Always 204: it reveals nothing.",
+        "operationId": "logout_api_v1_auth_logout_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Logout",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/refresh": {
+      "post": {
+        "description": "Exchange a refresh token for a new pair; the old one is revoked.\n\nPresenting a token that was already used (or revoked) means it leaked: the whole chain\nof tokens descended from it is revoked and the request fails with 401.",
+        "operationId": "refresh_api_v1_auth_refresh_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Refresh",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/register": {
+      "post": {
+        "operationId": "register_api_v1_auth_register_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Register",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/datasets": {
+      "get": {
+        "operationId": "list_datasets_api_v1_datasets_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DatasetOut"
+                  },
+                  "title": "Response List Datasets Api V1 Datasets Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Datasets",
+        "tags": [
+          "datasets"
+        ]
+      },
+      "post": {
+        "description": "Upload a table. The size and row caps are enforced before the file is parsed.",
+        "operationId": "create_dataset_api_v1_datasets_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_create_dataset_api_v1_datasets_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatasetOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Dataset",
+        "tags": [
+          "datasets"
+        ]
+      }
+    },
+    "/api/v1/datasets/{dataset_id}": {
+      "delete": {
+        "description": "Delete a dataset together with its fits and jobs (running jobs are stopped first).",
+        "operationId": "delete_dataset_api_v1_datasets__dataset_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dataset_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Dataset Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Dataset",
+        "tags": [
+          "datasets"
+        ]
+      },
+      "get": {
+        "operationId": "get_dataset_api_v1_datasets__dataset_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dataset_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Dataset Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "at most this many stride-sampled points (default 2000); 0 for none",
+            "in": "query",
+            "name": "points",
+            "required": false,
+            "schema": {
+              "default": 2000,
+              "description": "at most this many stride-sampled points (default 2000); 0 for none",
+              "maximum": 20000,
+              "minimum": 0,
+              "title": "Points",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatasetDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Dataset",
+        "tags": [
+          "datasets"
+        ]
+      }
+    },
+    "/api/v1/datasets/{dataset_id}/fits": {
+      "get": {
+        "operationId": "list_fits_api_v1_datasets__dataset_id__fits_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dataset_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Dataset Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/FitSummaryOut"
+                  },
+                  "title": "Response List Fits Api V1 Datasets  Dataset Id  Fits Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Fits",
+        "tags": [
+          "fits"
+        ]
+      },
+      "post": {
+        "description": "Queue a fit. A specification the engine rejects (bad equation, unknown model) is a 422\nhere; a fit that runs but does not converge is a finished job whose fit says so.",
+        "operationId": "create_fit_api_v1_datasets__dataset_id__fits_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dataset_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Dataset Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FitSpec"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobCreatedOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Fit",
+        "tags": [
+          "fits"
+        ]
+      }
+    },
+    "/api/v1/fits/{fit_id}": {
+      "delete": {
+        "operationId": "delete_fit_api_v1_fits__fit_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "fit_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Fit Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Fit",
+        "tags": [
+          "fits"
+        ]
+      },
+      "get": {
+        "operationId": "get_fit_api_v1_fits__fit_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "fit_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Fit Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FitBundle"
+                }
+              }
+            },
+            "description": "The stored fit bundle, exactly as the fit produced it."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Fit",
+        "tags": [
+          "fits"
+        ]
+      }
+    },
+    "/api/v1/fits/{fit_id}/export": {
+      "get": {
+        "description": "Download a fit as JSON (the bundle) or CSV (parameters, then fitted values per row).",
+        "operationId": "export_fit_api_v1_fits__fit_id__export_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "fit_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Fit Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "format",
+            "required": false,
+            "schema": {
+              "default": "json",
+              "enum": [
+                "json",
+                "csv"
+              ],
+              "title": "Format",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Export Fit",
+        "tags": [
+          "fits"
+        ]
+      }
+    },
+    "/api/v1/fits/{fit_id}/predict": {
+      "post": {
+        "description": "ŷ at the given x (up to 100 000) from a converged fit, with an optional 95 % band.",
+        "operationId": "predict_fit_api_v1_fits__fit_id__predict_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "fit_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Fit Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PredictIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Prediction"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Predict Fit",
+        "tags": [
+          "fits"
+        ]
+      }
+    },
+    "/api/v1/health": {
+      "get": {
+        "description": "Liveness plus a real ``SELECT 1``; 503 when the database cannot be reached.",
+        "operationId": "health_api_v1_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/api/v1/jobs/{job_id}": {
+      "get": {
+        "operationId": "get_job_api_v1_jobs__job_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Job",
+        "tags": [
+          "fits",
+          "jobs"
+        ]
+      }
+    },
+    "/api/v1/jobs/{job_id}/cancel": {
+      "post": {
+        "description": "Cancel a queued or running job. A job that already finished is a 409.",
+        "operationId": "cancel_job_api_v1_jobs__job_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Cancel Job",
+        "tags": [
+          "fits",
+          "jobs"
+        ]
+      }
+    },
+    "/api/v1/me": {
+      "get": {
+        "operationId": "me_api_v1_me_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Me",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/models": {
+      "get": {
+        "description": "The model catalogue, optionally filtered by category and a search text.",
+        "operationId": "models_api_v1_models_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "category",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Category"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ModelInfo"
+                  },
+                  "title": "Response Models Api V1 Models Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Models",
+        "tags": [
+          "models"
+        ]
+      }
+    },
+    "/api/v1/models/{model_id}": {
+      "get": {
+        "operationId": "model_api_v1_models__model_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "model_id",
+            "required": true,
+            "schema": {
+              "title": "Model Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelInfo"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Model",
+        "tags": [
+          "models"
+        ]
+      }
+    },
+    "/api/v1/ready": {
+      "get": {
+        "description": "Ready to serve: database reachable, schema at the newest migration, jobs running.",
+        "operationId": "ready_api_v1_ready_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadyOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Ready",
+        "tags": [
+          "system"
+        ]
+      }
+    }
+  }
+}
