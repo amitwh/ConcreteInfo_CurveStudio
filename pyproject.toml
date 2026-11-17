@@ -11,6 +11,7 @@ package = false
 
 [tool.uv.workspace]
 members = ["packages/*", "apps/*"]
+exclude = ["apps/web"] # JavaScript SPA: npm-managed, not a uv workspace member
 
 [tool.uv.sources]
 curvestudio-core = { workspace = true }
