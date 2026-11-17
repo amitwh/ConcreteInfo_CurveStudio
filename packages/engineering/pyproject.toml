@@ -1,0 +1,21 @@
+[project]
+name = "curvestudio-engineering"
+version = "0.1.0.dev0"
+description = "CurveStudio engineering (concrete and civil) model catalogue (registered through the curvestudio.models entry point)"
+readme = "README.md"
+requires-python = ">=3.14"
+license = "AGPL-3.0-or-later"
+dependencies = ["curvestudio-core"]
+
+[project.entry-points."curvestudio.models"]
+engineering = "curvestudio_engineering.register:register_all"
+
+[tool.uv.sources]
+curvestudio-core = { workspace = true }
+
+[build-system]
+requires = ["hatchling>=1.33.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/curvestudio_engineering"]
