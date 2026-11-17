@@ -133,6 +133,13 @@ class CustomModelDefinition(BaseModel):
     variables: tuple[str, ...] = ("x",)
     parameters: tuple[ParameterDefinition, ...] | None = None
 
+    @field_validator("name")
+    @classmethod
+    def _name_is_short(cls, value: str) -> str:
+        if len(value) > 120:
+            raise ValueError("name must be at most 120 characters")
+        return value
+
     @field_validator("id")
     @classmethod
     def _id_is_lowercase_snake_case(cls, value: str) -> str:

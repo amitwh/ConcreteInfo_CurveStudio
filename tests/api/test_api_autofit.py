@@ -532,3 +532,27 @@ def test_migration_0003_upgrades_and_downgrades_on_sqlite(tmp_path: Path) -> Non
 
     command.upgrade(_config(engine), "head")
     assert "autofits" in inspect(engine).get_table_names()
+
+
+def test_deleting_the_dataset_does_not_reset_the_daily_autofit_quota(
+    client_factory: Callable[..., TestClient], settings_factory: Callable[..., Settings]
+) -> None:
+    client = client_factory(settings_factory(quota_max_autofits_per_day=2))
+    headers = signup(client)
+    ids: list[str] = []
+    for _ in range(2):
+        ids.append(upload(client, headers, linear_csv()).json()["id"])
+        resp = client.post(f"{API}/datasets/{ids[-1]}/autofit", headers=headers, json=SMALL)
+        assert resp.status_code == 202, resp.text
+    third = upload(client, headers, linear_csv()).json()["id"]
+    assert (
+        client.post(f"{API}/datasets/{third}/autofit", headers=headers, json=SMALL).status_code
+        == 429
+    )
+    for dataset_id in [*ids, third]:
+        assert client.delete(f"{API}/datasets/{dataset_id}", headers=headers).status_code == 204
+    again = upload(client, headers, linear_csv()).json()["id"]
+    assert (
+        client.post(f"{API}/datasets/{again}/autofit", headers=headers, json=SMALL).status_code
+        == 429
+    )

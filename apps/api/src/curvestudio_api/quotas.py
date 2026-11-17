@@ -9,7 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from curvestudio_api.errors import ApiError
-from curvestudio_api.orm import Dataset, Fit, Job, Plan
+from curvestudio_api.orm import AuditLog, Dataset, Fit, Job, Plan
 from curvestudio_api.settings import Settings
 from curvestudio_api.timeutil import IST, utcnow
 
@@ -141,8 +141,12 @@ def check_autofit_runs(
     limit = autofits_per_day_limit(db, settings)
     used = (
         db.scalar(
-            select(func.count(Job.id)).where(
-                Job.user_id == user_id, Job.kind == "autofit", Job.created_at >= day_start
+            # Audit rows, not Job rows: deleting a dataset cascades its jobs away, which
+            # would otherwise reset the day's allowance.
+            select(func.count(AuditLog.id)).where(
+                AuditLog.user_id == user_id,
+                AuditLog.action == "autofit.submit",
+                AuditLog.created_at >= day_start,
             )
         )
         or 0

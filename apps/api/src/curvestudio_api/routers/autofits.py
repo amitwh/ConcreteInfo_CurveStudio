@@ -101,6 +101,9 @@ def create_autofit(
         spec={"config": config.model_dump(mode="json"), "budget_s": ctx.settings.autofit_budget_s},
     )
     db.add(job)
+    # The day's allowance counts submissions through the append-only audit log, which a
+    # dataset delete (cascading its jobs away) cannot reset.
+    audit.record(db, "autofit.submit", "job", user_id=user.id, entity_id=job.id)
     db.commit()
     ctx.jobs.submit(
         Task(
