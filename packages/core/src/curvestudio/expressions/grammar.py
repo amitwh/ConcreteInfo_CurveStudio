@@ -56,7 +56,7 @@ CONSTANTS: dict[str, Any] = {"pi": sympy.pi, "E": sympy.E}
 """Bare names that stand for a number."""
 
 RESERVED_NAMES = frozenset(UNARY_FUNCTIONS) | frozenset(BINARY_FUNCTIONS) | frozenset(CONSTANTS)
-RESERVED_NAMES |= {"Integer", "Float"}
+RESERVED_NAMES |= {"Integer", "Float", "abs", "sign"}  # "abs"/"sign" are printed bare by lambdify
 """Names a variable or parameter may not take (functions, constants, SymPy number types)."""
 
 _BINARY_OPS = (ast.Add, ast.Sub, ast.Mult, ast.Div, ast.Pow)
@@ -104,6 +104,8 @@ def parse_expression(text: str, names: frozenset[str]) -> ast.expr:
             f"expression contains characters {''.join(odd)!r} that Unicode would silently "
             "rewrite (look-alike letters, superscripts, full-width forms); type plain ASCII"
         )
+    if "#" in text:
+        raise ValueError("expression must not contain '#': comments are not part of an equation")
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", SyntaxWarning)  # e.g. "2(x)": we report it ourselves

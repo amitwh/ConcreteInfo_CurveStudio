@@ -8,7 +8,7 @@ import sympy
 from sympy.parsing.sympy_parser import parse_expr, standard_transformations
 
 from curvestudio.expressions import to_sympy
-from curvestudio.expressions.grammar import CONSTANTS, UNARY_FUNCTIONS
+from curvestudio.expressions.grammar import CONSTANTS, UNARY_FUNCTIONS, validate_expression
 from curvestudio.models.starter import STARTER_MODELS
 
 
@@ -71,3 +71,28 @@ def test_invalid_input_is_validated_before_conversion() -> None:
         to_sympy("__import__('os')", {})
     with pytest.raises(ValueError, match="unknown name"):
         to_sympy("a*x", _symbols("x"))
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "0*log(0)",
+        "log(1)/log(1)",
+        "x/0",
+        "x/(1-1)",
+        "log(0)",
+        "a*tan(pi/2)",
+        "sqrt(-1)",
+        "a*log(-1)*x",
+    ],
+)
+def test_undefined_or_complex_constants_are_refused(text: str) -> None:
+    symbols = {name: sympy.Symbol(name) for name in ("a", "x")}
+    with pytest.raises(ValueError, match="not defined for real numbers"):
+        to_sympy(text, symbols)
+
+
+@pytest.mark.parametrize("text", ["a*x # note", "a*x#"])
+def test_comments_are_refused(text: str) -> None:
+    with pytest.raises(ValueError, match="comments"):
+        validate_expression(text, frozenset({"a", "x"}))

@@ -22,10 +22,17 @@ from curvestudio.expressions.grammar import (
 def to_sympy(text: str, symbols: Mapping[str, sympy.Symbol]) -> sympy.Expr:
     """SymPy expression for ``text``; ``symbols`` maps each allowed name to its symbol.
 
-    Raises ``ValueError`` for anything outside the grammar (see ``validate_expression``).
+    Raises ``ValueError`` for anything outside the grammar (see ``validate_expression``) and
+    for an expression that is undefined, infinite or complex whatever the variables are.
     """
     body = parse_expression(text, frozenset(symbols))
-    return _build(body, symbols)
+    expr = _build(body, symbols)
+    if expr.has(sympy.nan, sympy.zoo, sympy.oo, -sympy.oo, sympy.I):
+        raise ValueError(
+            f"expression {text!r} is not defined for real numbers (it contains an undefined, "
+            "infinite or complex constant sub-expression such as 1/0, log(0) or sqrt(-1))"
+        )
+    return expr
 
 
 def _build(node: ast.expr, symbols: Mapping[str, sympy.Symbol]) -> Any:
