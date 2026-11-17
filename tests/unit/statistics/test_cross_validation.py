@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 
 from curvestudio.data import XY
-from curvestudio.fitting import FitConfig, FitResult, FitStatus
+from curvestudio.fitting import FitConfig, FitResult, FitStatus, ParameterEstimate, fit_polynomial
 from curvestudio.models import ModelSpec, Parameter, register
 from curvestudio.models.registry import _clear_registry
 from curvestudio.statistics import (
@@ -275,6 +275,123 @@ def test_fold_without_degrees_of_freedom_is_counted_as_failed() -> None:
     assert cv.fold_rmse == [None, None, None, None]
     assert cv.rmse is None
     assert all("training point(s)" in reason for reason in cv.reasons)
+
+
+class ExactlyDeterminedFitter:
+    """A custom fitter (neither PolynomialFitter nor NonlinearFitter) with k = 3.
+
+    Unlike ``fit_polynomial``, which refuses an exactly determined system, it reports
+    ``CONVERGED`` with 3 parameters even when the training set has exactly 3 points:
+    only the converged result's parameter count then tells cross-validation the fold
+    has no residual degrees of freedom.
+    """
+
+    def fit(self, data: XY) -> FitResult:
+        result = fit_polynomial(data, 2)
+        if data.x.size > 3:
+            return result
+        coefficients = np.polynomial.polynomial.polyfit(data.x, data.y, 2)
+        fitted = np.polynomial.polynomial.polyval(data.x, coefficients)
+        parameters = tuple(
+            ParameterEstimate(name=f"b{index}", value=float(value))
+            for index, value in enumerate(coefficients)
+        )
+        return result.model_copy(
+            update={
+                "status": FitStatus.CONVERGED,
+                "termination_reason": "exactly determined interpolation",
+                "parameters": parameters,
+                "fitted": fitted.tolist(),
+                "residuals": (data.y - fitted).tolist(),
+            }
+        )
+
+    def predict(self, result: FitResult, x: np.ndarray[Any, Any]) -> np.ndarray[Any, Any]:
+        coefficients = [parameter.value for parameter in result.parameters]
+        return np.polynomial.polynomial.polyval(np.asarray(x, dtype=float), coefficients)
+
+
+def test_custom_fitter_fold_without_degrees_of_freedom_is_counted_as_failed() -> None:
+    # 7 points in 2 folds hold out 4 and 3, so fold 0 trains on exactly k = 3 points
+    # while fold 1 trains on 4 and succeeds: only the starved fold fails.
+    data = noisy_quadratic(n=7, seed=2)
+    cv = k_fold_cv(data, ExactlyDeterminedFitter(), folds=2, seed=0)
+
+    assert cv.status == "incomplete"
+    assert cv.n_failed == 1
+    assert cv.rmse is None
+    assert cv.fold_rmse[0] is None
+    assert sum(value is not None for value in cv.fold_rmse) == 1
+    assert cv.fold_rmse[1] is not None
+    assert len(cv.reasons) == 1
+    assert "fold 0" in cv.reasons[0]
+    assert "3 training point(s) for 3 parameter(s)" in cv.reasons[0]
+    assert "no residual degrees of freedom" in cv.reasons[0]
+
+
+class NonFinitePredictFitter:
+    """Predict one NaN on the ``fail_on``-th call, real values everywhere else."""
+
+    def __init__(self, fail_on: int = 1) -> None:
+        self.fail_on = fail_on
+        self.calls = 0
+        self._poly = PolynomialFitter(1)
+
+    def fit(self, data: XY) -> FitResult:
+        return self._poly.fit(data)
+
+    def predict(self, result: FitResult, x: np.ndarray[Any, Any]) -> np.ndarray[Any, Any]:
+        self.calls += 1
+        values = np.array(self._poly.predict(result, x), dtype=float)
+        if self.calls == self.fail_on:
+            values[0] = np.nan
+        return values
+
+
+class WrongShapePredictFitter:
+    """Predict an array of the wrong length on the ``fail_on``-th call."""
+
+    def __init__(self, fail_on: int = 1) -> None:
+        self.fail_on = fail_on
+        self.calls = 0
+        self._poly = PolynomialFitter(1)
+
+    def fit(self, data: XY) -> FitResult:
+        return self._poly.fit(data)
+
+    def predict(self, result: FitResult, x: np.ndarray[Any, Any]) -> np.ndarray[Any, Any]:
+        self.calls += 1
+        if self.calls == self.fail_on:
+            return np.zeros(3)
+        return self._poly.predict(result, x)
+
+
+def test_non_finite_predictions_fail_their_fold() -> None:
+    data = noisy_quadratic(n=20)
+    cv = k_fold_cv(data, NonFinitePredictFitter(fail_on=1), folds=4, seed=0)
+
+    assert cv.status == "incomplete"
+    assert cv.n_failed == 1
+    assert cv.rmse is None
+    assert cv.fold_rmse[0] is None
+    assert sum(value is not None for value in cv.fold_rmse) == 3
+    assert len(cv.reasons) == 1
+    assert "fold 0" in cv.reasons[0]
+    assert "held-out residuals are not finite" in cv.reasons[0]
+
+
+def test_wrong_shape_predictions_fail_their_fold() -> None:
+    data = noisy_quadratic(n=20)
+    cv = k_fold_cv(data, WrongShapePredictFitter(fail_on=1), folds=4, seed=0)
+
+    assert cv.status == "incomplete"
+    assert cv.n_failed == 1
+    assert cv.rmse is None
+    assert cv.fold_rmse[0] is None
+    assert sum(value is not None for value in cv.fold_rmse) == 3
+    assert len(cv.reasons) == 1
+    assert "fold 0" in cv.reasons[0]
+    assert "fitter predicted shape (3,) for 5 held-out point(s)" in cv.reasons[0]
 
 
 @pytest.mark.parametrize("folds", [1, 0, -2, 13, 2.5, True])
