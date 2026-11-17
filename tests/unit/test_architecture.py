@@ -8,20 +8,37 @@ FORBIDDEN_MODULES = frozenset({"PySide6", "fastapi", "sqlalchemy", "starlette", 
 CORE_SRC = Path(__file__).resolve().parents[2] / "packages" / "core" / "src"
 
 
+FORBIDDEN_SUBMODULES = frozenset({"scipy.odr"})
+"""Dotted modules that are forbidden although their top-level package is allowed."""
+
+
+def _imported_names(node: ast.AST) -> list[str]:
+    """Absolute module names a single import statement brings in (``from a import b`` -> a.b)."""
+    if isinstance(node, ast.Import):
+        return [alias.name for alias in node.names]
+    if isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+        return [node.module, *(f"{node.module}.{alias.name}" for alias in node.names)]
+    return []
+
+
 def find_forbidden_imports(source: str) -> list[str]:
-    """Return forbidden top-level modules imported by ``source`` (in import order)."""
+    """Return forbidden modules imported by ``source`` (in import order).
+
+    Top-level forbidden packages are reported by their top-level name; forbidden
+    submodules (``scipy.odr``) are reported by their dotted name, whether imported as
+    ``import scipy.odr``, ``from scipy.odr import X`` or ``from scipy import odr``.
+    """
     found: list[str] = []
     for node in ast.walk(ast.parse(source)):
-        if isinstance(node, ast.Import):
-            names = [alias.name for alias in node.names]
-        elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
-            names = [node.module]
-        else:
-            continue
-        for name in names:
+        hits: list[str] = []
+        for name in _imported_names(node):
             top = name.split(".")[0]
             if top in FORBIDDEN_MODULES:
-                found.append(top)
+                hits.append(top)
+            hits.extend(
+                sub for sub in FORBIDDEN_SUBMODULES if name == sub or name.startswith(sub + ".")
+            )
+        found.extend(dict.fromkeys(hits))  # one report per name per statement
     return found
 
 
@@ -49,3 +66,19 @@ def test_checker_flags_forbidden_imports() -> None:
 def test_checker_ignores_allowed_and_relative_imports() -> None:
     snippet = "import numpy as np\nfrom scipy import optimize\nfrom . import sibling\n"
     assert find_forbidden_imports(snippet) == []
+
+
+def test_forbidden_odr_import() -> None:
+    """``scipy.odr`` is deprecated; no module under curvestudio may import it, in any spelling."""
+    assert find_forbidden_imports("import scipy.odr") == ["scipy.odr"]
+    assert find_forbidden_imports("import scipy.odr as odr") == ["scipy.odr"]
+    assert find_forbidden_imports("from scipy.odr import ODR") == ["scipy.odr"]
+    assert find_forbidden_imports("from scipy import odr") == ["scipy.odr"]
+    assert find_forbidden_imports("from scipy import optimize, odr as o") == ["scipy.odr"]
+    assert find_forbidden_imports("import scipy.optimize\nfrom scipy import stats") == []
+
+    offenders: list[str] = []
+    for path in sorted(CORE_SRC.rglob("*.py")):
+        if "scipy.odr" in find_forbidden_imports(path.read_text(encoding="utf-8")):
+            offenders.append(str(path.relative_to(CORE_SRC)))
+    assert not offenders, f"scipy.odr imported in core: {offenders}"

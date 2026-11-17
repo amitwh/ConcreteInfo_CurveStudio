@@ -23,6 +23,7 @@ dev = [
     "ruff>=0.17.5",
     "mypy>=2.4.1",
     "import-linter>=2.16",
+    "statsmodels>=0.15.0",
 ]
 
 [tool.pytest.ini_options]
@@ -65,8 +66,30 @@ source_modules = [
     "curvestudio.fitting",
     "curvestudio.models",
     "curvestudio.testing",
+    "curvestudio.statistics",
+    "curvestudio.diagnostics",
 ]
 forbidden_modules = ["curvestudio.cli"]
+
+[[tool.importlinter.contracts]]
+name = "Lower layers do not import statistics or diagnostics"
+type = "forbidden"
+source_modules = [
+    "curvestudio.data",
+    "curvestudio.fitting",
+    "curvestudio.models",
+    "curvestudio.testing",
+]
+forbidden_modules = ["curvestudio.statistics", "curvestudio.diagnostics"]
+
+[[tool.importlinter.contracts]]
+name = "Statistics sits below diagnostics and the command-line layer"
+type = "forbidden"
+source_modules = ["curvestudio.statistics"]
+forbidden_modules = ["curvestudio.diagnostics", "curvestudio.cli"]
+
+# scipy.odr (deprecated) cannot be a contract here: import-linter rejects subpackages of
+# external packages. tests/unit/test_architecture.py::test_forbidden_odr_import enforces it.
 
 
 [[tool.mypy.overrides]]
