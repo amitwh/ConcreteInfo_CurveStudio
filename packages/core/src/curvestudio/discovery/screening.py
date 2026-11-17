@@ -6,9 +6,8 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from curvestudio.data import XY
-from curvestudio.discovery.candidates import MIN_RESIDUAL_DF, parameter_count
+from curvestudio.discovery.candidates import MIN_RESIDUAL_DF, parameter_count, resolve_spec
 from curvestudio.discovery.types import AutoFitError, CandidateRef, PolynomialRef
-from curvestudio.models import get_model
 
 MIN_ACTIVE_POINTS = 4
 """Fewer active points than this refuses the whole run."""
@@ -65,7 +64,8 @@ def screen(data: XY, candidates: Sequence[CandidateRef]) -> Screening:
         elif distinct < k:
             reasons.append(f"needs at least {k} distinct x values, has {distinct}")
         if not isinstance(ref, PolynomialRef):
-            spec = get_model(ref.model_id)
+            spec = resolve_spec(ref)
+            assert spec is not None
             if spec.variables != ("x",):
                 reasons.append(
                     f"model uses variables {', '.join(spec.variables)}; Auto-fit fits y against "
