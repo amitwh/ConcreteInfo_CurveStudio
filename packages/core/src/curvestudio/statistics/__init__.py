@@ -1,6 +1,7 @@
 """Statistics on fitted curves: uncertainty, intervals, tests and resampling."""
 
 from curvestudio.statistics.bands import Band, confidence_band, prediction_band
+from curvestudio.statistics.bootstrap import BootstrapParameter, BootstrapResult, bootstrap
 from curvestudio.statistics.criteria import (
     ComparisonRow,
     InformationCriteria,
@@ -22,6 +23,8 @@ from curvestudio.statistics.view import FitView, build_view
 
 __all__ = [
     "Band",
+    "BootstrapParameter",
+    "BootstrapResult",
     "ComparisonRow",
     "CrossValidation",
     "FitView",
@@ -33,6 +36,7 @@ __all__ = [
     "ProfileInterval",
     "ProfileResult",
     "StatisticsError",
+    "bootstrap",
     "build_view",
     "compare_models",
     "confidence_band",
