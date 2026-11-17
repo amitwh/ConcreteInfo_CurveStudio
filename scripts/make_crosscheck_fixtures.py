@@ -92,6 +92,39 @@ def reference_fit(entry: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def reference_bands(entry: dict[str, Any]) -> dict[str, Any]:
+    """Statsmodels ``get_prediction(grid).summary_frame`` on a 15-point grid (3 outside the data).
+
+    For the weighted dataset the new observations carry weight ``1 / x_new**2`` (passed as
+    ``weights=`` so Statsmodels scales the observation variance by ``1 / weight``).
+    """
+    x: FloatArray = entry["x"]
+    low, high = float(x.min()), float(x.max())
+    span = high - low
+    grid = np.concatenate(
+        [np.linspace(low, high, 12), [low - 0.15 * span, high + 0.1 * span, high + 0.3 * span]]
+    )
+    design = np.vander(entry["x"], entry["degree"] + 1, increasing=True)
+    new_design = np.vander(grid, entry["degree"] + 1, increasing=True)
+    if entry["w"] is None:
+        res = sm.OLS(entry["y"], design).fit()
+        new_weight = None
+        prediction = res.get_prediction(new_design)
+    else:
+        res = sm.WLS(entry["y"], design, weights=entry["w"]).fit()
+        new_weight = 1.0 / grid**2
+        prediction = res.get_prediction(new_design, weights=new_weight)
+    frame = prediction.summary_frame(alpha=CONFIDENCE_ALPHA)
+    out: dict[str, Any] = {"x": grid.tolist(), "new_weight": None}
+    if new_weight is not None:
+        out["new_weight"] = new_weight.tolist()
+    for column in ("mean", "mean_se", "mean_ci_lower", "mean_ci_upper"):
+        out[column] = frame[column].to_numpy().tolist()
+    for column in ("obs_ci_lower", "obs_ci_upper"):
+        out[column] = frame[column].to_numpy().tolist()
+    return out
+
+
 def build_fixtures() -> dict[str, Any]:
     datasets: dict[str, Any] = {}
     for name, entry in build_datasets().items():
@@ -102,6 +135,7 @@ def build_fixtures() -> dict[str, Any]:
             "y": entry["y"].tolist(),
             "w": None if entry["w"] is None else entry["w"].tolist(),
             "fit": reference_fit(entry),
+            "bands": reference_bands(entry),
         }
     return {
         "meta": {
