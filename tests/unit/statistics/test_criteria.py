@@ -196,18 +196,33 @@ def test_non_converged_results_are_excluded_with_reason() -> None:
     assert "'not_converged'" in comparison.excluded["stopped"]
 
 
-def test_rows_fall_back_to_bic_when_aicc_is_undefined() -> None:
+def test_a_row_without_aicc_never_outranks_a_row_with_one() -> None:
     # n = 10, k = 8 -> k' = 9 -> n - k' - 1 = 0, so AICc is undefined but BIC is not.
     undefined = make_result(model_id="wide", n=10, k=8, sse=0.1)
     defined = make_result(model_id="narrow", n=10, k=2, sse=5.0)
-    comparison = compare_models([defined, undefined])
+    comparison = compare_models([undefined, defined])
 
-    assert comparison.rows[0].model_id == "wide"  # lower BIC despite the undefined AICc
-    assert comparison.rows[0].aicc is None
-    assert comparison.rows[0].delta_aicc is None
-    assert comparison.rows[0].akaike_weight is None
-    assert comparison.rows[1].delta_aicc == pytest.approx(0.0, abs=1e-15)
-    assert comparison.rows[1].akaike_weight == pytest.approx(1.0)
+    assert undefined_has_lower_bic(comparison)  # the trap: BIC alone would rank "wide" first
+    assert [row.model_id for row in comparison.rows] == ["narrow", "wide"]
+    assert comparison.rows[1].aicc is None
+    assert comparison.rows[1].delta_aicc is None
+    assert comparison.rows[1].akaike_weight is None
+    assert comparison.rows[0].delta_aicc == pytest.approx(0.0, abs=1e-15)
+    assert comparison.rows[0].akaike_weight == pytest.approx(1.0)
+
+
+def undefined_has_lower_bic(comparison: ModelComparison) -> bool:
+    by_id = {row.model_id: row for row in comparison.rows}
+    return by_id["wide"].bic < by_id["narrow"].bic
+
+
+def test_rows_are_ranked_by_bic_when_no_aicc_is_defined() -> None:
+    worse = make_result(model_id="worse", n=10, k=8, sse=0.5)
+    better = make_result(model_id="better", n=10, k=8, sse=0.1)
+    comparison = compare_models([worse, better])
+
+    assert [row.model_id for row in comparison.rows] == ["better", "worse"]
+    assert all(row.aicc is None and row.akaike_weight is None for row in comparison.rows)
 
 
 def test_a_known_truth_dataset_prefers_the_true_degree() -> None:

@@ -145,7 +145,11 @@ def information_criteria(result: FitResult) -> InformationCriteria:
 
 
 def compare_models(results: Sequence[FitResult]) -> ModelComparison:
-    """Rank ``results`` by AICc (BIC where a row's AICc is undefined).
+    """Rank ``results`` by AICc; rows whose AICc is undefined follow, ranked by BIC.
+
+    A row's AICc is undefined when ``n - k' - 1 <= 0`` (too few observations for the
+    number of parameters); such a model is never ranked above one with a defined AICc,
+    because AICc and BIC are different scales. When no row has an AICc, BIC ranks them all.
 
     Non-converged, statistics-free and perfect fits are listed in ``excluded`` with the
     :class:`StatisticsError` code and message; they never appear as rows. AICc deltas and
@@ -201,5 +205,7 @@ def compare_models(results: Sequence[FitResult]) -> ModelComparison:
         )
         for index, (model_id, criteria) in enumerate(compared)
     ]
-    rows.sort(key=lambda row: row.aicc if row.aicc is not None else row.bic)
+    # AICc and BIC are on different scales, so they are never ranked against each other:
+    # rows with a defined AICc come first (by AICc), the rest follow (by BIC).
+    rows.sort(key=lambda row: (row.aicc is None, row.aicc if row.aicc is not None else row.bic))
     return ModelComparison(rows=tuple(rows), excluded=excluded, warnings=tuple(warnings))
