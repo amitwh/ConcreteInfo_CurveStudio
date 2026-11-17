@@ -1,11 +1,22 @@
 """The data model. Tables are snake_case plurals; ``created_at``/``updated_at`` everywhere
-except ``audit_logs``, which is append-only and never updated."""
+except ``audit_logs``, which is append-only: its only permitted change is erasing ``user_id``."""
 
 import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import JSON, ForeignKey, Integer, LargeBinary, MetaData, String, Text, Uuid
+from sqlalchemy import (
+    JSON,
+    ForeignKey,
+    Index,
+    Integer,
+    LargeBinary,
+    MetaData,
+    String,
+    Text,
+    Uuid,
+    func,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 from curvestudio_api.db import UtcDateTime
@@ -42,6 +53,10 @@ class User(_Timestamps, Base):
     password_hash: Mapped[str] = mapped_column(String(255))
     name: Mapped[str] = mapped_column(String(100), default="")
     is_active: Mapped[bool] = mapped_column(default=True)
+
+
+Index("uq_users_email_lower", func.lower(User.email), unique=True)
+"""Addresses are unique ignoring case, whatever path inserted them."""
 
 
 class RefreshToken(_Timestamps, Base):
@@ -117,7 +132,8 @@ class Job(_Timestamps, Base):
 
 
 class AuditLog(Base):
-    """Append-only: the migration installs triggers that reject UPDATE and DELETE."""
+    """Append-only: triggers reject DELETE and every UPDATE except setting ``user_id`` to NULL
+    (account erasure)."""
 
     __tablename__ = "audit_logs"
 

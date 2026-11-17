@@ -10,6 +10,7 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 PRIVATE_KEY_FILE = "jwt_private.pem"
 PUBLIC_KEY_FILE = "jwt_public.pem"
+MIN_RSA_BITS = 2048
 
 
 class Settings(BaseSettings):
@@ -31,6 +32,16 @@ class Settings(BaseSettings):
     job_timeout_s: float = Field(default=120.0, gt=0)
     job_workers: int = Field(default=2, ge=1)
     job_grace_s: float = Field(default=10.0, ge=0)
+    job_queue_max: int = Field(default=500, ge=1)
+    job_max_result_bytes: int = Field(default=250_000_000, ge=1_000)
+    import_timeout_s: float = Field(default=20.0, gt=0)
+    import_concurrency: int = Field(default=2, ge=1)
+    import_memory_mb: int = Field(default=1024, ge=64)
+    trusted_proxy_hops: int = Field(default=1, ge=0)
+    quota_max_datasets: int | None = Field(default=None, ge=1)
+    quota_max_dataset_bytes: int | None = Field(default=None, ge=1)
+    quota_max_fits: int | None = Field(default=None, ge=1)
+    housekeeping_interval_s: float = Field(default=3600.0, gt=0)
     cors_origins: Annotated[list[str], NoDecode] = Field(default_factory=list)
     registration_enabled: bool = True
     billing_enabled: bool = False
@@ -61,6 +72,21 @@ class Settings(BaseSettings):
             if value.startswith(prefix):
                 return "postgresql+psycopg://" + value[len(prefix) :]
         return value
+
+    @field_validator("jwt_private_key_pem", "jwt_public_key_pem", mode="before")
+    @classmethod
+    def _empty_key_is_unset(cls, value: object) -> object:
+        """``CURVESTUDIO_JWT_..._PEM=`` (as in ``.env.example``) means not set."""
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
+    @field_validator(
+        "quota_max_datasets", "quota_max_dataset_bytes", "quota_max_fits", mode="before"
+    )
+    @classmethod
+    def _empty_quota_is_plan_default(cls, value: object) -> object:
+        return None if isinstance(value, str) and not value.strip() else value
 
     @field_validator("web_dist", mode="before")
     @classmethod
@@ -96,6 +122,8 @@ def _check_pair(private_pem: str, public_pem: str) -> None:
         raise ValueError(f"the JWT key PEMs are not valid RSA keys: {exc}") from exc
     if not isinstance(private, rsa.RSAPrivateKey) or not isinstance(public, rsa.RSAPublicKey):
         raise ValueError("the JWT keys must be RSA keys (RS256)")
+    if private.key_size < MIN_RSA_BITS or public.key_size < MIN_RSA_BITS:
+        raise ValueError(f"the JWT keys must be RSA keys of at least {MIN_RSA_BITS} bits")
     if private.public_key().public_numbers() != public.public_numbers():
         raise ValueError("the JWT public key does not belong to the JWT private key")
 

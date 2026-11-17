@@ -9,6 +9,9 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+MAX_ERRORS = 20
+MAX_ECHO = 100
+
 STATUS_CODES: dict[int, str] = {
     400: "BAD_REQUEST",
     401: "UNAUTHORIZED",
@@ -78,13 +81,20 @@ async def _http_error(_request: Request, exc: Exception) -> JSONResponse:
 async def _validation_error(_request: Request, exc: Exception) -> JSONResponse:
     assert isinstance(exc, RequestValidationError)
     # Only where/what/kind: pydantic's "input" would echo the offending value (a password).
+    found = exc.errors()
     problems = [
-        {"loc": [str(part) for part in err["loc"]], "msg": err["msg"], "type": err["type"]}
-        for err in exc.errors()
+        {
+            "loc": [str(part)[:MAX_ECHO] for part in err["loc"]],
+            "msg": str(err["msg"])[: MAX_ECHO * 3],
+            "type": err["type"],
+        }
+        for err in found[:MAX_ERRORS]
     ]
+    detail: dict[str, Any] = {"errors": problems}
+    if len(found) > MAX_ERRORS:
+        detail["more"] = len(found) - MAX_ERRORS  # unknown keys are echoed in "loc": cap them
     return JSONResponse(
-        envelope("VALIDATION_ERROR", "the request is not valid", {"errors": problems}),
-        status_code=422,
+        envelope("VALIDATION_ERROR", "the request is not valid", detail), status_code=422
     )
 
 

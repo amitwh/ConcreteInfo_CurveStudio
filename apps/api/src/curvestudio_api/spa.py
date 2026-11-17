@@ -22,10 +22,16 @@ def mount_spa(app: FastAPI, dist: Path) -> None:
 
     @app.get("/{path:path}", include_in_schema=False)
     def spa(path: str, request: Request) -> Response:
+        if "\x00" in path:
+            raise ApiError(404, "NOT_FOUND", "not found")
         if path == API_PREFIX or path.startswith(f"{API_PREFIX}/"):
             raise ApiError(404, "NOT_FOUND", "no such API endpoint")
-        candidate = (root / path).resolve()
-        if path and candidate.is_file() and candidate.is_relative_to(root):
+        try:
+            candidate = (root / path).resolve()
+            is_file = path != "" and candidate.is_file() and candidate.is_relative_to(root)
+        except OSError, ValueError:  # over-long names and the like: not a file we serve
+            is_file = False
+        if is_file:
             cache = _IMMUTABLE if "assets" in candidate.relative_to(root).parts else _REVALIDATE
             return FileResponse(candidate, headers={"Cache-Control": cache})
         return FileResponse(index, headers={"Cache-Control": _REVALIDATE})

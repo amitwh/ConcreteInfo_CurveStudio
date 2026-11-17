@@ -13,6 +13,5 @@ def run() -> None:
         host=os.environ.get("CURVESTUDIO_HOST", "127.0.0.1"),
         port=int(os.environ.get("CURVESTUDIO_PORT", "8000")),
         log_config=None,
-        proxy_headers=True,
-        forwarded_allow_ips=os.environ.get("FORWARDED_ALLOW_IPS", "127.0.0.1"),
+        proxy_headers=False,  # parsed by the app: CURVESTUDIO_TRUSTED_PROXY_HOPS
     )

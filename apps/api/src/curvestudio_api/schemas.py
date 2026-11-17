@@ -4,36 +4,78 @@ import re
 import uuid
 from typing import Annotated, Any, Literal
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, SecretStr
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    Field,
+    SecretStr,
+    field_validator,
+    model_validator,
+)
 
+from curvestudio_api.passwords import weakness
 from curvestudio_api.timeutil import IstDatetime
 
-_EMAIL = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s.]+")
+_LOGIN_EMAIL = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s.]+")
+_REGISTER_EMAIL = re.compile(r"[^@\s<>]+@[^@\s<>]+\.[^@\s<>]{2,}")
 
 
-def _normalise_email(value: str) -> str:
-    email = value.strip().lower()
-    if len(email) > 254 or not _EMAIL.fullmatch(email):
+def _require_utf8(value: str) -> str:
+    """Reject text that cannot be encoded (a lone surrogate from a JSON ``\\ud800`` escape)."""
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise ValueError("contains characters that are not valid text") from exc
+    return value
+
+
+def _normalise(value: str, pattern: re.Pattern[str]) -> str:
+    email = _require_utf8(value).strip().lower()
+    if len(email) > 254 or not pattern.fullmatch(email):
         raise ValueError("not a valid email address")
     return email
 
 
-Email = Annotated[str, AfterValidator(_normalise_email)]
+Email = Annotated[str, AfterValidator(lambda v: _normalise(v, _LOGIN_EMAIL))]
+RegisterEmail = Annotated[str, AfterValidator(lambda v: _normalise(v, _REGISTER_EMAIL))]
 
 
 class _Body(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+def _secret_utf8(value: SecretStr) -> SecretStr:
+    _require_utf8(value.get_secret_value())
+    return value
+
+
 class RegisterIn(_Body):
-    email: Email
+    email: RegisterEmail
     password: SecretStr = Field(min_length=10, max_length=128)
-    name: str = Field(default="", max_length=100)
+    name: Annotated[str, AfterValidator(_require_utf8)] = Field(default="", max_length=100)
+
+    @field_validator("password")
+    @classmethod
+    def _password_text(cls, value: SecretStr) -> SecretStr:
+        return _secret_utf8(value)
+
+    @model_validator(mode="after")
+    def _password_policy(self) -> RegisterIn:
+        problem = weakness(self.password.get_secret_value(), self.email)
+        if problem is not None:
+            raise ValueError(problem)
+        return self
 
 
 class LoginIn(_Body):
     email: Email
     password: SecretStr = Field(min_length=1, max_length=128)
+
+    @field_validator("password")
+    @classmethod
+    def _password_text(cls, value: SecretStr) -> SecretStr:
+        return _secret_utf8(value)
 
 
 class RefreshIn(_Body):
@@ -52,6 +94,24 @@ class UserOut(BaseModel):
     email: str
     name: str
     created_at: IstDatetime
+
+
+class PlanOut(BaseModel):
+    name: str
+    max_datasets: int
+    max_dataset_bytes: int
+    max_fits: int
+
+
+class UsageOut(BaseModel):
+    datasets: int
+    dataset_bytes: int
+    fits: int
+
+
+class MeOut(UserOut):
+    plan: PlanOut
+    usage: UsageOut
 
 
 class HealthOut(BaseModel):

@@ -1437,6 +1437,43 @@
         "title": "LoginIn",
         "type": "object"
       },
+      "MeOut": {
+        "properties": {
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "plan": {
+            "$ref": "#/components/schemas/PlanOut"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/UsageOut"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "name",
+          "created_at",
+          "plan",
+          "usage"
+        ],
+        "title": "MeOut",
+        "type": "object"
+      },
       "ModelInfo": {
         "additionalProperties": false,
         "description": "What a UI needs to offer a model: identity, equation and parameters.",
@@ -1606,6 +1643,34 @@
           "upper"
         ],
         "title": "ParameterInfo",
+        "type": "object"
+      },
+      "PlanOut": {
+        "properties": {
+          "max_dataset_bytes": {
+            "title": "Max Dataset Bytes",
+            "type": "integer"
+          },
+          "max_datasets": {
+            "title": "Max Datasets",
+            "type": "integer"
+          },
+          "max_fits": {
+            "title": "Max Fits",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "max_datasets",
+          "max_dataset_bytes",
+          "max_fits"
+        ],
+        "title": "PlanOut",
         "type": "object"
       },
       "PointsOut": {
@@ -2157,6 +2222,29 @@
           "expires_in"
         ],
         "title": "TokenOut",
+        "type": "object"
+      },
+      "UsageOut": {
+        "properties": {
+          "dataset_bytes": {
+            "title": "Dataset Bytes",
+            "type": "integer"
+          },
+          "datasets": {
+            "title": "Datasets",
+            "type": "integer"
+          },
+          "fits": {
+            "title": "Fits",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "datasets",
+          "dataset_bytes",
+          "fits"
+        ],
+        "title": "UsageOut",
         "type": "object"
       },
       "UserOut": {
@@ -3017,14 +3105,33 @@
       }
     },
     "/api/v1/me": {
+      "delete": {
+        "description": "Delete the account and everything in it.\n\nDatasets, fits, jobs and refresh tokens are removed (running jobs are stopped first). The\naudit trail is kept but anonymised: ``audit_logs.user_id`` is set to NULL, the one change\nthe append-only trigger allows. A final ``user.delete`` row records that it happened.",
+        "operationId": "delete_me_api_v1_me_delete",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Me",
+        "tags": [
+          "auth"
+        ]
+      },
       "get": {
+        "description": "The signed-in user with the plan's limits and what the user has used so far.",
         "operationId": "me_api_v1_me_get",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/UserOut"
+                  "$ref": "#/components/schemas/MeOut"
                 }
               }
             },

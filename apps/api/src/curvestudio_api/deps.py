@@ -12,9 +12,11 @@ from sqlalchemy.orm import Session
 
 from curvestudio_api.db import SessionFactory
 from curvestudio_api.errors import not_found
+from curvestudio_api.importer import ImportRunner
 from curvestudio_api.jobs import JobManager
 from curvestudio_api.orm import Dataset, Fit, Job, User
-from curvestudio_api.ratelimit import SlidingWindowLimiter
+from curvestudio_api.proxy import client_address
+from curvestudio_api.ratelimit import DailyCap, SlidingWindowLimiter
 from curvestudio_api.security import JwtKeys, unauthorized, verify_access_token
 from curvestudio_api.settings import Settings
 
@@ -33,6 +35,8 @@ class Context:
     jobs: JobManager
     auth_limiter: SlidingWindowLimiter
     ip_limiter: SlidingWindowLimiter
+    imports: ImportRunner
+    failed_logins: DailyCap
 
 
 def get_context(request: Request) -> Context:
@@ -71,7 +75,12 @@ CurrentUser = Annotated[User, Depends(current_user)]
 
 
 def client_ip(request: Request) -> str:
-    return request.client.host if request.client else "unknown"
+    """The client address, from ``X-Forwarded-For`` as far as the trusted proxies vouch for it."""
+    ctx: Context = request.app.state.ctx
+    peer = request.client.host if request.client else None
+    return client_address(
+        request.headers.getlist("x-forwarded-for"), peer, ctx.settings.trusted_proxy_hops
+    )
 
 
 def own_dataset(db: Session, user: User, dataset_id: uuid.UUID) -> Dataset:

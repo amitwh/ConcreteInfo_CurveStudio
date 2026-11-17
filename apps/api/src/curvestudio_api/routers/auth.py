@@ -40,10 +40,18 @@ def _email_digest(email: str) -> str:
     return hashlib.sha256(email.encode()).hexdigest()[:16]
 
 
-def _limit(ctx: Ctx, request: Request, email: str = "") -> None:
+def _limit(ctx: Ctx, request: Request, email: str = "") -> str:
+    """Rate-limit by client address and e-mail; returns the address."""
     ip = client_ip(request)
     ctx.ip_limiter.check(ip)
     ctx.auth_limiter.check(f"{ip}|{email}")
+    return ip
+
+
+def _limit_token(ctx: Ctx, request: Request, refresh_token: str) -> None:
+    """Refresh and logout are limited per refresh token (and loosely per address)."""
+    ctx.ip_limiter.check(client_ip(request))
+    ctx.auth_limiter.check(f"rt|{hash_token(refresh_token)[:32]}")
 
 
 def _issue_tokens(ctx: Ctx, db: Session, user: User) -> tuple[TokenOut, uuid.UUID]:
@@ -75,6 +83,29 @@ def _revoke_chain(db: Session, token: RefreshToken) -> None:
         if current.revoked_at is None:
             current.revoked_at = now
         current = db.get(RefreshToken, current.replaced_by) if current.replaced_by else None
+
+
+FAILED_LOGIN_ROWS_PER_DAY = 100
+
+
+def _audit_failed_login(ctx: Ctx, db: Session, user: User | None, email: str, ip: str) -> None:
+    """Audit a failed login, at most 100 rows a day per account-and-address; the 101st becomes a
+    single ``auth.login_failed_capped`` marker and the rest are dropped, so a password-guessing
+    run cannot grow the append-only table without bound."""
+    digest = _email_digest(email)
+    count = ctx.failed_logins.hit(f"{digest}|{ip}")
+    if count > FAILED_LOGIN_ROWS_PER_DAY + 1:
+        return
+    action = (
+        "auth.login_failed" if count <= FAILED_LOGIN_ROWS_PER_DAY else "auth.login_failed_capped"
+    )
+    audit.record(
+        db,
+        action,
+        "user",
+        user_id=user.id if user else None,
+        detail={"email_digest": digest, "ip_digest": _email_digest(ip)},
+    )
 
 
 @router.post("/register", status_code=201, response_model=UserOut)
@@ -112,19 +143,14 @@ def register(body: RegisterIn, request: Request, ctx: Ctx, db: Db) -> UserOut:
 
 
 @router.post("/login", response_model=TokenOut)
-def login(body: LoginIn, request: Request, ctx: Ctx, db: Db) -> TokenOut:
-    _limit(ctx, request, body.email)
+def login(body: LoginIn, request: Request, response: Response, ctx: Ctx, db: Db) -> TokenOut:
+    ip = _limit(ctx, request, body.email)
+    response.headers["Cache-Control"] = "no-store"
     user = db.scalar(select(User).where(User.email == body.email))
     password = body.password.get_secret_value()
     verified = verify_password(user.password_hash if user else None, password)
     if user is None or not user.is_active or not verified:
-        audit.record(
-            db,
-            "auth.login_failed",
-            "user",
-            user_id=user.id if user else None,
-            detail={"email_digest": _email_digest(body.email)},
-        )
+        _audit_failed_login(ctx, db, user, body.email, ip)
         db.commit()
         raise unauthorized(_BAD_CREDENTIALS)
     if password_needs_rehash(user.password_hash):
@@ -136,13 +162,14 @@ def login(body: LoginIn, request: Request, ctx: Ctx, db: Db) -> TokenOut:
 
 
 @router.post("/refresh", response_model=TokenOut)
-def refresh(body: RefreshIn, request: Request, ctx: Ctx, db: Db) -> TokenOut:
+def refresh(body: RefreshIn, request: Request, response: Response, ctx: Ctx, db: Db) -> TokenOut:
     """Exchange a refresh token for a new pair; the old one is revoked.
 
     Presenting a token that was already used (or revoked) means it leaked: the whole chain
     of tokens descended from it is revoked and the request fails with 401.
     """
-    _limit(ctx, request)
+    _limit_token(ctx, request, body.refresh_token)
+    response.headers["Cache-Control"] = "no-store"
     token = db.scalar(
         select(RefreshToken).where(RefreshToken.token_hash == hash_token(body.refresh_token))
     )
@@ -178,7 +205,7 @@ def refresh(body: RefreshIn, request: Request, ctx: Ctx, db: Db) -> TokenOut:
 @router.post("/logout", status_code=204)
 def logout(body: RefreshIn, request: Request, ctx: Ctx, db: Db) -> Response:
     """Revoke the refresh token (and anything rotated from it). Always 204: it reveals nothing."""
-    _limit(ctx, request)
+    _limit_token(ctx, request, body.refresh_token)
     token = db.scalar(
         select(RefreshToken).where(RefreshToken.token_hash == hash_token(body.refresh_token))
     )

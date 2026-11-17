@@ -9,13 +9,14 @@ from fastapi import APIRouter, File, Form, Query, Response, UploadFile
 from sqlalchemy import select
 from sqlalchemy.orm import defer
 
-from curvestudio.workflow import ImportIssue, ImportLimits, WorkflowError, import_dataset
-from curvestudio_api import audit
+from curvestudio.workflow import WorkflowError
+from curvestudio_api import audit, quotas
 from curvestudio_api.deps import Ctx, CurrentUser, Db, own_dataset
 from curvestudio_api.errors import ApiError
+from curvestudio_api.importer import precheck
 from curvestudio_api.orm import Dataset
 from curvestudio_api.schemas import DatasetDetailOut, DatasetOut, IssueOut, PointsOut
-from curvestudio_api.storage import decode_payload, encode_payload
+from curvestudio_api.storage import decode_payload
 from curvestudio_api.workflow_errors import api_error
 
 router = APIRouter(prefix="/datasets", tags=["datasets"])
@@ -59,15 +60,6 @@ def dataset_out(dataset: Dataset) -> DatasetOut:
     return DatasetOut.model_validate(_fields(dataset))
 
 
-def _issue_json(issue: ImportIssue) -> dict[str, object]:
-    return {
-        "code": issue.code,
-        "severity": issue.severity,
-        "message": issue.message,
-        "rows": list(issue.rows),
-    }
-
-
 @router.post("", status_code=201, response_model=DatasetOut)
 def create_dataset(
     user: CurrentUser,
@@ -89,43 +81,51 @@ def create_dataset(
             f"the file is larger than the limit of {limit:,} bytes",
             {"code": "TOO_LARGE"},
         )
-    try:
-        outcome = import_dataset(
-            raw,
-            file.filename or "",
-            x_column=_blank_to_none(x_column),
-            y_column=_blank_to_none(y_column),
-            weight_column=_blank_to_none(weight_column),
-            limits=ImportLimits(max_bytes=limit, max_rows=ctx.settings.max_rows),
-        )
-    except WorkflowError as exc:
-        raise api_error(exc) from exc
-    if outcome.xy is None or outcome.x_column is None or outcome.y_column is None:
-        errors = [i for i in outcome.issues if i.severity == "error"]
+    filename = file.filename or ""
+    quotas.check(db, ctx.settings, user.id, "datasets")
+    precheck(raw, filename, ctx.settings.max_rows)  # cheap refusals, no process needed
+    run = ctx.imports.run(
+        user.id,
+        {
+            "raw": raw,
+            "filename": filename,
+            "x_column": _blank_to_none(x_column),
+            "y_column": _blank_to_none(y_column),
+            "weight_column": _blank_to_none(weight_column),
+            "max_bytes": limit,
+            "max_rows": ctx.settings.max_rows,
+        },
+    )
+    meta = run.meta
+    if meta["status"] == "error":
+        raise api_error(WorkflowError(str(meta["code"]), str(meta["message"])))
+    if meta["status"] == "unusable":
+        issues = meta["issues"]
+        errors = [i for i in issues if i["severity"] == "error"]
         first = errors[0] if errors else None
         raise ApiError(
             422,
             "VALIDATION_ERROR",
-            first.message if first else "the data cannot be used for a fit",
+            first["message"] if first else "the data cannot be used for a fit",
             {
-                "code": first.code if first else "UNUSABLE_DATA",
-                "columns": list(outcome.columns),
-                "issues": [_issue_json(i) for i in outcome.issues],
+                "code": first["code"] if first else "UNUSABLE_DATA",
+                "columns": meta["columns"],
+                "issues": issues,
             },
         )
-    xy = outcome.xy
+    quotas.check(db, ctx.settings, user.id, "dataset_bytes", adding_bytes=len(run.payload))
     dataset = Dataset(
         id=uuid.uuid4(),
         user_id=user.id,
-        name=sanitise_name(name) or sanitise_name(outcome.dataset.name) or DEFAULT_NAME,
-        n_rows=int(xy.x.size),
-        columns=list(outcome.columns),
-        x_column=outcome.x_column,
-        y_column=outcome.y_column,
-        weight_column=outcome.weight_column,
-        issues=[_issue_json(i) for i in outcome.issues],
-        fingerprint=xy.fingerprint,
-        payload=encode_payload(xy),
+        name=sanitise_name(name) or sanitise_name(str(meta["name"])) or DEFAULT_NAME,
+        n_rows=int(meta["n_rows"]),
+        columns=list(meta["columns"]),
+        x_column=str(meta["x_column"]),
+        y_column=str(meta["y_column"]),
+        weight_column=meta["weight_column"],
+        issues=list(meta["issues"]),
+        fingerprint=str(meta["fingerprint"]),
+        payload=run.payload,
     )
     db.add(dataset)
     audit.record(

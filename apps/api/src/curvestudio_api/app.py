@@ -14,11 +14,14 @@ from curvestudio_api.deps import (
     Context,
 )
 from curvestudio_api.errors import install_error_handlers
+from curvestudio_api.housekeeping import Housekeeper
+from curvestudio_api.import_worker import ImportWorker, import_process_main
+from curvestudio_api.importer import ImportRunner
 from curvestudio_api.jobs import JobManager
 from curvestudio_api.logging_setup import configure_logging, get_logger
 from curvestudio_api.middleware import BodyLimitMiddleware, RequestContextMiddleware
 from curvestudio_api.migrations import upgrade_to_head
-from curvestudio_api.ratelimit import SlidingWindowLimiter
+from curvestudio_api.ratelimit import DailyCap, SlidingWindowLimiter
 from curvestudio_api.routers import auth, datasets, fits, system
 from curvestudio_api.security import JwtKeys
 from curvestudio_api.settings import Settings, load_jwt_keys
@@ -31,12 +34,18 @@ MULTIPART_OVERHEAD = 1024 * 1024
 _log = get_logger("app")
 
 
-def create_app(settings: Settings | None = None, *, job_worker: JobWorker = run_fit_job) -> FastAPI:
+def create_app(
+    settings: Settings | None = None,
+    *,
+    job_worker: JobWorker = run_fit_job,
+    import_worker: ImportWorker = import_process_main,
+) -> FastAPI:
     """Build the application.
 
     Production settings without JWT keys, or keys that do not parse or do not match, fail
-    here, so a misconfigured deployment never starts serving. ``job_worker`` exists for
-    tests; it must be a top-level function (it runs in a spawned process).
+    here, so a misconfigured deployment never starts serving. ``job_worker`` and
+    ``import_worker`` exist for tests; they must be top-level functions (they run in spawned
+    processes).
     """
     settings = settings or Settings()
     configure_logging()
@@ -48,8 +57,11 @@ def create_app(settings: Settings | None = None, *, job_worker: JobWorker = run_
         workers=settings.job_workers,
         timeout_s=settings.job_timeout_s,
         grace_s=settings.job_grace_s,
+        max_result_bytes=settings.job_max_result_bytes,
+        queue_max=settings.job_queue_max,
         worker=job_worker,
     )
+    housekeeper = Housekeeper(session_factory, settings.housekeeping_interval_s)
     context = Context(
         settings=settings,
         engine=engine,
@@ -58,16 +70,26 @@ def create_app(settings: Settings | None = None, *, job_worker: JobWorker = run_
         jobs=jobs,
         auth_limiter=SlidingWindowLimiter(AUTH_ATTEMPTS_PER_MINUTE),
         ip_limiter=SlidingWindowLimiter(AUTH_PER_IP_PER_MINUTE),
+        imports=ImportRunner(
+            concurrency=settings.import_concurrency,
+            timeout_s=settings.import_timeout_s,
+            memory_mb=settings.import_memory_mb,
+            max_payload_bytes=max(64 * 1024 * 1024, settings.max_rows * 100),
+            worker=import_worker,
+        ),
+        failed_logins=DailyCap(),
     )
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         upgrade_to_head(engine)
         jobs.start()
+        housekeeper.start()
         _log.info("started", extra={"fields": {"env": settings.env, "version": __version__}})
         try:
             yield
         finally:
+            housekeeper.stop()
             jobs.stop()
             engine.dispose()
 

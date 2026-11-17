@@ -1,6 +1,9 @@
-"""The code that runs inside a worker process. Top-level and picklable (``spawn`` start)."""
+"""The code that runs inside a job process. Top-level and picklable (``spawn`` start)."""
 
-from pathlib import Path
+import json
+import sys
+import traceback
+from multiprocessing.connection import Connection
 from typing import Any
 
 from curvestudio.data import XY
@@ -9,6 +12,9 @@ from curvestudio_api.storage import decode_payload
 
 JobWorker = Any
 """``Callable[..., dict[str, Any]]`` taking the keyword arguments of :func:`run_fit_job`."""
+
+STARTED = b"S"
+"""First message of a job process: it is up (its imports are done) and about to work."""
 
 
 def run_fit_job(
@@ -32,12 +38,24 @@ def run_fit_job(
     return {"ok": True, "bundle": bundle.model_dump(mode="json")}
 
 
-def run_with_marker(worker: JobWorker, marker: str, arguments: dict[str, Any]) -> dict[str, Any]:
-    """Signal that the worker process is up (its imports are done), then run ``worker``.
+def job_process_main(connection: Connection, worker: JobWorker, arguments: dict[str, Any]) -> None:
+    """Entry point of one job's process: say hello, run ``worker``, send its JSON result.
 
-    The parent starts the job's wall-clock budget when the marker file appears, so a slow
-    process start does not eat into it.
+    The parent counts the job's wall-clock budget from the hello, so a slow process start does
+    not eat into it. An exception in ``worker`` is reported as ``INTERNAL_ERROR`` (the
+    traceback goes to stderr); a hard crash shows up to the parent as a closed pipe.
     """
-    Path(marker).touch()
-    result: dict[str, Any] = worker(**arguments)
-    return result
+    try:
+        connection.send_bytes(STARTED)
+        try:
+            result: dict[str, Any] = worker(**arguments)
+        except Exception:
+            traceback.print_exc(file=sys.stderr)
+            result = {
+                "ok": False,
+                "code": "INTERNAL_ERROR",
+                "message": "the fit job failed unexpectedly",
+            }
+        connection.send_bytes(json.dumps(result, allow_nan=False).encode())
+    finally:
+        connection.close()

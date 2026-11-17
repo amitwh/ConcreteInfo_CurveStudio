@@ -11,7 +11,7 @@ from sqlalchemy.orm import defer
 
 from curvestudio.data import XY
 from curvestudio.workflow import FitBundle, FitSpec, Prediction, WorkflowError, predict
-from curvestudio_api import audit
+from curvestudio_api import audit, quotas
 from curvestudio_api.deps import Ctx, CurrentUser, Db, own_dataset, own_fit, own_job
 from curvestudio_api.errors import ApiError
 from curvestudio_api.export import csv_chunks
@@ -90,6 +90,15 @@ def create_fit(
             "RATE_LIMITED",
             f"{MAX_ACTIVE_JOBS_PER_USER} jobs are already waiting or running; wait for one",
             {"code": "TOO_MANY_JOBS"},
+        )
+    quotas.check(db, ctx.settings, user.id, "fits")
+    if not ctx.jobs.queue_has_room():
+        raise ApiError(
+            503,
+            "QUEUE_FULL",
+            "the server is busy: too many fits are waiting; try again shortly",
+            {"code": "QUEUE_FULL"},
+            {"Retry-After": "30"},
         )
     budget = ctx.settings.job_timeout_s
     effective = spec.model_copy(update={"time_limit": min(spec.time_limit or budget, budget)})
