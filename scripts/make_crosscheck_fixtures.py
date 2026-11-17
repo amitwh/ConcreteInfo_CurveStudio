@@ -21,7 +21,10 @@ from typing import Any
 import numpy as np
 import statsmodels.api as sm
 from numpy.typing import NDArray
+from scipy.stats import shapiro
+from statsmodels.stats.diagnostic import acorr_ljungbox, het_breuschpagan, normal_ad
 from statsmodels.stats.outliers_influence import OLSInfluence
+from statsmodels.stats.stattools import durbin_watson
 
 FloatArray = NDArray[np.float64]
 
@@ -179,6 +182,50 @@ def information_criteria_references(entry: dict[str, Any]) -> dict[str, Any]:
     return references
 
 
+def reference_tests(entry: dict[str, Any]) -> dict[str, Any]:
+    """Statsmodels and SciPy reference values for the five residual diagnostic tests.
+
+    The residuals are the *weighted* residuals ``sqrt(w) * (y - fitted)`` of the fit, in
+    ascending-x order, which is the vector ``run_diagnostics`` works with. Statsmodels'
+    ``normal_ad`` returns the unadjusted ``A**2``; the small-sample adjusted ``A*^2``
+    (D'Agostino and Stephens 1986) is derived from it here so the fixture pins down both
+    forms.
+    """
+    x: FloatArray = entry["x"]
+    design = np.vander(x, entry["degree"] + 1, increasing=True)
+    if entry["w"] is None:
+        res = sm.OLS(entry["y"], design).fit()
+        root_w = np.ones(x.size)
+    else:
+        res = sm.WLS(entry["y"], design, weights=entry["w"]).fit()
+        root_w = np.sqrt(entry["w"])
+    order = np.argsort(x, kind="stable")
+    fitted = np.asarray(res.fittedvalues)[order]
+    residuals = root_w * (entry["y"] - np.asarray(res.fittedvalues))[order]
+    n = residuals.size
+
+    shapiro_w, shapiro_p = shapiro(residuals)
+    ad_a2, ad_p = normal_ad(residuals)
+    bp_lm, bp_p, _, _ = het_breuschpagan(
+        residuals, np.column_stack([np.ones(n), fitted]), robust=True
+    )
+    ljung = acorr_ljungbox(residuals, lags=[1, 5], model_df=0)
+    return {
+        "shapiro_w": float(shapiro_w),
+        "shapiro_p": float(shapiro_p),
+        "ad_a2": float(ad_a2),
+        "ad_a2a": float(ad_a2 * (1.0 + 0.75 / n + 2.25 / n**2)),
+        "ad_p": float(ad_p),
+        "bp_lm": float(bp_lm),
+        "bp_p": float(bp_p),
+        "ljung_box_q1": float(ljung.loc[1, "lb_stat"]),
+        "ljung_box_p1": float(ljung.loc[1, "lb_pvalue"]),
+        "ljung_box_q5": float(ljung.loc[5, "lb_stat"]),
+        "ljung_box_p5": float(ljung.loc[5, "lb_pvalue"]),
+        "durbin_watson": float(durbin_watson(residuals)),
+    }
+
+
 def build_fixtures() -> dict[str, Any]:
     datasets: dict[str, Any] = {}
     for name, entry in build_datasets().items():
@@ -191,6 +238,7 @@ def build_fixtures() -> dict[str, Any]:
             "fit": reference_fit(entry),
             "bands": reference_bands(entry),
             "influence": reference_influence(entry),
+            "tests": reference_tests(entry),
         }
         if name in ("linear30", "quad40", "heavy60"):
             datasets[name]["criteria"] = information_criteria_references(entry)
