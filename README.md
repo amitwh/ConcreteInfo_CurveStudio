@@ -8,7 +8,7 @@
 CurveStudio fits mathematical models to experimental data, ranks the candidates from best to worst with their equations and R², and reports the statistics you need to judge a fit. It is built for researchers, engineers, laboratories and students, with a particular focus on civil and concrete-materials engineering.
 
 > [!WARNING]
-> **Status: pre-alpha.** The foundation, data layer and fitting core (linear, polynomial and nonlinear least squares, with a `curvestudio fit` command-line slice) are built and validated against the NIST StRD benchmarks; statistics, the model library, the desktop app and the web app follow phase by phase (see [Roadmap](#roadmap)). Nothing here is ready for real analysis yet.
+> **Status: pre-alpha. Phase 3 complete.** The foundation, data layer, fitting core (linear, polynomial and nonlinear least squares, with a `curvestudio fit` command-line slice) and statistics and diagnostics (bands, information criteria, residual diagnostics, tests, cross-validation, bootstrap, Monte-Carlo propagation, profile likelihood) are built and validated against the NIST StRD benchmarks and Statsmodels cross-checks; the model library, the desktop app and the web app follow phase by phase (see [Roadmap](#roadmap)). Nothing here is ready for real analysis yet.
 >
 > **Numerical validation:** nonlinear single-start fits against the 12 NIST problems converge correctly on 23 of 24 starts (the other, MGH09 start 1, reports NOT_CONVERGED rather than a wrong answer), with zero wrong-but-CONVERGED results; linear problems pass 5/5. Full tables: [`tests/numerical/VALIDATION.md`](tests/numerical/VALIDATION.md).
 
@@ -62,7 +62,7 @@ Design principles:
 | 0 | Foundation: workspace, CI, licence, community files | Done |
 | 1 | Data: import, validation, reversible cleaning | Done |
 | 2 | Fitting core: linear, polynomial, nonlinear, NIST validation, CLI | Done |
-| 3 | Statistics and diagnostics | Planned |
+| 3 | Statistics and diagnostics | Done |
 | 4 | Model library, custom equations, Auto-fit engine | Planned |
 | 5 | Desktop MVP | Planned |
 | 6 | Model discovery UI, visualization, reports | Planned |

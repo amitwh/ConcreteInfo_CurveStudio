@@ -10,14 +10,17 @@ from curvestudio.diagnostics.hypothesis_tests import (
     run_diagnostics,
     shapiro_wilk,
 )
+from curvestudio.diagnostics.report import FitReport, describe_fit
 from curvestudio.diagnostics.residuals import ResidualSet, press_rmse, residual_set
 
 __all__ = [
     "DiagnosticTest",
     "DiagnosticsReport",
+    "FitReport",
     "ResidualSet",
     "anderson_darling",
     "breusch_pagan",
+    "describe_fit",
     "durbin_watson",
     "ljung_box",
     "press_rmse",
