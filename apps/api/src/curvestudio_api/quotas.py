@@ -2,6 +2,7 @@
 
 import uuid
 from dataclasses import asdict, dataclass
+from datetime import datetime, timedelta
 from typing import Literal
 
 from sqlalchemy import func, select
@@ -10,9 +11,11 @@ from sqlalchemy.orm import Session
 from curvestudio_api.errors import ApiError
 from curvestudio_api.orm import Dataset, Fit, Job, Plan
 from curvestudio_api.settings import Settings
+from curvestudio_api.timeutil import IST, utcnow
 
 PLAN_NAME = "self-hosted"
 DEFAULT_LIMITS = {"max_datasets": 200, "max_dataset_bytes": 500_000_000, "max_fits": 2000}
+DEFAULT_MAX_AUTOFITS_PER_DAY = 100
 Quota = Literal["datasets", "dataset_bytes", "fits"]
 
 
@@ -64,10 +67,13 @@ def usage(db: Session, user_id: uuid.UUID) -> Usage:
 
 
 def active_jobs(db: Session, user_id: uuid.UUID) -> int:
+    """Queued or running jobs that will store a fit (an Auto-fit run stores none)."""
     return (
         db.scalar(
             select(func.count(Job.id)).where(
-                Job.user_id == user_id, Job.status.in_(("queued", "running"))
+                Job.user_id == user_id,
+                Job.kind != "autofit",
+                Job.status.in_(("queued", "running")),
             )
         )
         or 0
@@ -108,4 +114,45 @@ def check(
                 "limits": asdict(limits),
                 "usage": asdict(used),
             },
+        )
+
+
+def autofits_per_day_limit(db: Session, settings: Settings) -> int:
+    """Auto-fit runs one user may start per day: the setting, else the plan row, else 100."""
+    if settings.quota_max_autofits_per_day is not None:
+        return settings.quota_max_autofits_per_day
+    value = plan_limits(db).get("max_autofits_per_day")
+    return value if isinstance(value, int) and value > 0 else DEFAULT_MAX_AUTOFITS_PER_DAY
+
+
+def check_autofit_runs(
+    db: Session, settings: Settings, user_id: uuid.UUID, now: datetime | None = None
+) -> None:
+    """Refuse one more Auto-fit run once the user has started the day's allowance.
+
+    The day is the IST calendar day. Every run counts, including cancelled and failed ones.
+
+    Raises:
+        ApiError: 429 ``QUOTA_EXCEEDED`` with ``Retry-After`` set to the seconds until the
+            next IST midnight.
+    """
+    current = (now or utcnow()).astimezone(IST)
+    day_start = current.replace(hour=0, minute=0, second=0, microsecond=0)
+    limit = autofits_per_day_limit(db, settings)
+    used = (
+        db.scalar(
+            select(func.count(Job.id)).where(
+                Job.user_id == user_id, Job.kind == "autofit", Job.created_at >= day_start
+            )
+        )
+        or 0
+    )
+    if used + 1 > limit:
+        retry_after = max(1, int((day_start + timedelta(days=1) - current).total_seconds()))
+        raise ApiError(
+            429,
+            "QUOTA_EXCEEDED",
+            f"the limit of {limit:,} Auto-fit runs per day is used up; try again tomorrow",
+            {"code": "QUOTA_EXCEEDED", "quota": "autofits_per_day", "limit": limit, "used": used},
+            {"Retry-After": str(retry_after)},
         )

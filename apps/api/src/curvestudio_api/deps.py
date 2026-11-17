@@ -14,7 +14,7 @@ from curvestudio_api.db import SessionFactory
 from curvestudio_api.errors import not_found
 from curvestudio_api.importer import ImportRunner
 from curvestudio_api.jobs import JobManager
-from curvestudio_api.orm import Dataset, Fit, Job, User
+from curvestudio_api.orm import Autofit, Dataset, Fit, Job, User
 from curvestudio_api.proxy import client_address
 from curvestudio_api.ratelimit import DailyCap, SlidingWindowLimiter
 from curvestudio_api.security import JwtKeys, unauthorized, verify_access_token
@@ -103,3 +103,10 @@ def own_job(db: Session, user: User, job_id: uuid.UUID) -> Job:
     if job is None or job.user_id != user.id:
         raise not_found("job")
     return job
+
+
+def own_autofit(db: Session, user: User, autofit_id: uuid.UUID) -> Autofit:
+    autofit = db.get(Autofit, autofit_id)
+    if autofit is None or autofit.user_id != user.id:
+        raise not_found("autofit")
+    return autofit

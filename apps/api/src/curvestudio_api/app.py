@@ -7,6 +7,7 @@ from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from curvestudio_api import __version__
+from curvestudio_api.autofit_worker import run_autofit_job
 from curvestudio_api.db import make_engine, make_session_factory
 from curvestudio_api.deps import (
     AUTH_ATTEMPTS_PER_MINUTE,
@@ -22,7 +23,7 @@ from curvestudio_api.logging_setup import configure_logging, get_logger
 from curvestudio_api.middleware import BodyLimitMiddleware, RequestContextMiddleware
 from curvestudio_api.migrations import upgrade_to_head
 from curvestudio_api.ratelimit import DailyCap, SlidingWindowLimiter
-from curvestudio_api.routers import auth, datasets, fits, system
+from curvestudio_api.routers import auth, autofits, datasets, fits, system
 from curvestudio_api.security import JwtKeys
 from curvestudio_api.settings import Settings, load_jwt_keys
 from curvestudio_api.spa import mount_spa
@@ -38,14 +39,15 @@ def create_app(
     settings: Settings | None = None,
     *,
     job_worker: JobWorker = run_fit_job,
+    autofit_worker: JobWorker = run_autofit_job,
     import_worker: ImportWorker = import_process_main,
 ) -> FastAPI:
     """Build the application.
 
     Production settings without JWT keys, or keys that do not parse or do not match, fail
-    here, so a misconfigured deployment never starts serving. ``job_worker`` and
-    ``import_worker`` exist for tests; they must be top-level functions (they run in spawned
-    processes).
+    here, so a misconfigured deployment never starts serving. ``job_worker``,
+    ``autofit_worker`` and ``import_worker`` exist for tests; they must be top-level functions
+    (they run in spawned processes).
     """
     settings = settings or Settings()
     configure_logging()
@@ -60,6 +62,8 @@ def create_app(
         max_result_bytes=settings.job_max_result_bytes,
         queue_max=settings.job_queue_max,
         worker=job_worker,
+        autofit_worker=autofit_worker,
+        autofit_timeout_s=settings.autofit_timeout_s,
     )
     housekeeper = Housekeeper(session_factory, settings.housekeeping_interval_s)
     context = Context(
@@ -105,7 +109,7 @@ def create_app(
     install_error_handlers(app)
 
     api = APIRouter(prefix=API_PREFIX)
-    for module in (system, auth, datasets, fits):
+    for module in (system, auth, datasets, fits, autofits):
         api.include_router(module.router)
     app.include_router(api)
     if settings.web_dist is not None:

@@ -77,3 +77,24 @@ def memory_hog_import_worker(connection: Any, memory_mb: int, _arguments: dict[s
         meta = {"status": "too_much_memory"}
     connection.send_bytes(json.dumps(meta).encode())
     connection.send_bytes(b"")
+
+
+# -- Auto-fit workers ------------------------------------------------------------------------------
+
+
+def sleeping_autofit_worker(**_arguments: Any) -> dict[str, Any]:
+    """An Auto-fit run that never ends (it accepts the ``report=`` the real one gets)."""
+    time.sleep(600)
+    return {"ok": False, "code": "NEVER", "message": "unreachable"}
+
+
+def child_spawning_worker(*, pid_file: str, **_arguments: Any) -> dict[str, Any]:
+    """Starts a long-lived grandchild process, records its pid, then sleeps."""
+    import subprocess
+    import sys
+
+    child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(600)"])
+    with open(pid_file, "w") as handle:
+        handle.write(str(child.pid))
+    time.sleep(600)
+    return {"ok": False, "code": "NEVER", "message": "unreachable"}

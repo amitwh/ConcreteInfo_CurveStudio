@@ -1,6 +1,8 @@
-"""CSV export of a fit: a parameters table, then one row per observation with fitted values.
+"""CSV export of a fit (a parameters table, then one row per observation with fitted values)
+and of an Auto-fit run (one table of candidates).
 
-Undefined values are empty cells; the ``note`` column says which cells are empty and why.
+Undefined values are empty cells; in a fit export the ``note`` column says which cells are
+empty and why.
 """
 
 import csv
@@ -8,6 +10,7 @@ import io
 from collections.abc import Iterator
 
 from curvestudio.data import XY
+from curvestudio.discovery import AutoFitResult, RankBy
 from curvestudio.workflow import FitBundle
 
 CHUNK_ROWS = 5000
@@ -94,3 +97,78 @@ def csv_chunks(bundle: FitBundle, xy: XY) -> Iterator[str]:
                 ]
             )
         yield _lines(rows)
+
+
+AUTOFIT_COLUMNS = (
+    "rank",
+    "id",
+    "name",
+    "category",
+    "equation",
+    "k",
+    "r2",
+    "adj_r2",
+    "rmse",
+    "aicc",
+    "bic",
+    "cv_rmse",
+    "status",
+    "notes",
+)
+
+
+def autofit_csv(result: AutoFitResult, rank_by: RankBy) -> str:
+    """One table: the ranked candidates in ``rank_by`` order, then every other candidate
+    (not converged, failed, timed out, skipped, or an exact fit that ``rank_by`` cannot place)
+    without a rank. ``status`` is the fit status or the outcome; ``notes`` holds warnings,
+    same-curve hints and the reason a candidate has no rank. Empty cell = not defined."""
+    rows: list[list[str]] = [list(AUTOFIT_COLUMNS)]
+    ranked = result.ranked_by(rank_by)
+    for row in ranked:
+        m = row.metrics
+        notes = [*row.warnings]
+        if row.same_curve_as:
+            notes.append("same curve as " + ", ".join(row.same_curve_as))
+        if row.overfitting_note:
+            notes.append(row.overfitting_note)
+        rows.append(
+            [
+                str(row.rank),
+                _text(row.model_id),
+                _text(row.name),
+                _text(row.category),
+                _text(row.equation_fitted or ""),
+                str(m.k),
+                _number(m.r2),
+                _number(m.adj_r2),
+                _number(m.rmse),
+                _number(m.aicc),
+                _number(m.bic),
+                _number(m.cv_rmse),
+                _text(row.status),
+                _text("; ".join(notes)),
+            ]
+        )
+    placed = {row.model_id for row in ranked}
+    for o in result.outcomes:
+        if o.candidate_id in placed:
+            continue
+        unplaced = o.metrics
+        equation = (o.fit.equation_fitted if o.fit is not None else None) or ""
+        rows.append(
+            [
+                "",
+                _text(o.candidate_id),
+                _text(o.name),
+                _text(o.category),
+                _text(equation),
+                "" if unplaced is None else str(unplaced.k),
+                *(
+                    _number(None if unplaced is None else getattr(unplaced, name))
+                    for name in ("r2", "adj_r2", "rmse", "aicc", "bic", "cv_rmse")
+                ),
+                o.outcome,
+                _text(o.reason),
+            ]
+        )
+    return _lines(rows)

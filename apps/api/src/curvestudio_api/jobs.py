@@ -8,16 +8,22 @@ Each job has its own process, so stopping one (cancel, timeout) or losing one (c
 touches another job or another tenant:
 
 * a job that overruns ``timeout_s + grace_s`` wall-clock seconds, counted from when its process
-  is up, is killed and marked ``failed`` / ``TIMEOUT``;
+  is up, is killed and marked ``failed`` / ``TIMEOUT`` (``timeout_s`` is longer for ``autofit``);
 * a process that dies without a result marks its job ``failed`` / ``WORKER_CRASHED``;
 * a result larger than ``max_result_bytes`` marks it ``failed`` / ``RESULT_TOO_LARGE``;
 * jobs left ``queued``/``running`` by a previous API process are marked ``failed`` /
   ``SERVER_RESTART`` at start-up.
 
+Job kinds: ``fit`` (one fit), ``autofit`` (a search over many models, with progress and its
+own worker pool) and ``open_row`` (refit one Auto-fit row into a stored fit). A job process
+leads its own process group; stopping a job kills the group, so the pool dies with it.
+
 State lives in one process: run a single API process per database (see the README).
 """
 
 import json
+import os
+import signal
 import threading
 import time
 import uuid
@@ -28,14 +34,16 @@ from multiprocessing.connection import Connection
 from multiprocessing.process import BaseProcess
 from typing import Any
 
-from sqlalchemy import update
+from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
 
 from curvestudio_api import audit
+from curvestudio_api.autofit_worker import run_autofit_job, run_open_row_job
 from curvestudio_api.db import SessionFactory
 from curvestudio_api.logging_setup import get_logger, log_fields
-from curvestudio_api.orm import Dataset, Fit, Job
+from curvestudio_api.orm import Autofit, Dataset, Fit, Job
 from curvestudio_api.timeutil import utcnow
-from curvestudio_api.worker import STARTED, JobWorker, job_process_main, run_fit_job
+from curvestudio_api.worker import PROGRESS, STARTED, JobWorker, job_process_main, run_fit_job
 
 _log = get_logger("jobs")
 
@@ -53,6 +61,7 @@ class Task:
     user_id: uuid.UUID
     dataset_id: uuid.UUID
     request_id: str | None = None
+    kind: str = "fit"
 
 
 class FairQueue:
@@ -132,6 +141,9 @@ class JobManager:
         max_result_bytes: int,
         queue_max: int,
         worker: JobWorker = run_fit_job,
+        autofit_worker: JobWorker = run_autofit_job,
+        open_row_worker: JobWorker = run_open_row_job,
+        autofit_timeout_s: float | None = None,
         poll_s: float = 0.05,
     ) -> None:
         self._sessions = session_factory
@@ -140,7 +152,12 @@ class JobManager:
         self._grace_s = grace_s
         self._max_result_bytes = max_result_bytes
         self._queue_max = queue_max
-        self._worker = worker
+        self._workers_by_kind = {
+            "fit": worker,
+            "autofit": autofit_worker,
+            "open_row": open_row_worker,
+        }
+        self._autofit_timeout_s = autofit_timeout_s if autofit_timeout_s is not None else timeout_s
         self._poll_s = poll_s
         self._lock = threading.RLock()
         self._wake = threading.Event()
@@ -272,11 +289,14 @@ class JobManager:
                 self._flights.pop(task.job_id, None)
             return
         receiver, sender = self._context.Pipe(duplex=False)
+        is_autofit = task.kind == "autofit"
         process = self._context.Process(
             target=job_process_main,
-            args=(sender, self._worker, arguments),
+            args=(sender, self._workers_by_kind[task.kind], arguments, is_autofit),
             name=f"curvestudio-job-{task.job_id}",
-            daemon=True,
+            # An Auto-fit job starts a worker pool of its own, which a daemon process may not.
+            # It ends with its parent anyway (see worker._exit_with_parent).
+            daemon=not is_autofit,
         )
         try:
             process.start()
@@ -291,20 +311,25 @@ class JobManager:
         process.close()
         receiver.close()
 
+    def _timeout_for(self, kind: str) -> float:
+        return self._autofit_timeout_s if kind == "autofit" else self._timeout_s
+
     def _watchdog(self) -> None:
         now = time.monotonic()
         with self._lock:
             for flight in list(self._flights.values()):
+                timeout_s = self._timeout_for(flight.task.kind)
                 if flight.running_since is not None:
-                    overdue = now - flight.running_since > self._timeout_s + self._grace_s
+                    overdue = now - flight.running_since > timeout_s + self._grace_s
                 else:
-                    overdue = now - flight.dispatched > STARTUP_LIMIT_S + self._timeout_s
+                    overdue = now - flight.dispatched > STARTUP_LIMIT_S + timeout_s
+                what = "the Auto-fit run" if flight.task.kind == "autofit" else "the fit"
                 if overdue and self._finish(
                     flight.task.job_id,
                     "failed",
                     from_=ACTIVE,
                     error_code="TIMEOUT",
-                    error_message=f"the fit did not finish within {self._timeout_s:g} s",
+                    error_message=f"{what} did not finish within {timeout_s:g} s",
                 ):
                     self._flights.pop(flight.task.job_id, None)
                     self._kill(flight)
@@ -333,6 +358,9 @@ class JobManager:
                 if data == STARTED:
                     flight.running_since = time.monotonic()
                     continue
+                if data.startswith(PROGRESS):
+                    self._store_progress(flight.task.job_id, data[len(PROGRESS) :])
+                    continue
                 return "result", data
             if not process.is_alive() and not connection.poll(0):
                 return "crashed", process.exitcode
@@ -351,7 +379,12 @@ class JobManager:
             if kind == "result":
                 result = json.loads(value)
                 if result.get("ok"):
-                    self._store_fit(task, result["bundle"])
+                    if task.kind == "autofit":
+                        self._store_autofit(task, result)
+                    elif task.kind == "open_row":
+                        self._store_opened_row(task, result["bundle"])
+                    else:
+                        self._store_fit(task, result["bundle"])
                 else:
                     self._finish(
                         task.job_id,
@@ -394,14 +427,17 @@ class JobManager:
 
     @staticmethod
     def _kill(flight: _Flight) -> None:
-        """Stop and reap one job's process (idempotent). No other process is touched."""
+        """Stop and reap one job's process and everything it started (idempotent).
+
+        A job process leads its own process group (see ``worker.job_process_main``), so one
+        ``killpg`` also ends an Auto-fit run's worker pool. Other jobs are never touched.
+        """
         flight.killed = True
         process, connection = flight.process, flight.connection
         flight.process = flight.connection = None
         if process is not None:
             try:
-                if process.is_alive():
-                    process.kill()
+                _kill_group(process)
                 process.join(REAP_TIMEOUT_S)
                 process.close()
             except ValueError:
@@ -435,6 +471,20 @@ class JobManager:
             error_message="the dataset was deleted before the job started",
         )
         return None
+
+    def _store_progress(self, job_id: uuid.UUID, raw: bytes) -> None:
+        """Record a progress snapshot of a running job (a cancelled job keeps what it had)."""
+        try:
+            snapshot = json.loads(raw)
+            with self._sessions() as db:
+                db.execute(
+                    update(Job)
+                    .where(Job.id == job_id, Job.status == "running")
+                    .values(progress=snapshot)
+                )
+                db.commit()
+        except Exception:
+            _log.exception("could not record job progress", extra=log_fields(job=str(job_id)))
 
     def _mark_running(self, job_id: uuid.UUID) -> bool:
         with self._sessions() as db:
@@ -508,3 +558,127 @@ class JobManager:
                 request_id=task.request_id,
             )
             db.commit()
+
+    def _store_autofit(self, task: Task, result: dict[str, Any]) -> None:
+        autofit_id = uuid.uuid4()
+        payload = result["autofit"]
+        ranked = payload["ranked"]
+        with self._sessions() as db:
+            claimed = db.execute(
+                update(Job)
+                .where(Job.id == task.job_id, Job.status == "running")
+                .values(
+                    status="succeeded",
+                    result_ref=autofit_id,
+                    progress=result["progress"],
+                    finished_at=utcnow(),
+                )
+                .returning(Job.user_id, Job.dataset_id)
+            ).one_or_none()
+            if claimed is None:
+                db.rollback()
+                return
+            user_id, dataset_id = claimed
+            db.add(
+                Autofit(
+                    id=autofit_id,
+                    user_id=user_id,
+                    dataset_id=dataset_id,
+                    config=payload["config"],
+                    result=payload,
+                    n_candidates=len(payload["outcomes"]),
+                    best_model_id=ranked[0]["model_id"] if ranked else None,
+                )
+            )
+            audit.record(
+                db,
+                "autofit.create",
+                "autofit",
+                user_id=user_id,
+                entity_id=autofit_id,
+                detail={
+                    "job_id": str(task.job_id),
+                    "candidates": len(payload["outcomes"]),
+                    "partial": bool(payload["cancelled"]),
+                },
+                request_id=task.request_id,
+            )
+            db.commit()
+
+    def _store_opened_row(self, task: Task, bundle: dict[str, Any]) -> None:
+        """Store the refit of an Auto-fit row as an ordinary fit.
+
+        If the row was opened meanwhile (two requests raced), the job points at that fit.
+        """
+        fit_id = uuid.uuid4()
+        with self._sessions() as db:
+            claimed = db.execute(
+                update(Job)
+                .where(Job.id == task.job_id, Job.status == "running")
+                .values(status="succeeded", result_ref=fit_id, finished_at=utcnow())
+                .returning(Job.user_id, Job.dataset_id, Job.spec)
+            ).one_or_none()
+            if claimed is None:
+                db.rollback()
+                return
+            user_id, dataset_id, spec = claimed
+            autofit_id = uuid.UUID(spec["autofit_id"])
+            db.add(
+                Fit(
+                    id=fit_id,
+                    user_id=user_id,
+                    dataset_id=dataset_id,
+                    spec=spec["fit_spec"],
+                    bundle=bundle,
+                    status=str(bundle["result"]["status"]),
+                    autofit_id=autofit_id,
+                    candidate_id=spec["candidate_id"],
+                )
+            )
+            audit.record(
+                db,
+                "fit.create",
+                "fit",
+                user_id=user_id,
+                entity_id=fit_id,
+                detail={
+                    "job_id": str(task.job_id),
+                    "status": str(bundle["result"]["status"]),
+                    "autofit_id": str(autofit_id),
+                    "candidate_id": spec["candidate_id"],
+                },
+                request_id=task.request_id,
+            )
+            try:
+                db.commit()
+                return
+            except IntegrityError as exc:
+                db.rollback()
+                conflict = exc
+            existing = db.scalar(
+                select(Fit.id).where(
+                    Fit.autofit_id == autofit_id, Fit.candidate_id == spec["candidate_id"]
+                )
+            )
+            if existing is None:
+                raise conflict  # not the one-fit-per-row constraint: the caller fails the job
+            db.execute(
+                update(Job)
+                .where(Job.id == task.job_id)
+                .values(status="succeeded", result_ref=existing, finished_at=utcnow())
+            )
+            db.commit()
+
+
+def _kill_group(process: BaseProcess) -> None:
+    """SIGKILL ``process`` and its process group; just ``process`` where there are no groups
+    or it never became a group leader."""
+    kill_group = getattr(os, "killpg", None)
+    if kill_group is not None and process.pid is not None:
+        try:
+            kill_group(process.pid, signal.SIGKILL)
+            return
+        except ProcessLookupError, PermissionError:
+            pass  # no such group (not started leading it yet, or it is gone)
+    if process.is_alive():
+        process.kill()

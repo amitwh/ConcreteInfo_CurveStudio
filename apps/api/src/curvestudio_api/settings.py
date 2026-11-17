@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     job_grace_s: float = Field(default=10.0, ge=0)
     job_queue_max: int = Field(default=500, ge=1)
     job_max_result_bytes: int = Field(default=250_000_000, ge=1_000)
+    autofit_timeout_s: float = Field(default=180.0, gt=0)
+    autofit_budget_s: float = Field(default=120.0, gt=0)
+    autofit_workers: int = Field(default=3, ge=1)
     import_timeout_s: float = Field(default=20.0, gt=0)
     import_concurrency: int = Field(default=2, ge=1)
     import_memory_mb: int = Field(default=1024, ge=64)
@@ -41,6 +44,7 @@ class Settings(BaseSettings):
     quota_max_datasets: int | None = Field(default=None, ge=1)
     quota_max_dataset_bytes: int | None = Field(default=None, ge=1)
     quota_max_fits: int | None = Field(default=None, ge=1)
+    quota_max_autofits_per_day: int | None = Field(default=None, ge=1)
     housekeeping_interval_s: float = Field(default=3600.0, gt=0)
     cors_origins: Annotated[list[str], NoDecode] = Field(default_factory=list)
     registration_enabled: bool = True
@@ -82,7 +86,11 @@ class Settings(BaseSettings):
         return value
 
     @field_validator(
-        "quota_max_datasets", "quota_max_dataset_bytes", "quota_max_fits", mode="before"
+        "quota_max_datasets",
+        "quota_max_dataset_bytes",
+        "quota_max_fits",
+        "quota_max_autofits_per_day",
+        mode="before",
     )
     @classmethod
     def _empty_quota_is_plan_default(cls, value: object) -> object:
@@ -92,6 +100,15 @@ class Settings(BaseSettings):
     @classmethod
     def _empty_dist_is_off(cls, value: object) -> object:
         return None if value == "" else value
+
+    @model_validator(mode="after")
+    def _autofit_budget_within_timeout(self) -> Self:
+        if self.autofit_budget_s >= self.autofit_timeout_s:
+            raise ValueError(
+                "CURVESTUDIO_AUTOFIT_BUDGET_S (when a run is stopped and its partial result "
+                "kept) must be below CURVESTUDIO_AUTOFIT_TIMEOUT_S (when the job is killed)"
+            )
+        return self
 
     @model_validator(mode="after")
     def _keys(self) -> Self:

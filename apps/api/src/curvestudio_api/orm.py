@@ -14,6 +14,7 @@ from sqlalchemy import (
     MetaData,
     String,
     Text,
+    UniqueConstraint,
     Uuid,
     func,
 )
@@ -107,8 +108,33 @@ class Fit(_Timestamps, Base):
     spec: Mapped[dict[str, Any]] = mapped_column(JSON)
     bundle: Mapped[dict[str, Any]] = mapped_column(JSON, deferred=True)
     status: Mapped[str] = mapped_column(String(20))
+    autofit_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("autofits.id", ondelete="SET NULL"), index=True, default=None
+    )
+    # Both are set on a fit opened from an Auto-fit row; there is one such fit per row.
+    candidate_id: Mapped[str | None] = mapped_column(String(100), default=None)
 
     dataset: Mapped[Dataset] = relationship(back_populates="fits")
+
+    __table_args__ = (UniqueConstraint("autofit_id", "candidate_id"),)
+
+
+class Autofit(_Timestamps, Base):
+    """One finished Auto-fit run. ``result`` is ``AutoFitResult`` JSON without per-point vectors."""
+
+    __tablename__ = "autofits"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=_uuid)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    dataset_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("datasets.id", ondelete="CASCADE"), index=True
+    )
+    config: Mapped[dict[str, Any]] = mapped_column(JSON)
+    result: Mapped[dict[str, Any]] = mapped_column(JSON, deferred=True)
+    n_candidates: Mapped[int] = mapped_column(Integer)
+    best_model_id: Mapped[str | None] = mapped_column(String(100), default=None)
 
 
 class Job(_Timestamps, Base):
@@ -125,6 +151,7 @@ class Job(_Timestamps, Base):
     status: Mapped[str] = mapped_column(String(20), index=True)
     spec: Mapped[dict[str, Any]] = mapped_column(JSON)
     result_ref: Mapped[uuid.UUID | None] = mapped_column(Uuid, default=None)
+    progress: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
     error_code: Mapped[str | None] = mapped_column(String(50), default=None)
     error_message: Mapped[str | None] = mapped_column(Text, default=None)
     started_at: Mapped[datetime | None] = mapped_column(UtcDateTime, default=None)

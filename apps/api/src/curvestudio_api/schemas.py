@@ -14,6 +14,8 @@ from pydantic import (
     model_validator,
 )
 
+from curvestudio.discovery import AutoFitResult, CustomModelDefinition, RankBy, RankedFit
+from curvestudio.workflow.spec import MAX_SEED
 from curvestudio_api.passwords import weakness
 from curvestudio_api.timeutil import IstDatetime
 
@@ -156,13 +158,28 @@ class DatasetDetailOut(DatasetOut):
     points: PointsOut | None
 
 
+class ProgressOut(BaseModel):
+    """A running Auto-fit job's progress: counts, and the best rows found so far."""
+
+    done: int
+    total: int
+    converged: int
+    failed: int
+    skipped: int
+    elapsed_s: float
+    top: list[RankedFit]
+    partial: bool = False
+
+
 class JobOut(BaseModel):
     id: uuid.UUID
-    kind: Literal["fit", "autofit"]
+    kind: Literal["fit", "autofit", "open_row"]
     status: Literal["queued", "running", "succeeded", "failed", "cancelled"]
     dataset_id: uuid.UUID
     spec: dict[str, Any]
     result_ref: uuid.UUID | None
+    result_id: uuid.UUID | None = None
+    progress: ProgressOut | None = None
     error_code: str | None
     error_message: str | None
     created_at: IstDatetime
@@ -185,3 +202,42 @@ class FitSummaryOut(BaseModel):
 class PredictIn(_Body):
     x: list[float] = Field(max_length=100_000)
     band: Literal["confidence", "prediction"] | None = None
+
+
+class AutoFitRequest(_Body):
+    """Settings of one Auto-fit run. The server sets the time limits and the worker count."""
+
+    rank_by: RankBy = RankBy.BEST_OVERALL
+    families: list[Annotated[str, Field(min_length=1, max_length=100)]] | None = Field(
+        default=None, min_length=1, max_length=50
+    )
+    exhaustive: bool = False
+    max_parameters: int | None = Field(default=None, ge=1, le=10)
+    n_starts: int = Field(default=3, ge=1, le=8)
+    cv_folds: int = Field(default=5, ge=2, le=10)
+    seed: int = Field(default=0, ge=0, le=MAX_SEED)
+    curve_top_n: int = Field(default=5, ge=1, le=10)
+    custom_models: list[CustomModelDefinition] = Field(default_factory=list, max_length=10)
+
+
+class AutofitSummaryOut(BaseModel):
+    id: uuid.UUID
+    dataset_id: uuid.UUID
+    created_at: IstDatetime
+    best_model_id: str | None
+    n_candidates: int
+    rank_by: RankBy
+
+
+class AutofitOut(AutofitSummaryOut):
+    """A stored Auto-fit run. ``result.ranked`` follows ``rank_by``; ``partial`` is true when
+    the run was stopped at its time budget, so some candidates were never fitted."""
+
+    partial: bool
+    result: AutoFitResult
+
+
+class OpenRowOut(JobCreatedOut):
+    """``fit_id`` is set when the row was opened before: the fit already exists."""
+
+    fit_id: uuid.UUID | None = None
