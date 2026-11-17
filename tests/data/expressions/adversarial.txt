@@ -87,3 +87,30 @@ y = a*x
 a*x =
 = a*x
 a == x
+min(x)
+max(x, a, b)
+pow(x, 2, 3)
+pow(x, 1e9)
+pow(10, 400)
+pow(2, 9**9)
+atan2(x)
+voigt(x, a)
+voigt(x, a, b, a)
+voigt(*x)
+voigt(x=x, sigma=a, gamma=b)
+voigt
+erf
+tanh.__class__
+erfc(x).real
+min.__call__(x, a)
+Min(x, a)
+voigt_partial(x, a, b, 0)
+pow(9, max(30000000, 1))
+9**max(30000000, 1)
+pow(9, abs(-999999999))
+9**(E*1e9)
+x**exp(pi*10)
+asin(2)
+min(x, asin(2))
+acos(-1.5)*x
+exp(1000) + x

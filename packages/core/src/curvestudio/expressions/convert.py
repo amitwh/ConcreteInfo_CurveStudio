@@ -6,17 +6,20 @@ never reaches ``eval``, ``exec`` or ``sympy.parse_expr``.
 """
 
 import ast
+import math
 from collections.abc import Mapping
 from typing import Any
 
 import sympy
 
 from curvestudio.expressions.grammar import (
-    BINARY_FUNCTIONS,
     CONSTANTS,
-    UNARY_FUNCTIONS,
+    FUNCTIONS,
+    MAX_CONSTANT_EXPONENT,
     parse_expression,
 )
+
+_MAX_RESULT_BITS = 10_000.0
 
 
 def to_sympy(text: str, symbols: Mapping[str, sympy.Symbol]) -> sympy.Expr:
@@ -32,7 +35,34 @@ def to_sympy(text: str, symbols: Mapping[str, sympy.Symbol]) -> sympy.Expr:
             f"expression {text!r} is not defined for real numbers (it contains an undefined, "
             "infinite or complex constant sub-expression such as 1/0, log(0) or sqrt(-1))"
         )
+    _check_powers(expr, text)
     return expr
+
+
+def _check_powers(expr: sympy.Expr, text: str) -> None:
+    """Second line of defence: refuse powers whose constant exponent SymPy built up.
+
+    SymPy merges ``(x**1000)**1000`` into ``x**1000000`` and ``x**600*x**600`` into
+    ``x**1200``, so the per-operator cap in the grammar can be outrun by composition. A power
+    with a numeric exponent is limited to the same cap, and a numeric base to a result of
+    at most :data:`_MAX_RESULT_BITS` bits.
+    """
+    for node in sympy.preorder_traversal(expr):
+        if not isinstance(node, sympy.Pow) or not node.exp.is_Number:
+            continue
+        exponent = float(node.exp)
+        if abs(exponent) > MAX_CONSTANT_EXPONENT:
+            raise ValueError(
+                f"expression {text!r} builds a power with constant exponent {exponent:g} "
+                f"(limit {MAX_CONSTANT_EXPONENT:g}); simplify the exponents"
+            )
+        if node.base.is_Number and node.base != 0:
+            bits = abs(exponent) * math.log2(abs(float(node.base)))
+            if abs(bits) > _MAX_RESULT_BITS:
+                raise ValueError(
+                    f"expression {text!r} contains the constant power {node.base}**{node.exp}, "
+                    "which is too large to evaluate"
+                )
 
 
 def _build(node: ast.expr, symbols: Mapping[str, sympy.Symbol]) -> Any:
@@ -62,6 +92,5 @@ def _build(node: ast.expr, symbols: Mapping[str, sympy.Symbol]) -> Any:
                     return lhs**rhs
         case ast.Call(func=ast.Name(id=name), args=args):
             built = [_build(arg, symbols) for arg in args]
-            table = UNARY_FUNCTIONS if name in UNARY_FUNCTIONS else BINARY_FUNCTIONS
-            return table[name](*built)
+            return FUNCTIONS[name](*built)
     raise ValueError(f"{type(node).__name__} is not allowed in a model expression")
