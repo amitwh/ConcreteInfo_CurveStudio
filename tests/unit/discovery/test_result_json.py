@@ -135,7 +135,7 @@ def test_ranked_by_never_refits_and_respects_the_ranking_rules() -> None:
     r2 = [r.metrics.r2 for r in by_r2]
     assert r2 == sorted(r2, key=lambda v: -(v if v is not None else -1e300))
     by_aicc = result.ranked_by(RankBy.AICC)
-    aicc = [r.metrics.aicc for r in by_aicc if r.metrics.aicc is not None]
+    aicc = [r.metrics.aicc for r in by_aicc if r.metrics.aicc is not None and not r.degenerate]
     assert aicc == sorted(aicc)
 
 
@@ -144,7 +144,11 @@ def test_outcome_buckets_partition_all_candidates() -> None:
     names = {o.candidate_id for o in result.outcomes}
     ranked = {r.model_id for r in result.ranked}
     assert ranked <= names
-    for cid in (*result.unconverged, *result.skipped, *result.exact_fits):
+    for cid in (*result.unconverged, *result.exact_fits):
+        assert cid in names and cid not in ranked
+    # skipped candidates are outcomes too, except the ones the parameter cap left out
+    capped = {c for c, r in result.skipped.items() if "cap is" in r[0]}
+    for cid in set(result.skipped) - capped:
         assert cid in names and cid not in ranked
     assert result.failed.keys() <= result.unconverged.keys()
     assert result.timed_out.keys() <= result.unconverged.keys()

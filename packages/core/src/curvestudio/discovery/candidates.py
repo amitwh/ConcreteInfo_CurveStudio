@@ -31,13 +31,21 @@ EXHAUSTIVE_MAX_PARAMS = 10
 
 
 def parameter_cap(config: AutoFitConfig, n_active: int) -> int:
-    """Largest parameter count to try: the configured cap, never above ``n_active - 3``."""
+    """Largest parameter count to try, never above ``n_active - 3``.
+
+    ``config.max_params`` when given; otherwise ``n_active - 3`` when ``config.families`` is
+    explicit (the user asked for those models: only the data can rule one out), otherwise
+    ``min(10, n_active - 3)`` when exhaustive, else ``min(6, max(2, n_active // 3))``: a model
+    gets three points per parameter before it is tried by default, with a floor of two.
+    """
     if config.max_params is not None:
         cap = config.max_params
+    elif config.families is not None:
+        cap = n_active - MIN_RESIDUAL_DF
     elif config.exhaustive:
         cap = EXHAUSTIVE_MAX_PARAMS
     else:
-        cap = min(DEFAULT_MAX_PARAMS, max(1, n_active // 4))
+        cap = min(DEFAULT_MAX_PARAMS, max(2, n_active // 3))
     return min(cap, n_active - MIN_RESIDUAL_DF)
 
 
@@ -99,6 +107,16 @@ def category_matches(category: str, families: tuple[str, ...] | None) -> bool:
 def enumerate_candidates(config: AutoFitConfig, n_active: int) -> list[CandidateRef]:
     """Candidates for ``n_active`` usable points, ordered by id.
 
+    See :func:`enumerate_with_capped`; this is its first result.
+    """
+    return enumerate_with_capped(config, n_active)[0]
+
+
+def enumerate_with_capped(
+    config: AutoFitConfig, n_active: int
+) -> tuple[list[CandidateRef], dict[str, int]]:
+    """Candidates for ``n_active`` usable points, ordered by id, and those the cap left out.
+
     Polynomials start at degree 1 (``poly1`` is the straight line); a polynomial through the
     origin of degree ``d`` has ``d`` parameters, a free one ``d + 1``. Registered models are
     kept when their parameter count is within :func:`parameter_cap` and their category
@@ -107,18 +125,26 @@ def enumerate_candidates(config: AutoFitConfig, n_active: int) -> list[Candidate
     left out; it cannot be fitted. Custom models of the configuration are always included
     (the data decides in :func:`~curvestudio.discovery.screen` whether one can be fitted).
 
+    The second result maps the id of every model (and polynomial) that passes the category
+    filter but has more parameters than the cap to its parameter count, so the caller can
+    report each one instead of hiding it.
+
     Raises:
         AutoFitError: ``INVALID_CUSTOM_MODEL`` when a custom definition cannot be built,
             ``DUPLICATE_MODEL_ID`` when custom ids repeat or collide with another candidate.
     """
     cap = parameter_cap(config, n_active)
     refs: list[CandidateRef] = []
+    capped: dict[str, int] = {}
 
     if config.include_polynomials and category_matches("polynomial", config.families):
-        for degree in range(1, cap + 1):
-            refs.append(PolynomialRef(degree=degree, through_origin=True))
-            if degree + 1 <= cap:
-                refs.append(PolynomialRef(degree=degree, through_origin=False))
+        for degree in range(1, cap + 2):
+            for through_origin in (True, False):
+                ref = PolynomialRef(degree=degree, through_origin=through_origin)
+                if ref.parameter_count <= cap:
+                    refs.append(ref)
+                elif ref.parameter_count == cap + 1:  # the next step up; higher ones are unbounded
+                    capped[ref.id] = ref.parameter_count
 
     explicit = {m.id for m in list_models()}
     for model_id in list_model_ids(exhaustive=config.exhaustive):
@@ -129,11 +155,15 @@ def enumerate_candidates(config: AutoFitConfig, n_active: int) -> list[Candidate
         except Exception as exc:  # a broken family member must not stop the whole run
             _log.warning("model %r skipped: %s: %s", model_id, type(exc).__name__, exc)
             continue
-        if len(spec.parameters) <= cap and category_matches(spec.category, config.families):
+        if not category_matches(spec.category, config.families):
+            continue
+        if len(spec.parameters) <= cap:
             refs.append(RegisteredRef(model_id=model_id))
+        else:
+            capped[model_id] = len(spec.parameters)
 
     _add_custom(refs, config)
-    return sorted(refs, key=lambda ref: ref.id)
+    return sorted(refs, key=lambda ref: ref.id), capped
 
 
 _POLYNOMIAL_ID = re.compile(r"poly\d+(_origin)?")

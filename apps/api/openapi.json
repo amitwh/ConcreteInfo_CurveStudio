@@ -3,7 +3,7 @@
     "schemas": {
       "AutoFitConfig": {
         "additionalProperties": false,
-        "description": "Settings of one Auto-fit run.\n\nAttributes:\n    rank_by: ordering criterion of the result.\n    families: keep only models whose category equals one of these or has it as its first\n        dotted segment (``\"engineering\"`` matches ``\"engineering.strength\"``);\n        ``None`` keeps every category.\n    include_polynomials: also try polynomials (``polyN`` and ``polyN_origin``).\n    include_generated: also try models of lazily generated families.\n    exhaustive: include the long tail of generated families and raise the parameter cap.\n    max_params: largest parameter count tried. ``None`` means\n        ``min(6, max(1, n_active // 4))``, or ``min(10, n_active - 3)`` when exhaustive.\n        Whatever the value, a model never gets more than ``n_active - 3`` parameters.\n    n_starts: multistart count per candidate.\n    seed: base seed; a candidate's seed is derived from it and the candidate id, so\n        results do not depend on scheduling order.\n    time_limit: seconds allowed per candidate.\n    workers: worker processes; ``None`` means ``max(1, cpu_count - 1)`` and ``1`` runs\n        in-process.\n    cv_folds: folds of the cross-validation RMSE; ``None`` disables it.\n    custom_models: user equations to fit alongside the catalogue. They are always\n        candidates (neither ``families`` nor ``max_params`` filters them); the data\n        alone decides whether one can be fitted. Ids must be unique and must not\n        collide with a catalogue or polynomial id.\n    curve_top_n: how many top-ranked candidates (under each ranking criterion) get\n        their fitted curve and bands sampled into the result so a UI can plot without\n        refitting; ``0`` samples none.",
+        "description": "Settings of one Auto-fit run.\n\nAttributes:\n    rank_by: ordering criterion of the result.\n    families: keep only models whose category equals one of these or has it as its first\n        dotted segment (``\"engineering\"`` matches ``\"engineering.strength\"``);\n        ``None`` keeps every category.\n    include_polynomials: also try polynomials (``polyN`` and ``polyN_origin``).\n    include_generated: also try models of lazily generated families.\n    exhaustive: include the long tail of generated families and raise the parameter cap.\n    max_params: largest parameter count tried. ``None`` means ``n_active - 3`` when\n        ``families`` is explicit (you asked for those models; only the data can rule one\n        out), ``min(10, n_active - 3)`` when exhaustive, else\n        ``min(6, max(2, n_active // 3))``. Whatever the value, a model never gets more\n        than ``n_active - 3`` parameters. Every candidate the cap leaves out is listed in\n        the result's ``skipped`` with its parameter count.\n    n_starts: multistart count per candidate.\n    seed: base seed; a candidate's seed is derived from it and the candidate id, so\n        results do not depend on scheduling order.\n    time_limit: seconds allowed per candidate.\n    workers: worker processes; ``None`` means ``max(1, cpu_count - 1)`` and ``1`` runs\n        in-process.\n    cv_folds: folds of the cross-validation RMSE; ``None`` disables it.\n    staged_starts: fit every candidate from two starts first and give the full ``n_starts``\n        only to those that could still change the ranking (AICc within 10 of the best, or\n        not converged but with an SSE within three times the best converged SSE); the\n        rest keep their two-start outcome (``stage=\"screen\"``). Turn off to give every\n        candidate the full multistart.\n    custom_models: user equations to fit alongside the catalogue. They are always\n        candidates (neither ``families`` nor ``max_params`` filters them); the data\n        alone decides whether one can be fitted. Ids must be unique and must not\n        collide with a catalogue or polynomial id.\n    curve_top_n: how many top-ranked candidates (under each ranking criterion) get\n        their fitted curve and bands sampled into the result so a UI can plot without\n        refitting; ``0`` samples none.",
         "properties": {
           "curve_top_n": {
             "default": 5,
@@ -88,6 +88,11 @@
             "default": 0,
             "title": "Seed",
             "type": "integer"
+          },
+          "staged_starts": {
+            "default": true,
+            "title": "Staged Starts",
+            "type": "boolean"
           },
           "time_limit": {
             "default": 20.0,
@@ -197,7 +202,7 @@
       },
       "AutoFitResult": {
         "additionalProperties": false,
-        "description": "Everything one Auto-fit run found.\n\n``ranked`` holds the converged candidates ordered by ``config.rank_by``; ``outcomes``\nholds every candidate (ordered by id) with its kind and reason; ``skipped`` maps a\ncandidate the data cannot support (or that was never fitted because the run was\ncancelled) to its reasons; ``unconverged`` maps every candidate that was fitted but did\nnot converge (not converged, failed, timed out) to the reason; ``exact_fits`` lists the\ncandidates that reproduce the data exactly (no information criteria exist for them).\n``curves`` holds the sampled curve and bands of the top ``config.curve_top_n`` candidates\nunder every ranking criterion, so a UI can plot any ordering without refitting.\n``cancelled`` is true for a partial result.",
+        "description": "Everything one Auto-fit run found.\n\n``ranked`` holds the converged candidates ordered by ``config.rank_by``; ``outcomes``\nholds every candidate (ordered by id) with its kind and reason; ``skipped`` maps a\ncandidate the data cannot support (or that was never fitted because the run was\ncancelled) to its reasons; ``unconverged`` maps every candidate that was fitted but did\nnot converge (not converged, failed, timed out) to the reason; ``exact_fits`` lists the\ncandidates that reproduce the data exactly (no information criteria exist for them).\n``curves`` holds the sampled curve and bands of the top ``config.curve_top_n`` candidates\nunder every ranking criterion, so a UI can plot any ordering without refitting.\n``cancelled`` is true for a partial result. ``subsample_n`` is the size of the subsample\na very large dataset (over 5000 active points) was screened on, else ``None``; the per-point\nvectors of such a result are kept only for the rows that have a curve.",
         "properties": {
           "cancelled": {
             "title": "Cancelled",
@@ -267,6 +272,17 @@
             },
             "title": "Skipped",
             "type": "object"
+          },
+          "subsample_n": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subsample N"
           },
           "unconverged": {
             "additionalProperties": {
@@ -631,7 +647,7 @@
       },
       "CandidateOutcome": {
         "additionalProperties": false,
-        "description": "What happened to one candidate.\n\n``reason`` explains every kind except a plain ``converged`` one (where it is empty unless\ncross-validation was incomplete). ``fit`` is kept for every candidate that was fitted,\nincluding the ones that did not converge, so the parameters it stopped at can be\ninspected. ``same_curve_as`` lists the fitted candidates whose curve coincides with\nthis one.",
+        "description": "What happened to one candidate.\n\n``reason`` explains every kind except a plain ``converged`` one (where it is empty unless\ncross-validation was incomplete). ``fit`` is kept for every candidate that was fitted,\nincluding the ones that did not converge, so the parameters it stopped at can be\ninspected. ``same_curve_as`` lists the fitted candidates whose curve coincides with\nthis one. ``stage`` is ``\"screen\"`` for a candidate fitted from only a few starts that\nwas not promoted to the full multistart (a later outcome of the same candidate with\nstage ``\"final\"`` replaces it); ``on_subsample`` marks a candidate fitted on the\ndeterministic subsample of a very large dataset only.",
         "properties": {
           "candidate_id": {
             "title": "Candidate Id",
@@ -657,6 +673,11 @@
               }
             ]
           },
+          "generated": {
+            "default": false,
+            "title": "Generated",
+            "type": "boolean"
+          },
           "metrics": {
             "anyOf": [
               {
@@ -671,6 +692,11 @@
             "default": "",
             "title": "Name",
             "type": "string"
+          },
+          "on_subsample": {
+            "default": false,
+            "title": "On Subsample",
+            "type": "boolean"
           },
           "outcome": {
             "enum": [
@@ -696,6 +722,20 @@
             },
             "title": "Same Curve As",
             "type": "array"
+          },
+          "shape_parameters": {
+            "default": 0,
+            "title": "Shape Parameters",
+            "type": "integer"
+          },
+          "stage": {
+            "default": "final",
+            "enum": [
+              "screen",
+              "final"
+            ],
+            "title": "Stage",
+            "type": "string"
           }
         },
         "required": [
@@ -2807,12 +2847,39 @@
       },
       "RankedFit": {
         "additionalProperties": false,
-        "description": "One row of the ranked result.\n\n``rank`` starts at 1; rows whose fitted curves coincide (``same_curve_as`` lists the\nothers) share the rank of the best of them. ``status`` is the candidate's fit status as\ntext (``\"exact_fit\"`` for a fit with SSE = 0). ``parameters`` are the fitted estimates;\n``warnings`` are the fit's own; ``overfitting_note`` names a much simpler candidate that\nfits almost as well, when there is one.",
+        "description": "One row of the ranked result.\n\n``rank`` starts at 1; rows whose fitted curves coincide (``same_curve_as`` lists the\nothers) share the rank of the best of them. ``status`` is the candidate's fit status as\ntext (``\"exact_fit\"`` for a fit with SSE = 0). ``parameters`` are the fitted estimates;\n``warnings`` are the fit's own; ``overfitting_note`` names a much simpler candidate that\nfits almost as well, when there is one.\n\n``delta_aicc`` (AICc minus the lowest AICc of the run) and ``akaike_weight`` (relative\nlikelihood normalised over every candidate with an AICc) are ``None`` exactly when the\nrow has no AICc (exact fits, tiny samples); they use the true AICc, never the ranking\nadjustment for unreliable fits. ``degenerate`` marks a fit whose optimum collapsed onto a\nsimpler model (a parameter at its bound with negligible effect, or a singular Jacobian);\nsuch rows rank below every non-degenerate row. ``generated`` says the model comes from a\ngenerated family, not a hand-written one. ``shape_parameters`` counts its free-frequency\nparameters, which the ranking charges as extra effective parameters.\n``redundant_with`` names the canonical row when\nthis row draws the same curve as a model with fewer parameters: it is then not tied with\nthat row but listed as redundant with it.",
         "properties": {
+          "akaike_weight": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Akaike Weight"
+          },
           "category": {
             "default": "",
             "title": "Category",
             "type": "string"
+          },
+          "degenerate": {
+            "default": false,
+            "title": "Degenerate",
+            "type": "boolean"
+          },
+          "delta_aicc": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delta Aicc"
           },
           "equation_fitted": {
             "anyOf": [
@@ -2824,6 +2891,11 @@
               }
             ],
             "title": "Equation Fitted"
+          },
+          "generated": {
+            "default": false,
+            "title": "Generated",
+            "type": "boolean"
           },
           "metrics": {
             "$ref": "#/components/schemas/CandidateMetrics"
@@ -2859,6 +2931,17 @@
             "title": "Rank",
             "type": "integer"
           },
+          "redundant_with": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Redundant With"
+          },
           "same_curve_as": {
             "default": [],
             "items": {
@@ -2866,6 +2949,11 @@
             },
             "title": "Same Curve As",
             "type": "array"
+          },
+          "shape_parameters": {
+            "default": 0,
+            "title": "Shape Parameters",
+            "type": "integer"
           },
           "status": {
             "default": "converged",

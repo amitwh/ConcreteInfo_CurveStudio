@@ -1,8 +1,19 @@
 """Model discovery: candidates, screening and ranking for Auto-fit."""
 
-from curvestudio.discovery.candidates import candidate_ref, enumerate_candidates, resolve_spec
+from curvestudio.discovery.candidates import (
+    candidate_ref,
+    enumerate_candidates,
+    enumerate_with_capped,
+    resolve_spec,
+)
 from curvestudio.discovery.curves import RowCurve
-from curvestudio.discovery.engine import CancelToken, autofit, iter_autofit
+from curvestudio.discovery.engine import Plan, autofit, iter_autofit, plan_run
+from curvestudio.discovery.pool import (
+    AutoFitPool,
+    CancelToken,
+    get_shared_pool,
+    shutdown_shared_pools,
+)
 from curvestudio.discovery.ranking import (
     best_overall_order,
     find_same_curves,
@@ -15,6 +26,7 @@ from curvestudio.discovery.result import (
     annotate_same_curves,
     partial_ranking,
     rank_outcomes,
+    resolve_exactness,
 )
 from curvestudio.discovery.screening import Screening, screen
 from curvestudio.discovery.types import (
@@ -35,6 +47,7 @@ from curvestudio.models import CustomModelDefinition
 __all__ = [
     "AutoFitConfig",
     "AutoFitError",
+    "AutoFitPool",
     "AutoFitResult",
     "CancelToken",
     "CandidateJob",
@@ -44,6 +57,7 @@ __all__ = [
     "CustomModelDefinition",
     "CustomRef",
     "ModelRef",
+    "Plan",
     "PolynomialRef",
     "RankBy",
     "RankedFit",
@@ -56,14 +70,19 @@ __all__ = [
     "candidate_ref",
     "candidate_seed",
     "enumerate_candidates",
+    "enumerate_with_capped",
     "find_same_curves",
     "fit_candidate",
+    "get_shared_pool",
     "iter_autofit",
     "overfitting_note",
     "partial_ranking",
+    "plan_run",
     "rank",
     "rank_outcomes",
+    "resolve_exactness",
     "resolve_spec",
     "run_candidate",
     "screen",
+    "shutdown_shared_pools",
 ]

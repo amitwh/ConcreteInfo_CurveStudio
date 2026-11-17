@@ -46,12 +46,15 @@ def bundle_for_candidate(
         raise WorkflowError("UNKNOWN_MODEL", str(exc.args[0])) from exc
     except ValueError as exc:
         raise WorkflowError("INVALID_SPEC", str(exc)) from exc
+    stored = next((o.fit for o in result.outcomes if o.candidate_id == candidate_id), None)
+    # a candidate kept from the two-start screening stage is reproduced with those two starts
+    n_starts = stored.n_starts if stored is not None and spec is not None else config.n_starts
     fitted = fit_candidate(
         xy,
         ref,
         spec,
         seed=candidate_seed(config.seed, candidate_id),
-        n_starts=config.n_starts,
+        n_starts=n_starts,
         time_limit=config.time_limit,
     )
     return _assemble(xy, fitted, spec, [], compact)

@@ -503,7 +503,9 @@ MODELS: tuple[ModelSpec, ...] = (
         expression="a*(x-V_0)**b",
         parameters=_P_UPV_POWER,
         initial_guess=bespoke_guess(_P_UPV_POWER, _upv_power_guess),
-        domain_check=domain_check(x_non_negative=True),
+        domain_check=domain_check(
+            x_positive_for="(x-V_0)**b (its parameter derivative is not defined at x <= 0)"
+        ),
         references=(_MALHOTRA_CARINO, _NEVILLE),
         assumptions=(
             "A calibration for one concrete; x is the ultrasonic pulse velocity in km/s and V_0 "
@@ -540,7 +542,9 @@ MODELS: tuple[ModelSpec, ...] = (
         expression="e_u*(x/(k+x))**m",
         parameters=_P_SHRINKAGE,
         initial_guess=bespoke_guess(_P_SHRINKAGE, _shrinkage_guess),
-        domain_check=domain_check(x_non_negative=True),
+        domain_check=domain_check(
+            x_positive_for="(x/(k+x))**m (its parameter derivative is not defined at x <= 0)"
+        ),
         references=(_ACI_209, _BAZANT_BAWEJA),
         assumptions=(
             "One member size, relative humidity and curing history; x is drying time in days "
@@ -558,7 +562,9 @@ MODELS: tuple[ModelSpec, ...] = (
         expression="phi_u*x**psi/(d+x**psi)",
         parameters=_P_CREEP,
         initial_guess=bespoke_guess(_P_CREEP, _creep_guess),
-        domain_check=domain_check(x_non_negative=True),
+        domain_check=domain_check(
+            x_positive_for="x**psi (its parameter derivative is not defined at x <= 0)"
+        ),
         references=(_ACI_209, _NEVILLE_DILGER_BROOKS, _BAZANT_BAWEJA),
         assumptions=(
             "Constant stress and one loading age, member size, relative humidity and mix; x is "

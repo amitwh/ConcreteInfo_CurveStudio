@@ -205,7 +205,9 @@ MODELS: tuple[ModelSpec, ...] = (
         expression="100*(x/D)**q",
         parameters=_P_MODIFIED_FULLER,
         initial_guess=bespoke_guess(_P_MODIFIED_FULLER, _modified_fuller_guess),
-        domain_check=domain_check(x_non_negative=True),
+        domain_check=domain_check(
+            x_positive_for="(x/D)**q (its parameter derivative is not defined at x <= 0)"
+        ),
         references=(_FULLER, _FUNK_DINGER),
         assumptions=(
             "A target grading with the exponent q left free (typically 0.4-0.5); x and D are "
@@ -239,7 +241,9 @@ MODELS: tuple[ModelSpec, ...] = (
         expression="100*(x**n-d_min**n)/((d_min+d_span)**n-d_min**n)",
         parameters=_P_MODIFIED_ANDREASEN,
         initial_guess=bespoke_guess(_P_MODIFIED_ANDREASEN, _modified_andreasen_guess),
-        domain_check=domain_check(x_non_negative=True),
+        domain_check=domain_check(
+            x_positive_for="x**n (its parameter derivative is not defined at x <= 0)"
+        ),
         references=(_ANDREASEN, _FUNK_DINGER),
         assumptions=(
             "The Dinger-Funk modification of Andreasen's distribution: x is the particle size "

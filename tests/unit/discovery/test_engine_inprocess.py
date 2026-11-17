@@ -147,13 +147,12 @@ def test_too_few_points_refuses_the_run() -> None:
     assert info.value.code == "TOO_FEW_POINTS"
 
 
-def test_exact_fit_listed_separately_not_ranked_by_aicc() -> None:
+def test_exact_fit_listed_separately_and_leads_the_ranking_without_aicc() -> None:
     x = np.arange(20.0)
     result = autofit(
         make_xy(x, 1.0 + 2.0 * x + 3.0 * x**2), config(families=("polynomial",), max_params=5)
     )
     assert "poly2" in result.exact_fits
-    assert not set(result.exact_fits) & set(ids(result.ranked))
     for cid in result.exact_fits:
         (outcome,) = [o for o in result.outcomes if o.candidate_id == cid]
         assert outcome.outcome == "exact_fit"
@@ -161,12 +160,24 @@ def test_exact_fit_listed_separately_not_ranked_by_aicc() -> None:
         assert outcome.metrics.aicc is None
         assert outcome.metrics.bic is None
         assert outcome.metrics.r2 == pytest.approx(1.0)
-    assert any("exact" in w for w in result.warnings)
-    # under an ordering that needs no information criterion the exact fits are ranked
-    by_rmse = result.ranked_by(RankBy.RMSE)
-    assert set(result.exact_fits) <= set(ids(by_rmse))
-    assert all(r.status == "exact_fit" for r in by_rmse if r.model_id in result.exact_fits)
-    assert set(ids(by_rmse[: len(result.exact_fits)])) == set(result.exact_fits)
+    assert any("exactly" in w for w in result.warnings)
+    # the exact fits form the top block of the headline ranking, fewest parameters first, and
+    # carry no information criterion at all
+    head = result.ranked[: len(result.exact_fits)]
+    assert set(ids(head)) == set(result.exact_fits)
+    assert result.ranked[0].model_id == "poly2"
+    assert all(r.metrics.aicc is None and r.delta_aicc is None for r in head)
+    assert all(r.akaike_weight is None for r in head)
+    assert all(r.status == "exact_fit" for r in head)
+    assert result.ranked[0].metrics.k == 3
+    # the larger exact fits draw the same curve: redundant with poly2, not tied with it
+    assert {r.redundant_with for r in head[1:]} == {"poly2"}
+    # without an information criterion to rank on they are not in an AICc ranking
+    by_aicc = result.ranked_by(RankBy.AICC)
+    assert not set(result.exact_fits) & set(ids(by_aicc))
+    # ...but they are in every ordering that needs none
+    for rank_by in (RankBy.RMSE, RankBy.R2, RankBy.ADJ_R2, RankBy.CV_RMSE):
+        assert ids(result.ranked_by(rank_by)[:3]) == ids(head)
 
 
 def test_same_seed_same_numbers() -> None:
@@ -220,21 +231,32 @@ def test_cancel_before_start_fits_nothing() -> None:
     assert result.ranked == ()
 
 
-def test_iter_autofit_streams_every_attempted_candidate_once() -> None:
+def test_iter_autofit_streams_every_attempted_candidate_and_replaces_promoted_ones() -> None:
     cfg = config(families=("exponential", "saturation"))
     streamed = list(iter_autofit(exp_decay_data(), cfg))
     assert all(isinstance(o, CandidateOutcome) for o in streamed)
     final = autofit(exp_decay_data(), cfg)
     attempted = sorted(o.candidate_id for o in final.outcomes if o.outcome != "skipped")
-    assert sorted(o.candidate_id for o in streamed) == attempted
-    assert len({o.candidate_id for o in streamed}) == len(streamed)
+    assert sorted({o.candidate_id for o in streamed}) == attempted
+    # a candidate promoted to the full multistart arrives twice: screening first, then final
+    by_id: dict[str, list[str]] = {}
+    for o in streamed:
+        by_id.setdefault(o.candidate_id, []).append(o.stage)
+    assert any(len(stages) == 2 for stages in by_id.values())
+    for stages in by_id.values():
+        assert stages in (["screen"], ["final"], ["screen", "final"])
+    # the last outcome per candidate is the one the result holds
+    last = {o.candidate_id: o for o in streamed}
+    for o in final.outcomes:
+        if o.candidate_id in last:
+            assert o.stage == last[o.candidate_id].stage
 
 
 def test_on_outcome_sees_each_attempted_candidate() -> None:
     seen: list[str] = []
     result = autofit(
         exp_decay_data(),
-        config(families=("exponential",)),
+        config(families=("exponential",), staged_starts=False),
         on_outcome=lambda o: seen.append(o.candidate_id),
     )
     assert sorted(seen) == sorted(o.candidate_id for o in result.outcomes if o.outcome != "skipped")
