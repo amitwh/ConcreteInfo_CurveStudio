@@ -35,7 +35,7 @@ CurveStudio fits mathematical models to experimental data, ranks the candidates 
 
 - The **desktop app is free** and works fully offline, with no accounts or telemetry.
 - The **hosted web app** may carry a very small subscription to cover hosting costs.
-- **Self-hosting** will be supported with Docker Compose. Billing is off by default, so a self-hosted install has no limits and never contacts a payment provider. Deployment scripts will live in `deploy/` (Phase 7).
+- **Self-hosting** is a one-command Docker Compose stack - see [`deploy/README.md`](deploy/README.md). Billing is off by default, so a self-hosted install has no limits and never contacts a payment provider.
 
 ## Architecture
 

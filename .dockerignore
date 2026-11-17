@@ -1,0 +1,27 @@
+# What docker build never needs (the context is the repository root). Keeps the context small
+# and, importantly, keeps secrets (deploy/.env) and local backups out of the image.
+# Patterns are anchored to the root: the build DOES need e.g. packages/core/src/curvestudio/data.
+/.git
+/.github
+/.remember
+/.claude
+/.superpowers
+/.claude-*
+/docs
+/examples
+/scripts
+/tests
+/.venv
+**/__pycache__
+**/*.pyc
+.pytest_cache
+.mypy_cache
+.ruff_cache
+**/*.egg-info
+**/node_modules
+/apps/web/node_modules
+/apps/web/dist
+**/.env
+/deploy/.env
+/deploy/backups
+/data

@@ -1,0 +1,17 @@
+# CurveStudio reverse proxy: automatic HTTPS for ${CURVESTUDIO_DOMAIN} (set in deploy/.env),
+# gzip/zstd compression and basic security headers. The API adds HSTS itself whenever
+# CURVESTUDIO_ENV=prod, so it is deliberately not repeated here (two HSTS headers help no one).
+
+{$CURVESTUDIO_DOMAIN} {
+	encode zstd gzip
+
+	reverse_proxy app:8000
+
+	header {
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		-Server
+	}
+}
