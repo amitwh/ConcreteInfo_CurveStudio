@@ -33,6 +33,9 @@ desktop = [
     "curvestudio-plotting",
     "curvestudio-reporting",
     "curvestudio-desktop",
+    # packaging only (never in the server image): latest 6.22.3, PyPI 2026-09-12;
+    # OSV checked 2026-11-18 — 6 advisories, all fixed <= 6.0.0
+    "pyinstaller>=6.22.3",
 ]
 dev = [
     { include-group = "desktop" },

@@ -9,6 +9,7 @@ docs/
 .ruff_cache/
 *.egg-info/
 dist/
+build/
 .playwright-mcp/
 ||||||| 096aee7
 data/
