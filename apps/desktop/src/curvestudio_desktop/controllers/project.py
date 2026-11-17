@@ -90,6 +90,9 @@ class ProjectController(QObject):
     (column choices, issues) before the tree rebuild highlights the new dataset.
     """
 
+    analyses_changed = Signal()
+    """An analysis was added or replaced (Auto-fit run, fit). The tree rebuilds its rows."""
+
     dirty_changed = Signal(bool)
     recent_files_changed = Signal()
     undo_available_changed = Signal(bool)
@@ -380,6 +383,21 @@ class ProjectController(QObject):
         self.dataset_renamed.emit(dataset_id)
         self.status_message.emit(f"Renamed dataset to {name}")
         return True
+
+    # -- analyses ---------------------------------------------------------------------------
+
+    def add_or_replace_analysis(self, analysis: Analysis) -> None:
+        """Add ``analysis`` to the project, replacing any earlier entry with the same id.
+
+        An Auto-fit run for a dataset replaces that dataset's stored run (the latest is
+        what "Run again" and the tree show); an opened row replaces the entry it opened.
+        Records undo and marks the project dirty, like every other edit.
+        """
+        kept = tuple(entry for entry in self._project.analyses if entry.id != analysis.id)
+        self._push_undo()
+        self._project = self._rebuilt(analyses=(*kept, analysis))
+        self._set_dirty(True)
+        self.analyses_changed.emit()
 
     # -- undo -------------------------------------------------------------------------------
 

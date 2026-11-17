@@ -633,6 +633,8 @@ version = "0.1.0.dev0"
 source = { editable = "apps/desktop" }
 dependencies = [
     { name = "curvestudio-core" },
+    { name = "curvestudio-plotting" },
+    { name = "curvestudio-reporting" },
     { name = "pyqtgraph" },
     { name = "pyside6-essentials" },
 ]
@@ -645,6 +647,8 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "curvestudio-core", editable = "packages/core" },
+    { name = "curvestudio-plotting", editable = "packages/plotting" },
+    { name = "curvestudio-reporting", editable = "packages/reporting" },
     { name = "pyqtgraph", specifier = ">=0.14" },
     { name = "pyside6-essentials", specifier = ">=6.12" },
 ]

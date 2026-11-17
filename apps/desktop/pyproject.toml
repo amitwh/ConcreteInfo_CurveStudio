@@ -7,6 +7,8 @@ requires-python = ">=3.14"
 license = "AGPL-3.0-or-later"
 dependencies = [
     "curvestudio-core",
+    "curvestudio-plotting",
+    "curvestudio-reporting",
     "PySide6-Essentials>=6.12",
     "pyqtgraph>=0.14",
 ]
@@ -19,6 +21,8 @@ dev = ["pytest-qt>=4.5"]
 
 [tool.uv.sources]
 curvestudio-core = { workspace = true }
+curvestudio-plotting = { workspace = true }
+curvestudio-reporting = { workspace = true }
 
 [build-system]
 requires = ["hatchling>=1.33.0"]

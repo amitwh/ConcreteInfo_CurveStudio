@@ -81,6 +81,53 @@ def settings(tmp_path) -> QSettings:
     return QSettings(str(path), QSettings.Format.IniFormat)
 
 
+@pytest.fixture(autouse=True)
+def _manual_mode_by_default(settings):
+    """Desktop tests default to Manual fit mode: background Auto-fit must not race them.
+
+    The product default is Auto-fit (imports start a run by themselves), but a test that
+    imports data and then saves would race the run landing in the project (and a default
+    run with the full catalogue is slow). Tests that exercise the Auto-fit-first workflow
+    set the mode explicitly — or remove this key to check the product default.
+    """
+    settings.setValue("analysis/mode", "manual")
+    settings.sync()
+
+
+@pytest.fixture(autouse=True)
+def _preserve_model_registry():
+    """Snapshot the shared model registry around every desktop test and restore it.
+
+    Desktop tests trigger the registry's lazy plugin loading (Auto-fit enumeration, the
+    model picker) while the root conftest hides the plugin entry points — that reload
+    would empty the process-wide registry and leave the later in-process CLI tests with
+    no models at all. Restoring the snapshot keeps whatever catalogue the session had.
+    Tests that manage the registry themselves (``_clear_registry`` under
+    ``real_plugins``) still work: their changes are simply undone afterwards.
+    """
+    from curvestudio.models import registry
+
+    snapshot = (
+        dict(registry._REGISTRY),
+        dict(registry._FAMILIES),
+        dict(registry._FAMILY_ERRORS),
+        list(registry._LOADED_PLUGINS),
+        list(registry._PLUGIN_FAILURES),
+        registry._PLUGINS_DONE,
+    )
+    yield
+    models, families, family_errors, loaded, failures, done = snapshot
+    registry._REGISTRY.clear()
+    registry._REGISTRY.update(models)
+    registry._FAMILIES.clear()
+    registry._FAMILIES.update(families)
+    registry._FAMILY_ERRORS.clear()
+    registry._FAMILY_ERRORS.update(family_errors)
+    registry._LOADED_PLUGINS[:] = loaded
+    registry._PLUGIN_FAILURES[:] = failures
+    registry._PLUGINS_DONE = done
+
+
 @pytest.fixture()
 def confirmation() -> FakeConfirmation:
     return FakeConfirmation()

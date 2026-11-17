@@ -4,6 +4,8 @@ import subprocess
 import sys
 import threading
 
+from PySide6.QtCore import QSettings
+
 from curvestudio_desktop import __version__
 
 
@@ -40,6 +42,36 @@ def test_version_flag_reports_version() -> None:
     )
     assert result.returncode == 0
     assert __version__ in result.stdout
+
+
+def test_selftest_settings_is_isolated_and_cleaned_up() -> None:
+    """The selftest never reads or writes the user's real configuration."""
+    from pathlib import Path
+
+    from curvestudio_desktop.app import selftest_settings
+
+    with selftest_settings() as settings:
+        path = Path(settings.fileName())
+        assert path.suffix == ".ini"
+        settings.setValue("analysis/mode", "manual")
+        settings.sync()
+        assert settings.value("analysis/mode") == "manual"
+        directory = path.parent
+    assert not directory.exists()  # the throwaway directory went away with it
+
+
+def test_build_main_window_reads_and_writes_the_injected_settings(qtbot, tmp_path) -> None:
+    from curvestudio_desktop.app import build_main_window
+
+    settings = QSettings(str(tmp_path / "selftest.ini"), QSettings.Format.IniFormat)
+    settings.setValue("analysis/mode", "manual")
+    settings.sync()
+    window = build_main_window(settings)
+    qtbot.addWidget(window)
+    assert window.analysis.mode == "manual"  # the window read the injected settings
+    window.analysis.set_mode("autofit")
+    settings.sync()
+    assert settings.value("analysis/mode") == "autofit"  # and writes back to them
 
 
 def test_crash_guard_formats_and_shows_the_error() -> None:

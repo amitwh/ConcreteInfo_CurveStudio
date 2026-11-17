@@ -26,11 +26,17 @@ def test_main_window_builds_with_all_docks(make_window, qtbot) -> None:
     assert window.minimumSize().width() >= 900
 
 
-def test_analysis_panel_has_four_result_tabs(make_window, qtbot) -> None:
+def test_analysis_panel_has_the_result_tabs(make_window, qtbot) -> None:
     window = make_window()
     qtbot.addWidget(window)
     panel = window.analysis_panel
-    assert panel.tab_titles() == ["Parameters", "Statistics", "Diagnostics", "Equation"]
+    assert panel.tab_titles() == [
+        "Parameters",
+        "Statistics",
+        "Diagnostics",
+        "Equation",
+        "Predict",
+    ]
     for index in range(panel.count()):
         assert panel.tab_text_at(index).strip() == "No fit yet"
 

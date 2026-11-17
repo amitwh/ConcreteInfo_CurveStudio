@@ -8,11 +8,16 @@ on stdout. It never shows a window and exits 0 only when everything worked.
 
 import os
 import sys
+import tempfile
 import threading
-from collections.abc import Callable
+import time
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from pathlib import Path
 from types import TracebackType
 from typing import TYPE_CHECKING
 
+from PySide6.QtCore import QSettings
 from PySide6.QtWidgets import QApplication
 
 from curvestudio_desktop import APP_NAME, ORG_NAME, __version__
@@ -21,6 +26,22 @@ if TYPE_CHECKING:
     from curvestudio_desktop.views.main_window import MainWindow
 
 Shower = Callable[[str], None]
+
+SELFTEST_TIMEOUT_SECONDS = 60.0
+"""Bound on the selftest's Auto-fit wait: a tiny run finishes in seconds, so a hang
+(a run that never started, or never delivered) fails fast with a clear reason."""
+
+
+@contextmanager
+def selftest_settings() -> Iterator[QSettings]:
+    """Throwaway INI settings, so the selftest never touches the user's configuration.
+
+    A stored preference (a manual mode, say) must not steer what the smoke test
+    exercises: the selftest forces Auto-fit mode and its own run options on top of
+    this clean slate, and nothing it writes survives it.
+    """
+    with tempfile.TemporaryDirectory(prefix="curvestudio-selftest-") as directory:
+        yield QSettings(str(Path(directory) / "settings.ini"), QSettings.Format.IniFormat)
 
 
 def create_application(argv: list[str] | None = None) -> QApplication:
@@ -114,10 +135,12 @@ def install_crash_guard(shower: Shower | None = None) -> None:
     threading.excepthook = _thread_hook
 
 
-def build_main_window() -> MainWindow:
-    """The main window wired to real (dialog-backed) providers."""
-    from PySide6.QtCore import QSettings
+def build_main_window(settings: QSettings | None = None) -> MainWindow:
+    """The main window wired to real (dialog-backed) providers.
 
+    ``settings`` overrides where window/controller preferences live — the selftest
+    injects its throwaway INI so it neither reads nor writes the user's config.
+    """
     from curvestudio_desktop.controllers.project import ProjectController
     from curvestudio_desktop.views.dialogs import (
         DialogConfirmationProvider,
@@ -130,9 +153,11 @@ def build_main_window() -> MainWindow:
         confirmation=DialogConfirmationProvider(),
         paths=DialogPathProvider(),
         messenger=MessageBoxMessenger(),
-        settings=QSettings(),
+        settings=settings if settings is not None else QSettings(),
     )
-    return MainWindow(controller)
+    # the window shares the controller's settings: a split (injected controller
+    # settings, default window settings) would read two different stores
+    return MainWindow(controller, settings=settings)
 
 
 def run_app(argv: list[str] | None = None) -> int:
@@ -148,48 +173,87 @@ def run_app(argv: list[str] | None = None) -> int:
 
 
 def run_selftest(argv: list[str] | None = None) -> int:
-    """Headless smoke test: window + bundled example + one fit. Exit 0 is pass.
+    """Headless smoke test: window + bundled example + one fit + one Auto-fit.
 
-    Used by CI and the packaging build. Prints each step so a failure says where.
+    Exit 0 is pass. Used by CI and the packaging build. Prints each step so a failure
+    says where. Runs against throwaway settings with Auto-fit forced on: the user's
+    real preferences must never steer (or break) the smoke test.
     """
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")  # selftest is headless by design
     from importlib import resources
 
+    from curvestudio.discovery import AutoFitConfig
     from curvestudio.workflow import FitSpec, fit_dataset
     from curvestudio.workflow.spec import PolynomialRef
+    from curvestudio_desktop.controllers.analysis import MODE_AUTOFIT
 
     app = create_application(argv if argv is not None else [sys.argv[0]])
     from curvestudio_desktop.theme import apply_theme
 
     apply_theme(app)
-    window = build_main_window()
+    with selftest_settings() as settings:
+        window = build_main_window(settings)
+        if window.analysis.mode != MODE_AUTOFIT:
+            # a stored mode must not steer the smoke test: Auto-fit is what it checks
+            window.analysis.set_mode(MODE_AUTOFIT)
+        # the selftest's Auto-fit uses a tiny configuration: the point is that the whole
+        # Auto-fit-first path works headless, not that it exercises the full catalogue
+        window.analysis_panel.autofit_view.set_config(
+            AutoFitConfig(
+                families=("polynomial",), workers=1, n_starts=2, cv_folds=None, time_limit=10.0
+            )
+        )
 
-    with resources.as_file(
-        resources.files("curvestudio_desktop") / "resources" / "example.csv"
-    ) as example:
-        if not window.import_file(example):
-            print("SELFTEST FAIL: importing the bundled example was refused", file=sys.stderr)
+        example = resources.files("curvestudio_desktop") / "resources" / "example.csv"
+        with resources.as_file(example) as path:
+            if not window.import_file(path):
+                print("SELFTEST FAIL: importing the bundled example was refused", file=sys.stderr)
+                return 1
+        model = window.table_view.model()
+        if model is None or model.rowCount() < 10:
+            print("SELFTEST FAIL: the data table did not populate", file=sys.stderr)
             return 1
-    model = window.table_view.model()
-    if model is None or model.rowCount() < 10:
-        print("SELFTEST FAIL: the data table did not populate", file=sys.stderr)
-        return 1
-    x_plot, _ = window.plot_view.scatter_data()
-    if x_plot is None or len(x_plot) != model.rowCount():
-        print("SELFTEST FAIL: the plot did not populate", file=sys.stderr)
-        return 1
+        x_plot, _ = window.plot_view.scatter_data()
+        if x_plot is None or len(x_plot) != model.rowCount():
+            print("SELFTEST FAIL: the plot did not populate", file=sys.stderr)
+            return 1
 
-    xy = window.selection.xy()
-    if xy is None:
-        print("SELFTEST FAIL: no fit input for the example", file=sys.stderr)
-        return 1
-    bundle = fit_dataset(xy, FitSpec(model=PolynomialRef(degree=2)))
-    if str(bundle.result.status) != "converged":
-        print(f"SELFTEST FAIL: fit did not converge ({bundle.result.status})", file=sys.stderr)
-        return 1
-    r2 = bundle.summary.result_summary.get("r2", "n/a") if bundle.summary else "n/a"
-    print(
-        f"SELFTEST OK window, table ({model.rowCount()} rows), plot "
-        f"({len(x_plot)} points), fit ({bundle.result.status}, R² {r2})"
-    )
-    return 0
+        xy = window.selection.xy()
+        if xy is None:
+            print("SELFTEST FAIL: no fit input for the example", file=sys.stderr)
+            return 1
+        bundle = fit_dataset(xy, FitSpec(model=PolynomialRef(degree=2)))
+        if str(bundle.result.status) != "converged":
+            print(f"SELFTEST FAIL: fit did not converge ({bundle.result.status})", file=sys.stderr)
+            return 1
+        r2 = bundle.summary.result_summary.get("r2", "n/a") if bundle.summary else "n/a"
+
+        # Auto-fit starts by itself on import (the product rule); wait for its result
+        # without an exec() loop: pump the event loop until it lands in the project
+        dataset_id = window.selection.active_id
+        deadline = time.monotonic() + SELFTEST_TIMEOUT_SECONDS
+        while time.monotonic() < deadline:
+            app.processEvents()
+            if dataset_id is not None and window.analysis.stored_autofit(dataset_id) is not None:
+                break
+            time.sleep(0.02)
+        result = None if dataset_id is None else window.analysis.stored_autofit(dataset_id)
+        if result is None:
+            print(
+                "SELFTEST FAIL: the auto-started Auto-fit produced no result within "
+                f"{SELFTEST_TIMEOUT_SECONDS:.0f} s (mode={window.analysis.mode}, "
+                f"run in progress={window.analysis.is_autofit_running()})",
+                file=sys.stderr,
+            )
+            return 1
+        top = result.ranked[0] if result.ranked else None
+        top_text = (
+            f", autofit ({len(result.ranked)} fitted, top: {top.model_id} R² {top.metrics.r2:.4f})"
+            if top is not None and top.metrics.r2 is not None
+            else f", autofit ({len(result.ranked)} fitted)"
+        )
+        print(
+            f"SELFTEST OK window, table ({model.rowCount()} rows), plot "
+            f"({len(x_plot)} points), fit ({bundle.result.status}, R² {r2}){top_text}"
+        )
+        return 0

@@ -1,4 +1,9 @@
-"""ProjectDock: the left-hand tree of datasets and their analyses."""
+"""ProjectDock: the left-hand tree of datasets, each listing its stored analyses.
+
+Datasets are selectable (the plot, table and analysis dock follow); an analysis row under
+its dataset restores that stored result when clicked — an Auto-fit's ranking or a fit's
+tabs, without refitting anything.
+"""
 
 from collections.abc import Callable
 from typing import cast
@@ -10,7 +15,7 @@ from curvestudio.project import Project
 
 
 class ProjectTree(QTreeWidget):
-    """The tree itself: datasets are selectable, analyses are listed read-only (D1)."""
+    """The tree itself: datasets are selectable, and each lists its analyses beneath it."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -18,7 +23,9 @@ class ProjectTree(QTreeWidget):
         self.setHeaderHidden(True)
         self.setSelectionMode(QTreeWidget.SelectionMode.SingleSelection)
         self._handler: Callable[[str | None], None] | None = None
+        self._analysis_handler: Callable[[str], None] | None = None
         self._menu_handler: Callable[[str, QPoint], None] | None = None
+        self._labels: Callable[[str], str] | None = None
         self.itemSelectionChanged.connect(self._emit_selection)
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self._emit_menu_request)
@@ -26,40 +33,57 @@ class ProjectTree(QTreeWidget):
     def on_dataset_selected(self, handler: Callable[[str | None], None]) -> None:
         self._handler = handler
 
+    def on_analysis_selected(self, handler: Callable[[str], None]) -> None:
+        """Clicking an analysis row: handler(analysis_id) — the shell restores it."""
+        self._analysis_handler = handler
+
     def on_dataset_menu(self, handler: Callable[[str, QPoint], None]) -> None:
         """Right-click on a dataset row: handler(dataset_id, global position)."""
         self._menu_handler = handler
+
+    def set_analysis_labeller(self, labeller: Callable[[str], str]) -> None:
+        """How an analysis row is titled (the analysis controller names them)."""
+        self._labels = labeller
 
     def refresh(self, project: Project, active_id: str | None) -> None:
         """Rebuild the tree, keeping (or restoring) the active dataset selected."""
         self.blockSignals(True)
         self.clear()
         datasets_root = QTreeWidgetItem(["Datasets"])
-        analyses_root = QTreeWidgetItem(["Analyses"])
-        self.addTopLevelItems([datasets_root, analyses_root])
+        self.addTopLevelItem(datasets_root)
         selected: QTreeWidgetItem | None = None
         for entry in project.datasets:
             item = QTreeWidgetItem([entry.name])
             item.setData(0, Qt.ItemDataRole.UserRole, entry.id)
             item.setToolTip(0, f"dataset id: {entry.id}")
             datasets_root.addChild(item)
+            for analysis in project.analyses:
+                if analysis.dataset_id != entry.id:
+                    continue
+                label = self._labels(analysis.id) if self._labels else analysis.kind
+                child = QTreeWidgetItem([label])
+                child.setData(0, Qt.ItemDataRole.UserRole, analysis.id)
+                child.setData(0, Qt.ItemDataRole.UserRole + 1, "analysis")
+                child.setToolTip(0, f"analysis {analysis.kind}: {analysis.id}")
+                item.addChild(child)
             if entry.id == active_id:
                 selected = item
-        for analysis in project.analyses:
-            item = QTreeWidgetItem([f"{analysis.kind} — {analysis.id}"])
-            item.setFlags(Qt.ItemFlag.ItemIsEnabled)  # fits become clickable in D2
-            analyses_root.addChild(item)
         datasets_root.setExpanded(True)
-        analyses_root.setExpanded(True)
         self.blockSignals(False)
         if selected is not None:
             selected.setSelected(True)
 
     def selected_dataset_id(self) -> str | None:
-        items = self.selectedItems()
-        if not items:
-            return None
-        return cast("str | None", items[0].data(0, Qt.ItemDataRole.UserRole))
+        for item in self.selectedItems():
+            if item.data(0, Qt.ItemDataRole.UserRole + 1) is None:
+                return cast("str | None", item.data(0, Qt.ItemDataRole.UserRole))
+        return None
+
+    def selected_analysis_id(self) -> str | None:
+        for item in self.selectedItems():
+            if item.data(0, Qt.ItemDataRole.UserRole + 1) == "analysis":
+                return cast("str | None", item.data(0, Qt.ItemDataRole.UserRole))
+        return None
 
     def dataset_items(self) -> list[QTreeWidgetItem]:
         """The dataset rows (children of the Datasets root, in project order)."""
@@ -99,6 +123,11 @@ class ProjectTree(QTreeWidget):
         return labels
 
     def _emit_selection(self) -> None:
+        analysis_id = self.selected_analysis_id()
+        if analysis_id is not None:
+            if self._analysis_handler is not None:
+                self._analysis_handler(analysis_id)
+            return
         if self._handler is not None:
             self._handler(self.selected_dataset_id())
 
@@ -108,6 +137,8 @@ class ProjectTree(QTreeWidget):
         item = self.itemAt(position)
         if item is None:
             return
+        if item.data(0, Qt.ItemDataRole.UserRole + 1) == "analysis":
+            return  # only dataset rows have a context menu
         dataset_id = item.data(0, Qt.ItemDataRole.UserRole)
         if isinstance(dataset_id, str):
             self._menu_handler(dataset_id, self.viewport().mapToGlobal(position))
