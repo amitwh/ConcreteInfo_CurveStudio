@@ -20,7 +20,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from curvestudio.models.registry import list_models, register
-from curvestudio.models.spec import ModelSpec, Parameter
+from curvestudio.models.spec import ModelExample, ModelSpec, Parameter
 
 FloatArray = NDArray[np.float64]
 
@@ -351,6 +351,8 @@ STARTER_MODELS: tuple[ModelSpec, ...] = (
         id="exp_growth",
         name="Exponential growth",
         category="exponential",
+        description="Exponential growth of y with x from a starting value.",
+        example=ModelExample({"a": 2.0, "b": 0.5}, x_range=(0.0, 4.0)),
         expression="a*exp(b*x)",
         parameters=(
             Parameter("a", "Value of y at x = 0 (scale of the curve)"),
@@ -368,6 +370,8 @@ STARTER_MODELS: tuple[ModelSpec, ...] = (
         id="exp_decay_offset",
         name="Exponential decay with offset",
         category="exponential",
+        description="Exponential relaxation of y towards a constant asymptote.",
+        example=ModelExample({"a": 3.0, "b": 0.8, "c": 1.0}, x_range=(0.0, 6.0)),
         expression="a*exp(-b*x)+c",
         parameters=(
             Parameter("a", "Amplitude: distance of y from the asymptote at x = 0"),
@@ -389,6 +393,8 @@ STARTER_MODELS: tuple[ModelSpec, ...] = (
         id="exp_offset",
         name="Exponential with offset (asymptotic regression)",
         category="exponential",
+        description="A constant plus one exponential term (an asymptote at one end of the data).",
+        example=ModelExample({"a": 5.0, "b": -3.0, "c": -0.7}, x_range=(0.0, 6.0)),
         expression="a+b*exp(c*x)",
         parameters=(
             Parameter(
@@ -412,6 +418,8 @@ STARTER_MODELS: tuple[ModelSpec, ...] = (
         id="log_natural",
         name="Natural logarithm",
         category="logarithmic",
+        description="Straight line in the natural logarithm of x.",
+        example=ModelExample({"a": 1.0, "b": 2.0}, x_range=(0.5, 10.0)),
         expression="a+b*log(x)",
         parameters=(
             Parameter("a", "Value of y at x = 1"),
@@ -428,6 +436,8 @@ STARTER_MODELS: tuple[ModelSpec, ...] = (
         id="log_base10",
         name="Base-10 logarithm",
         category="logarithmic",
+        description="Straight line in the base-10 logarithm of x.",
+        example=ModelExample({"a": 1.0, "b": 2.0}, x_range=(0.5, 50.0)),
         expression="a+b*log10(x)",
         parameters=(
             Parameter("a", "Value of y at x = 1"),
@@ -444,6 +454,8 @@ STARTER_MODELS: tuple[ModelSpec, ...] = (
         id="power",
         name="Power law",
         category="power",
+        description="Power law: y proportional to x raised to a constant exponent.",
+        example=ModelExample({"a": 2.0, "b": 1.5}, x_range=(0.5, 5.0)),
         expression="a*x**b",
         parameters=(
             Parameter("a", "Value of y at x = 1 (scale of the curve)"),
@@ -461,6 +473,8 @@ STARTER_MODELS: tuple[ModelSpec, ...] = (
         id="michaelis_menten",
         name="Michaelis-Menten saturation",
         category="saturation",
+        description="Hyperbolic saturation: y rises to a plateau, half of it reached at km.",
+        example=ModelExample({"vmax": 10.0, "km": 2.0}, x_range=(0.1, 20.0)),
         expression="vmax*x/(km+x)",
         parameters=(
             Parameter("vmax", "Saturation level that y approaches at large x", lower=0.0),
@@ -480,6 +494,8 @@ STARTER_MODELS: tuple[ModelSpec, ...] = (
         id="logistic3",
         name="Three-parameter logistic",
         category="sigmoidal",
+        description="Symmetric S-curve rising from zero to an upper plateau.",
+        example=ModelExample({"k": 10.0, "r": 1.2, "x0": 3.0}, x_range=(0.0, 8.0)),
         expression="k/(1+exp(-r*(x-x0)))",
         parameters=(
             Parameter("k", "Upper plateau (carrying capacity) that y approaches", lower=0.0),
@@ -502,6 +518,8 @@ STARTER_MODELS: tuple[ModelSpec, ...] = (
         id="gaussian",
         name="Gaussian peak",
         category="peak",
+        description="Bell-shaped peak centred on mu with standard deviation s.",
+        example=ModelExample({"a": 5.0, "mu": 2.0, "s": 1.2}, x_range=(-2.0, 6.0)),
         expression="a*exp(-(x-mu)**2/(2*s**2))",
         parameters=(
             Parameter("a", "Peak height above a zero baseline (negative for a dip)"),
