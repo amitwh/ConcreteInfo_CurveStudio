@@ -829,3 +829,154 @@ textarea {
   white-space: nowrap;
   min-width: 0;
 }
+
+/* ---- Auto-fit ---- */
+
+/* The mode switch: a segmented control at the top of the analysis area. */
+.mode-switch {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.35rem 0.5rem;
+}
+
+.mode-switch__group {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.mode-switch__mode {
+  all: unset;
+  cursor: pointer;
+  padding: 0.35rem 0.9rem;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.mode-switch__mode + .mode-switch__mode {
+  border-left: 1px solid var(--border);
+}
+
+.mode-switch__mode--active {
+  background: var(--accent-weak);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.mode-switch__status {
+  margin-left: auto;
+  font-size: 0.8rem;
+}
+
+/* Progress: a determinate bar, the counts line and the live best-so-far table. */
+.autofit-progress progress {
+  width: 100%;
+  height: 0.7rem;
+}
+
+.autofit-progress__row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin: 0.4rem 0;
+}
+
+.autofit-progress__text {
+  flex: 1;
+  min-width: 12rem;
+  font-size: 0.88rem;
+}
+
+.autofit-progress__heading {
+  font-size: 0.85rem;
+  margin: 0.6rem 0 0.3rem;
+}
+
+.autofit-panel__order {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.autofit-panel__order label {
+  margin: 0;
+}
+
+.autofit-panel__order select {
+  width: auto;
+  min-width: 14rem;
+}
+
+/* Ranking rows: pointer + roving focus; the selected row is tinted. */
+.ranking-row {
+  cursor: pointer;
+}
+
+.ranking-row:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+
+.ranking-row--selected {
+  background: var(--accent-weak);
+}
+
+.ranking-row__name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.ranking-row__same {
+  display: block;
+}
+
+.ranking-row__nocurve {
+  display: block;
+}
+
+.ranking-row__equation {
+  display: block;
+  margin-bottom: 0.2rem;
+}
+
+/* The category chip next to a candidate's name. */
+.chip {
+  display: inline-block;
+  margin-left: 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0 0.4rem;
+  font-size: 0.72rem;
+  color: var(--muted);
+  vertical-align: 1px;
+}
+
+/* Sections below the ranking table. */
+.autofit-outcomes {
+  margin-top: 0.7rem;
+}
+
+.autofit-section h3 {
+  font-size: 0.9rem;
+  margin: 0.6rem 0 0.25rem;
+}
+
+.autofit-outcomes__list {
+  margin: 0.25rem 0;
+  padding-left: 1.1rem;
+  font-size: 0.85rem;
+}
+
+.autofit-options__families {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+  gap: 0.25rem 0.6rem;
+}

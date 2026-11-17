@@ -93,6 +93,8 @@ describe("FitPanel validation (mirrors the server contract)", () => {
     expect(onFit).not.toHaveBeenCalled();
   });
 
+  // 15 s timeout: 2200 synthetic keystrokes are inherently slow, and the default 5 s
+  // flakes under heavy parallel load on the build machine (observed at load ~20).
   it("rejects a custom equation longer than 2000 characters", async () => {
     const onFit = renderPanel();
     // delay: null — 2200 keystrokes still fire every event, without waiting between keys.
@@ -102,7 +104,7 @@ describe("FitPanel validation (mirrors the server contract)", () => {
     await user.click(screen.getByRole("button", { name: "Fit" }));
     expect((await screen.findByRole("alert")).textContent).toContain("2000");
     expect(onFit).not.toHaveBeenCalled();
-  });
+  }, 15_000);
 
   it("rejects a negative seed and a non-positive time limit", async () => {
     const onFit = renderPanel();

@@ -45,13 +45,22 @@ src/
 ├── format.ts     number/date formatting — "not defined" is n/a, never 0 or NaN
 ├── hooks/        useJobPolling (job state machine: backoff, cancel, error caps)
 ├── pages/        Login, Register, About, Workspace
-├── workspace/    DatasetsSidebar (upload + column pickers), ChartPanel (toggles),
-│                 FitPanel (model picker, custom equations, bounds), traces (the
-│                 no-curve invariant), spec (FitSpec assembly + validation)
-│                 └── results/ Parameters, Statistics, Residuals, Equation, Predict,
-│                     History tabs
+├── workspace/    ModeSwitch (Auto-fit | Manual fit, remembered per user), mode (its
+│                 persistence), DatasetsSidebar (upload + column pickers), ChartPanel
+│                 (toggles), FitPanel (model picker, custom equations, bounds), traces
+│                 (the no-curve invariant), spec (FitSpec assembly + validation)
+│   ├── autofit/  useAutofit (the per-dataset Auto-fit state machine: auto-start,
+│   │             poll 300 ms→1.5 s, cancel-keeps-partial), AutofitPanel (progress +
+│   │             ranking + ordering selector + outcome sections + export),
+│   │             RankingTable (keyboard-navigable rows), AutofitOptions (collapsed
+│   │             disclosure), rowCurve (a stored row's curve → the chart's bundle)
+│   └── results/  Parameters, Statistics, Residuals, Equation, Predict, History tabs
 └── styles.css    the single stylesheet (CSS variables, light/dark, ≥400 px)
 ```
+
+Auto-fit leads, per the product rule: selecting or uploading a dataset starts a run (or
+shows the latest stored one) automatically, in either mode; Manual fit is the existing
+FitPanel/tabs, shown only when selected.
 
 ## Notes and trade-offs
 
