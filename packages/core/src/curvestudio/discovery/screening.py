@@ -12,6 +12,9 @@ from curvestudio.discovery.types import AutoFitError, CandidateRef, PolynomialRe
 MIN_ACTIVE_POINTS = 4
 """Fewer active points than this refuses the whole run."""
 
+CONSTANT_RESPONSE_RTOL = 1e-12
+"""A y range at or below this fraction of ``max(1, |y|max)`` is a constant response."""
+
 
 @dataclass(frozen=True)
 class Screening:
@@ -34,7 +37,8 @@ def screen(data: XY, candidates: Sequence[CandidateRef]) -> Screening:
     distinct x values (``k`` distinct non-zero values for a polynomial through the origin).
 
     Raises:
-        AutoFitError: ``TOO_FEW_POINTS`` with fewer than 4 active points.
+        AutoFitError: ``TOO_FEW_POINTS`` with fewer than 4 active points, ``NO_X_VARIATION``
+            when every active x is the same, ``CONSTANT_RESPONSE`` when every active y is.
     """
     active = np.ones(data.x.size, dtype=bool) if data.weights is None else data.weights > 0.0
     x, y = data.x[active], data.y[active]
@@ -46,6 +50,19 @@ def screen(data: XY, candidates: Sequence[CandidateRef]) -> Screening:
             f"found {n_active}",
         )
     distinct = int(np.unique(x).size)
+    if distinct < 2:
+        raise AutoFitError(
+            "NO_X_VARIATION",
+            f"every active x value is {float(x[0]):.6g}: a curve cannot be fitted to a single "
+            "x, so there is nothing to rank; check that the right column was chosen as x",
+        )
+    if float(np.ptp(y)) <= CONSTANT_RESPONSE_RTOL * max(1.0, float(np.max(np.abs(y)))):
+        raise AutoFitError(
+            "CONSTANT_RESPONSE",
+            f"every active y value is {float(y[0]):.6g}: a constant response is fitted "
+            "perfectly by any model with an offset, so no ranking would mean anything; check "
+            "that the right column was chosen as y",
+        )
     distinct_nonzero = int(np.unique(x[x != 0.0]).size)
 
     runnable: list[CandidateRef] = []

@@ -119,21 +119,55 @@ def test_zero_weight_points_do_not_count() -> None:
     with pytest.raises(AutoFitError, match="found 3"):
         screen(data, [LINE])
     # the zero-weight points are also invisible to applicability checks
-    data = _xy([-1.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [1.0] * 8, [0, 0, 1, 1, 1, 1, 1, 1])
+    data = _xy(
+        [-1.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+        [1.0, 2.0, 1.0, 2.0, 1.0, 2.0, 1.0, 2.0],
+        [0, 0, 1, 1, 1, 1, 1, 1],
+    )
     result = screen(data, [LOG])
     assert result.runnable == [LOG]
     assert result.n_active == 6
 
 
-def test_repeated_x_limits_models_by_distinct_values() -> None:
-    data = _xy([2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0], [1, 2, 3, 4, 5, 6, 7, 8])
-    result = screen(data, [PolynomialRef(degree=1), LINE])
-    assert result.runnable == []
-    assert result.skipped["line"] == ("needs at least 2 distinct x values, has 1",)
+def test_two_distinct_x_values_limit_models_by_distinct_values() -> None:
+    data = _xy([2.0, 2.0, 2.0, 2.0, 3.0, 3.0, 3.0, 3.0], [1, 2, 3, 4, 5, 6, 7, 8])
+    result = screen(data, [PolynomialRef(degree=2), LINE, CUBIC])
+    assert [c.id for c in result.runnable] == ["line"]  # k = 2 needs only 2 distinct x
+    assert result.skipped["cubic"] == ("needs at least 4 distinct x values, has 2",)
+    assert result.skipped["poly2"] == ("needs at least 3 distinct x values, has 2",)
+
+
+def test_single_repeated_x_refuses_with_no_x_variation() -> None:
+    data = _xy([2.0] * 8, [1, 2, 3, 4, 5, 6, 7, 8])
+    with pytest.raises(AutoFitError) as excinfo:
+        screen(data, [LINE])
+    assert excinfo.value.code == "NO_X_VARIATION"
+    assert "x" in str(excinfo.value)
+    with pytest.raises(AutoFitError) as excinfo:
+        screen(data, [])  # the API's early check path
+    assert excinfo.value.code == "NO_X_VARIATION"
+
+
+@pytest.mark.parametrize("value", [0.0, 5.0, 1e9, -3.5e-4])
+def test_constant_response_refuses_with_a_message(value: float) -> None:
+    data = _xy(list(range(10)), [value] * 10)
+    with pytest.raises(AutoFitError) as excinfo:
+        screen(data, [])
+    assert excinfo.value.code == "CONSTANT_RESPONSE"
+    assert "constant" in str(excinfo.value)
+
+
+def test_constant_response_is_judged_on_active_points_and_has_a_tolerance() -> None:
+    y = [3.0, 3.0, 3.0, 3.0, 3.0 + 1e-14, 9.0, 11.0, 50.0]
+    with pytest.raises(AutoFitError) as excinfo:
+        screen(_xy(list(range(8)), y, [1, 1, 1, 1, 1, 0, 0, 0]), [])
+    assert excinfo.value.code == "CONSTANT_RESPONSE"
+    # a real, if small, variation is not constant
+    screen(_xy(list(range(8)), [1.0 + 1e-6 * i for i in range(8)]), [])
 
 
 def test_polynomial_through_origin_needs_non_zero_x_values() -> None:
-    data = _xy([0.0, 0.0, 0.0, 0.0, 0.0, 3.0, 3.0, 3.0], [0, 0, 0, 0, 0, 1, 1, 1])
+    data = _xy([0.0, 0.0, 0.0, 0.0, 0.0, 3.0, 3.0, 3.0], [0, 0, 0, 0, 1, 1, 1, 2])
     result = screen(data, [PolynomialRef(degree=2, through_origin=True)])
     assert result.runnable == []
     (reason,) = result.skipped["poly2_origin"]
@@ -141,8 +175,8 @@ def test_polynomial_through_origin_needs_non_zero_x_values() -> None:
 
 
 def test_screening_reports_every_reason() -> None:
-    data = _xy([-1.0, -1.0, -1.0, -1.0], [1, 2, 3, 4])
+    data = _xy([-1.0, -1.0, -2.0, -2.0], [1, 2, 3, 4])
     result = screen(data, [LOG])
     reasons = result.skipped["logarithmic"]
     assert "x must be strictly positive for ln" in reasons
-    assert any("distinct" in r for r in reasons)
+    assert any("active points" in r for r in reasons)

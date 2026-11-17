@@ -251,7 +251,9 @@ MODELS: tuple[ModelSpec, ...] = (
         expression="k*x**n",
         parameters=_P_CARBONATION,
         initial_guess=bespoke_guess(_P_CARBONATION, _carbonation_guess),
-        domain_check=domain_check(x_non_negative=True),
+        domain_check=domain_check(
+            x_positive_for="k*x**n (its parameter derivative is not defined at x <= 0)"
+        ),
         references=(_PAPADAKIS, _NEVILLE),
         assumptions=(
             "One concrete, one relative-humidity and CO2 environment, measured from the same "

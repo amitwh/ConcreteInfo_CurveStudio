@@ -208,9 +208,11 @@ def test_same_curve_rows_are_tied_not_dropped() -> None:
     ]
     ranked = rank(rows, RankBy.AICC)
     assert len(ranked) == 4  # nothing dropped
-    # the tied pair stays adjacent and shares the best member's rank; the next rank skips
-    assert ids(ranked) == ["mm", "langmuir_copy", "other", "third"]
-    assert [r.rank for r in ranked] == [1, 1, 3, 4]
+    # the copy has more parameters than mm: it is not tied with it, it keeps its own place
+    # (behind the better-AICc "other") and says which row it is redundant with
+    assert ids(ranked) == ["mm", "other", "langmuir_copy", "third"]
+    assert [r.rank for r in ranked] == [1, 2, 3, 4]
+    assert [r.redundant_with for r in ranked] == [None, None, "mm", None]
 
 
 def test_find_same_curves_edge_cases() -> None:
@@ -219,3 +221,87 @@ def test_find_same_curves_edge_cases() -> None:
     # a zero data range compares exactly
     assert find_same_curves({"a": [1.0, 1.0], "b": [1.0, 1.0 + 1e-12]}, 0.0) == {"a": (), "b": ()}
     assert find_same_curves({"a": [1.0, 1.0], "b": [1.0, 1.0]}, 0.0) == {"a": ("b",), "b": ("a",)}
+
+
+def with_(base: RankedFit, **changes: object) -> RankedFit:
+    return base.model_copy(update=changes)
+
+
+def test_same_curve_rows_with_equal_k_tie_and_the_generic_model_leads() -> None:
+    same = ("engineering_mm", "mm", "mm_generated")
+    rows = [
+        with_(row("engineering_mm", 2, aicc=10.0, same=same), category="engineering.strength"),
+        with_(row("mm_generated", 2, aicc=10.0, same=same), category="saturation", generated=True),
+        with_(row("mm", 2, aicc=10.0, same=same), category="saturation"),
+        row("lone", 2, aicc=30.0),
+    ]
+    ranked = rank(rows, RankBy.BEST_OVERALL)
+    assert ids(ranked[:3]) == ["mm", "mm_generated", "engineering_mm"]
+    assert [r.rank for r in ranked[:3]] == [1, 1, 1]
+    assert all(r.redundant_with is None for r in ranked)
+    assert ids(ranked)[3] == "lone"
+
+
+def test_a_larger_same_curve_model_never_outranks_a_better_aicc_row() -> None:
+    rows = [
+        row("simple", 2, aicc=100.0, same=("big",)),
+        row("other", 3, aicc=101.0),
+        row("big", 5, aicc=100.5, same=("simple",)),
+    ]
+    ranked = rank(rows, RankBy.AICC)
+    assert ids(ranked) == ["simple", "big", "other"]  # AICc order; "big" is only redundant
+    best = {r.model_id: r for r in ranked}
+    assert best["big"].redundant_with == "simple"
+    assert best["big"].rank == 2 and best["other"].rank == 3
+
+
+def test_exact_fits_form_a_block_above_the_rest_ordered_by_k_then_cv() -> None:
+    rows = [
+        row("good", 3, aicc=-50.0, cv_rmse=0.1),
+        with_(row("exact_big", 5, cv_rmse=0.0), status="exact_fit"),
+        with_(row("exact_small", 2, cv_rmse=0.3), status="exact_fit"),
+        with_(row("exact_small_better_cv", 2, cv_rmse=0.1), status="exact_fit"),
+    ]
+    for rank_by in (RankBy.BEST_OVERALL, RankBy.R2, RankBy.RMSE, RankBy.CV_RMSE):
+        assert ids(rank(rows, rank_by))[:3] == ["exact_small_better_cv", "exact_small", "exact_big"]
+        assert ids(rank(rows, rank_by))[3] == "good"
+
+
+def test_degenerate_rows_rank_below_every_clean_row() -> None:
+    rows = [
+        with_(row("degenerate", 4, aicc=-100.0), degenerate=True),
+        row("clean", 2, aicc=-10.0),
+    ]
+    assert ids(rank(rows, RankBy.BEST_OVERALL)) == ["clean", "degenerate"]
+    exact = [
+        with_(row("d", 2), status="exact_fit", degenerate=True),
+        with_(row("c", 6), status="exact_fit"),
+    ]
+    assert ids(rank(exact, RankBy.BEST_OVERALL)) == ["c", "d"]
+
+
+def test_flagged_rows_fall_behind_clean_rows_of_nearly_the_same_aicc() -> None:
+    flagged = with_(
+        row("sine_free_frequency", 4, aicc=0.0),
+        warnings=("MULTISTART_DISAGREE: sse=[1, 2]", "PARAMETER_AT_BOUND: w"),
+    )
+    clean = row("line", 2, aicc=5.0)
+    far = row("far", 2, aicc=40.0)
+    assert ids(rank([flagged, clean, far], RankBy.BEST_OVERALL)) == [
+        "line",
+        "sine_free_frequency",
+        "far",
+    ]
+    # the reported AICc is untouched, and a flagged row still wins when it is far better
+    assert rank([flagged], RankBy.BEST_OVERALL)[0].metrics.aicc == 0.0
+    much_better = with_(flagged, metrics=flagged.metrics.model_copy(update={"aicc": -30.0}))
+    assert ids(rank([much_better, clean], RankBy.BEST_OVERALL))[0] == "sine_free_frequency"
+
+
+def test_the_core_model_headlines_a_same_curve_group_of_equal_size() -> None:
+    same = ("holling_ii", "michaelis_menten")
+    rows = [
+        with_(row("holling_ii", 2, aicc=10.0, same=same), category="saturation"),
+        with_(row("michaelis_menten", 2, aicc=10.0, same=same), category="saturation"),
+    ]
+    assert ids(rank(rows, RankBy.BEST_OVERALL)) == ["michaelis_menten", "holling_ii"]

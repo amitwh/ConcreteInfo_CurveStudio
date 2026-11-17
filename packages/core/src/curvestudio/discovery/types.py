@@ -48,9 +48,12 @@ class AutoFitConfig(BaseModel):
         include_polynomials: also try polynomials (``polyN`` and ``polyN_origin``).
         include_generated: also try models of lazily generated families.
         exhaustive: include the long tail of generated families and raise the parameter cap.
-        max_params: largest parameter count tried. ``None`` means
-            ``min(6, max(1, n_active // 4))``, or ``min(10, n_active - 3)`` when exhaustive.
-            Whatever the value, a model never gets more than ``n_active - 3`` parameters.
+        max_params: largest parameter count tried. ``None`` means ``n_active - 3`` when
+            ``families`` is explicit (you asked for those models; only the data can rule one
+            out), ``min(10, n_active - 3)`` when exhaustive, else
+            ``min(6, max(2, n_active // 3))``. Whatever the value, a model never gets more
+            than ``n_active - 3`` parameters. Every candidate the cap leaves out is listed in
+            the result's ``skipped`` with its parameter count.
         n_starts: multistart count per candidate.
         seed: base seed; a candidate's seed is derived from it and the candidate id, so
             results do not depend on scheduling order.
@@ -58,6 +61,11 @@ class AutoFitConfig(BaseModel):
         workers: worker processes; ``None`` means ``max(1, cpu_count - 1)`` and ``1`` runs
             in-process.
         cv_folds: folds of the cross-validation RMSE; ``None`` disables it.
+        staged_starts: fit every candidate from two starts first and give the full ``n_starts``
+            only to those that could still change the ranking (AICc within 10 of the best, or
+            not converged but with an SSE within three times the best converged SSE); the
+            rest keep their two-start outcome (``stage="screen"``). Turn off to give every
+            candidate the full multistart.
         custom_models: user equations to fit alongside the catalogue. They are always
             candidates (neither ``families`` nor ``max_params`` filters them); the data
             alone decides whether one can be fitted. Ids must be unique and must not
@@ -80,6 +88,7 @@ class AutoFitConfig(BaseModel):
     time_limit: Annotated[float, Field(gt=0.0, allow_inf_nan=False)] = 20.0
     workers: Annotated[int, Field(ge=1)] | None = None
     cv_folds: Annotated[int, Field(ge=2)] | None = 5
+    staged_starts: bool = True
     custom_models: tuple[CustomModelDefinition, ...] = ()
     curve_top_n: Annotated[int, Field(ge=0, le=50)] = 5
 
@@ -166,6 +175,18 @@ class RankedFit(BaseModel):
     text (``"exact_fit"`` for a fit with SSE = 0). ``parameters`` are the fitted estimates;
     ``warnings`` are the fit's own; ``overfitting_note`` names a much simpler candidate that
     fits almost as well, when there is one.
+
+    ``delta_aicc`` (AICc minus the lowest AICc of the run) and ``akaike_weight`` (relative
+    likelihood normalised over every candidate with an AICc) are ``None`` exactly when the
+    row has no AICc (exact fits, tiny samples); they use the true AICc, never the ranking
+    adjustment for unreliable fits. ``degenerate`` marks a fit whose optimum collapsed onto a
+    simpler model (a parameter at its bound with negligible effect, or a singular Jacobian);
+    such rows rank below every non-degenerate row. ``generated`` says the model comes from a
+    generated family, not a hand-written one. ``shape_parameters`` counts its free-frequency
+    parameters, which the ranking charges as extra effective parameters.
+    ``redundant_with`` names the canonical row when
+    this row draws the same curve as a model with fewer parameters: it is then not tied with
+    that row but listed as redundant with it.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -181,3 +202,9 @@ class RankedFit(BaseModel):
     status: str = "converged"
     warnings: tuple[str, ...] = ()
     overfitting_note: str | None = None
+    generated: bool = False
+    shape_parameters: int = 0
+    degenerate: bool = False
+    delta_aicc: FiniteFloat | None = None
+    akaike_weight: FiniteFloat | None = None
+    redundant_with: str | None = None

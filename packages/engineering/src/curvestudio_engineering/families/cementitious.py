@@ -295,7 +295,9 @@ MODELS: tuple[ModelSpec, ...] = (
         expression="R_u*x**n/(k**n+x**n)",
         parameters=_P_POZZOLANIC,
         initial_guess=bespoke_guess(_P_POZZOLANIC, _pozzolanic_guess),
-        domain_check=domain_check(x_non_negative=True),
+        domain_check=domain_check(
+            x_positive_for="x**n (its parameter derivative is not defined at x <= 0)"
+        ),
         references=(_TAYLOR, _MEHTA_MONTEIRO),
         assumptions=(
             "One pozzolan, one lime or cement environment and one temperature; x is reaction "

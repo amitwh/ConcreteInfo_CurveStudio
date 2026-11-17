@@ -11,18 +11,31 @@ built, an optimizer that raises, statistics that overflow all come back as an ou
 """
 
 import hashlib
+import math
+import os
+import signal
+import sys
+import threading
 import time
 from dataclasses import dataclass
+from typing import Literal
 
 import numpy as np
+import sympy
 from numpy.typing import NDArray
 
 from curvestudio.data import XY
 from curvestudio.discovery.candidates import resolve_spec
 from curvestudio.discovery.result import CandidateOutcome
-from curvestudio.discovery.types import CandidateMetrics, CandidateRef, PolynomialRef
+from curvestudio.discovery.types import (
+    CandidateMetrics,
+    CandidateRef,
+    PolynomialRef,
+    RegisteredRef,
+)
+from curvestudio.expressions import to_sympy
 from curvestudio.fitting import FitConfig, FitResult, FitStatus, fit, fit_polynomial
-from curvestudio.models import ModelSpec, load_plugins
+from curvestudio.models import ModelSpec, list_models, load_plugins
 from curvestudio.statistics import (
     NonlinearFitter,
     PolynomialFitter,
@@ -34,14 +47,19 @@ from curvestudio.statistics.validation import Fitter
 
 FloatArray = NDArray[np.float64]
 
-EXACT_FIT_RELATIVE_TOLERANCE = 1e-8
-"""A fit whose RMSE is below this fraction of the data range counts as exact.
+DEGENERATE_CONDITION = 1e8
+"""A fit whose column-normalised Jacobian is worse conditioned than this, with a parameter
+at a bound, has collapsed onto a simpler model."""
 
-Noiseless data never gives ``SSE == 0`` exactly (rounding leaves ~1e-30), and the Gaussian
-likelihood of such a fit is decided by rounding noise, so its information criteria would
-rank the candidates by numerical dust. Below this tolerance the fit is exact for every
-purpose a measurement can have; above it, real residuals exist and the criteria are valid.
-"""
+DEGENERATE_EFFECT = 1e-6
+"""A parameter at a bound whose ``|value| * rms(df/dparameter)`` is below this fraction of the
+data range does nothing measurable (a rate of 1e-8 over an x span of 10, a zero amplitude)."""
+
+BOUND_TOLERANCE = 1e-6
+"""Relative distance (to ``max(1, |bound|)``) within which a value counts as at its bound."""
+
+PARENT_POLL_SECONDS = 1.0
+PR_SET_PDEATHSIG = 1
 
 _NOTE_LIMIT = 3
 """How many cross-validation fold failures a note spells out."""
@@ -72,11 +90,47 @@ class CandidateJob:
     n_starts: int
     time_limit: float
     cv_folds: int | None
+    stage: Literal["screen", "final"] = "final"
+    start: dict[str, float] | None = None
 
 
-def init_worker() -> None:
-    """Pool initialiser: load the model plugins once, before the first job needs them."""
+def _watch_parent(parent_pid: int) -> None:
+    """Exit this worker as soon as the process that started it is gone."""
+    while True:
+        time.sleep(PARENT_POLL_SECONDS)
+        if os.getppid() != parent_pid:
+            os._exit(1)
+
+
+def init_worker(parent_pid: int, use_death_signal: bool = False) -> None:
+    """Pool initialiser: die with the parent, then load the model plugins.
+
+    A worker must not outlive a parent that was killed (``SIGKILL``, the OOM killer): it would
+    keep a core busy until its candidate ends, or forever. A daemon thread polls the parent
+    pid and exits when it changes; with ``use_death_signal`` (Linux, and only when the pool
+    was started from the parent's main thread, because the kernel ties the signal to the
+    *thread* that created the child) the kernel also sends ``SIGKILL`` at parent death, which
+    works even while the worker is stuck inside native code and holds the interpreter lock.
+    """
+    if use_death_signal:
+        _set_parent_death_signal()
+    if os.getppid() != parent_pid:  # the parent died before this worker came up
+        os._exit(1)
+    threading.Thread(target=_watch_parent, args=(parent_pid,), daemon=True).start()
     load_plugins()
+
+
+def _set_parent_death_signal() -> None:
+    """Ask the Linux kernel for ``SIGKILL`` when the parent dies; a no-op elsewhere."""
+    if not sys.platform.startswith("linux"):
+        return
+    try:
+        import ctypes
+
+        libc = ctypes.CDLL(None, use_errno=True)
+        libc.prctl(PR_SET_PDEATHSIG, signal.SIGKILL, 0, 0, 0)
+    except OSError, AttributeError:  # best effort: the polling thread still covers it
+        return
 
 
 def describe(ref: CandidateRef, spec: ModelSpec | None) -> tuple[str, str]:
@@ -88,6 +142,40 @@ def describe(ref: CandidateRef, spec: ModelSpec | None) -> tuple[str, str]:
     return spec.name, spec.category
 
 
+def shape_parameter_count(spec: ModelSpec | None) -> int:
+    """How many parameters are free *frequencies*: they multiply ``x`` inside ``sin``, ``cos``
+    or ``tan``.
+
+    Searching a frequency fits noise much more easily than a linear coefficient does (the
+    likelihood has many local maxima, so the best of them is biased), so the ranking charges
+    each one as an extra effective parameter (see
+    :func:`~curvestudio.discovery.ranking.ranking_penalty`). Exponents (``x**p``) are not
+    counted: a power law is a legitimate model whose exponent is its whole point, and charging
+    it would push true power laws down the list. Rates (``exp(-b*x)``) and phases are not
+    counted either. Polynomials have none; an expression this check cannot read counts as none.
+    """
+    if spec is None:
+        return 0
+    names = (*spec.variables, *(p.name for p in spec.parameters))
+    try:
+        symbols = {n: sympy.Symbol(n, real=True) for n in names}
+        expr = to_sympy(spec.expression, symbols)
+    except Exception:
+        return 0
+    x = symbols[spec.variables[0]]
+    params = {symbols[p.name] for p in spec.parameters}
+    found: set[sympy.Symbol] = set()
+    for node in sympy.preorder_traversal(expr):
+        if isinstance(node, sympy.sin | sympy.cos | sympy.tan):
+            found |= params & sympy.diff(node.args[0], x).free_symbols
+    return len(found)
+
+
+def is_generated(ref: CandidateRef) -> bool:
+    """Whether ``ref`` is a model of a lazily generated family, not a hand-written one."""
+    return isinstance(ref, RegisteredRef) and ref.model_id not in {m.id for m in list_models()}
+
+
 def fit_candidate(
     data: XY,
     ref: CandidateRef,
@@ -96,12 +184,17 @@ def fit_candidate(
     seed: int,
     n_starts: int,
     time_limit: float | None,
+    start: dict[str, float] | None = None,
 ) -> FitResult:
-    """Fit one candidate exactly as a job does (shared with the "open this row" helper)."""
+    """Fit one candidate exactly as a job does (shared with the "open this row" helper).
+
+    ``start`` overrides the model's initial guess (a warm start from an earlier fit).
+    """
     if isinstance(ref, PolynomialRef):
         return fit_polynomial(data, ref.degree, through_origin=ref.through_origin)
     assert spec is not None
-    return fit(spec, data, FitConfig(n_starts=n_starts, seed=seed, time_limit=time_limit))
+    config = FitConfig(n_starts=n_starts, seed=seed, time_limit=time_limit, initial=start)
+    return fit(spec, data, config)
 
 
 def run_candidate(job: CandidateJob) -> CandidateOutcome:
@@ -131,14 +224,55 @@ def run_candidate(job: CandidateJob) -> CandidateOutcome:
     return outcome.model_copy(update={"elapsed_seconds": time.perf_counter() - started})
 
 
-def _is_exact(fit_result: FitResult, y: FloatArray) -> bool:
-    stats = fit_result.stats
-    assert stats is not None
-    if stats.sse == 0.0:
-        return True
+def degenerate_reason(spec: ModelSpec | None, data: XY, fit_result: FitResult) -> str | None:
+    """Why the optimum of ``fit_result`` is degenerate, or ``None`` when it is not.
+
+    A fit is degenerate when some parameter sits at a bound of the model (within
+    ``BOUND_TOLERANCE``) and either has a negligible effect (``|value| * rms(df/dparameter)``
+    below ``DEGENERATE_EFFECT`` of the data range, as a rate of 1e-8 does over an x span of
+    10) or the column-normalised Jacobian is singular (condition above ``DEGENERATE_CONDITION``):
+    the model has collapsed onto a simpler one, whose curve it merely copies. Polynomials are
+    never degenerate. Needs a finite Jacobian at the optimum, else ``None``.
+    """
+    if spec is None:
+        return None
+    values = {p.name: p.value for p in fit_result.parameters}
+    at_bound = [
+        p.name
+        for p in spec.parameters
+        if any(
+            math.isfinite(b) and abs(values[p.name] - b) <= BOUND_TOLERANCE * max(1.0, abs(b))
+            for b in (p.lower, p.upper)
+        )
+    ]
+    if not at_bound:
+        return None
+    active = np.ones(data.x.size, dtype=bool) if data.weights is None else data.weights > 0.0
+    x, y = data.x[active], data.y[active]
+    with np.errstate(all="ignore"):
+        jac = np.asarray(spec.jacobian(x, **values), dtype=np.float64)
+    if not bool(np.all(np.isfinite(jac))):
+        return None
+    names = [p.name for p in spec.parameters]
     spread = float(np.ptp(y))
-    floor = 64.0 * float(np.finfo(np.float64).eps) * float(np.max(np.abs(y)))
-    return stats.rmse <= max(EXACT_FIT_RELATIVE_TOLERANCE * spread, floor)
+    rms = np.sqrt(np.mean(jac * jac, axis=0))
+    for name in at_bound:
+        effect = abs(values[name]) * float(rms[names.index(name)])
+        if effect <= DEGENERATE_EFFECT * spread:
+            return (
+                f"parameter {name} is at its bound ({values[name]:.3g}) and changes the curve "
+                f"by at most {effect:.2g}, under {DEGENERATE_EFFECT:g} of the data range: the "
+                "model has collapsed onto a simpler one"
+            )
+    norms = np.linalg.norm(jac, axis=0)
+    if bool(np.all(norms > 0.0)):
+        condition = float(np.linalg.cond(jac / norms))
+        if condition > DEGENERATE_CONDITION:
+            return (
+                f"parameter {', '.join(at_bound)} is at its bound and the Jacobian is singular "
+                f"(condition {condition:.2g}): the parameters are not identifiable"
+            )
+    return None
 
 
 def _score(job: CandidateJob, spec: ModelSpec | None, name: str, category: str) -> CandidateOutcome:
@@ -146,7 +280,13 @@ def _score(job: CandidateJob, spec: ModelSpec | None, name: str, category: str) 
     data = XY(job.x, job.y, job.weights, job.x_name, job.y_name, job.fingerprint)
     seed = candidate_seed(job.seed, ref.id)
     result = fit_candidate(
-        data, ref, spec, seed=seed, n_starts=job.n_starts, time_limit=job.time_limit
+        data,
+        ref,
+        spec,
+        seed=seed,
+        n_starts=job.n_starts,
+        time_limit=job.time_limit,
+        start=job.start,
     )
 
     def outcome(
@@ -161,6 +301,9 @@ def _score(job: CandidateJob, spec: ModelSpec | None, name: str, category: str) 
                 "reason": reason,
                 "fit": result,
                 "metrics": metrics,
+                "stage": job.stage,
+                "generated": is_generated(ref),
+                "shape_parameters": shape_parameter_count(spec),
             }
         )
 
@@ -177,7 +320,12 @@ def _score(job: CandidateJob, spec: ModelSpec | None, name: str, category: str) 
     if stats is None:
         return outcome("failed", "the converged fit carries no statistics")
 
-    exact = _is_exact(result, job.y)
+    reason_degenerate = degenerate_reason(spec, data, result)
+    if reason_degenerate is not None:
+        result = result.model_copy(
+            update={"warnings": (*result.warnings, f"DEGENERATE_FIT: {reason_degenerate}")}
+        )
+    exact = stats.sse == 0.0
     aicc: float | None = None
     bic: float | None = None
     if not exact:
@@ -201,7 +349,7 @@ def _score(job: CandidateJob, spec: ModelSpec | None, name: str, category: str) 
         cv_rmse=cv_rmse,
     )
     if exact:
-        reason = "exact fit (residuals at rounding level): information criteria are not defined"
+        reason = "exact fit (SSE = 0): information criteria are not defined"
         return outcome("exact_fit", "; ".join(filter(None, (reason, note))), metrics)
     return outcome("converged", note, metrics)
 

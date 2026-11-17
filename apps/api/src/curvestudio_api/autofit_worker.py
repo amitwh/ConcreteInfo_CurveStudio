@@ -42,14 +42,15 @@ class _Progress:
         self._total = total
         self._skipped = skipped
         self._rank_by = config.rank_by
-        self._outcomes: list[CandidateOutcome] = []
+        # a candidate promoted to the full multistart arrives twice: the later outcome replaces
+        self._outcomes: dict[str, CandidateOutcome] = {}
         self._started = time.monotonic()
         self._last = float("-inf")
 
     def snapshot(self, *, partial: bool = False) -> dict[str, Any]:
-        converged = sum(1 for o in self._outcomes if o.outcome in _FITTED)
-        failed = sum(1 for o in self._outcomes if o.outcome in _UNCONVERGED)
-        top = partial_ranking(self._outcomes, self._rank_by)[:TOP_ROWS]
+        converged = sum(1 for o in self._outcomes.values() if o.outcome in _FITTED)
+        failed = sum(1 for o in self._outcomes.values() if o.outcome in _UNCONVERGED)
+        top = partial_ranking(list(self._outcomes.values()), self._rank_by)[:TOP_ROWS]
         return {
             "done": len(self._outcomes),
             "total": self._total,
@@ -65,7 +66,7 @@ class _Progress:
         self._send()
 
     def add(self, outcome: CandidateOutcome) -> None:
-        self._outcomes.append(outcome)
+        self._outcomes[outcome.candidate_id] = outcome
         if time.monotonic() - self._last >= PROGRESS_INTERVAL_S:
             self._send()
 

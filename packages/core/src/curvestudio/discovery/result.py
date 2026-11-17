@@ -8,6 +8,7 @@ ranking criterion never refits anything and never needs the per-point fit vector
 """
 
 import json
+import math
 from collections.abc import Sequence
 from itertools import pairwise
 from typing import Any, Literal, Self
@@ -46,7 +47,10 @@ class CandidateOutcome(BaseModel):
     cross-validation was incomplete). ``fit`` is kept for every candidate that was fitted,
     including the ones that did not converge, so the parameters it stopped at can be
     inspected. ``same_curve_as`` lists the fitted candidates whose curve coincides with
-    this one.
+    this one. ``stage`` is ``"screen"`` for a candidate fitted from only a few starts that
+    was not promoted to the full multistart (a later outcome of the same candidate with
+    stage ``"final"`` replaces it); ``on_subsample`` marks a candidate fitted on the
+    deterministic subsample of a very large dataset only.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -60,36 +64,125 @@ class CandidateOutcome(BaseModel):
     metrics: CandidateMetrics | None = None
     elapsed_seconds: FiniteFloat = 0.0
     same_curve_as: tuple[str, ...] = ()
+    stage: Literal["screen", "final"] = "final"
+    generated: bool = False
+    shape_parameters: int = 0
+    on_subsample: bool = False
+
+
+EXACT_RELATIVE_TOLERANCE = 1e-6
+"""Data are exact when the best fit's RMSE is below this fraction of the y range."""
+
+EXACT_SAME_CURVE_RTOL = 1e-6
+"""In the exact regime two curves coincide within this fraction of the data range (the
+optimizer stops at a different point of the flat valley for each model)."""
+
+
+def _y_range(outcomes: Sequence[CandidateOutcome]) -> float | None:
+    """Peak-to-peak of the response, recovered from the fitted values plus residuals."""
+    for o in outcomes:
+        if o.fit is not None and o.fit.fitted and len(o.fit.fitted) == len(o.fit.residuals):
+            y = np.asarray(o.fit.fitted, dtype=np.float64) + np.asarray(
+                o.fit.residuals, dtype=np.float64
+            )
+            return float(np.ptp(y))
+    return None
+
+
+def _regime_exact(outcomes: Sequence[CandidateOutcome], y_range: float) -> tuple[bool, float]:
+    """Whether the data are reproduced exactly, and the RMSE at or below which a fit counts."""
+    rmses = [
+        o.metrics.rmse
+        for o in outcomes
+        if o.outcome in _FITTED and o.metrics is not None and o.metrics.rmse is not None
+    ]
+    if not rmses:
+        return False, 0.0
+    best = min(rmses)
+    if best > EXACT_RELATIVE_TOLERANCE * y_range:
+        return False, 0.0
+    return True, max(10.0 * best, EXACT_RELATIVE_TOLERANCE * y_range)
+
+
+def resolve_exactness(
+    outcomes: Sequence[CandidateOutcome], y_range: float | None = None
+) -> list[CandidateOutcome]:
+    """Decide, for the whole dataset, whether it is reproduced exactly, and mark exact fits.
+
+    The data are *exact* when some fitted candidate has ``SSE = 0`` or an RMSE of at most
+    ``1e-6`` of the y range (noiseless data; rounding and optimizer tolerance leave residuals
+    of 1e-8 to 1e-14, never exactly zero). In that regime every converged candidate whose RMSE
+    is at most ``max(10 * best RMSE, 1e-6 * range)`` becomes an ``exact_fit`` with no AICc
+    or BIC: with the noise gone, information criteria only measure rounding dust and would
+    rank a degenerate near-copy ahead of the model that generated the data. Outside it the
+    outcomes are returned unchanged. Subsample outcomes and full-data outcomes of a very large
+    run are decided separately. ``y_range`` defaults to the one implied by the fits.
+    """
+    result: list[CandidateOutcome] = []
+    for on_subsample in (False, True):
+        group = [o for o in outcomes if o.on_subsample == on_subsample]
+        if not group:
+            continue
+        spread = y_range if y_range is not None else _y_range(group)
+        exact, limit = (False, 0.0) if spread is None else _regime_exact(group, spread)
+        for o in group:
+            if (
+                exact
+                and o.outcome == "converged"
+                and o.metrics is not None
+                and o.metrics.rmse is not None
+                and o.metrics.rmse <= limit
+            ):
+                note = (
+                    "exact fit (residuals at rounding level, RMSE "
+                    f"{o.metrics.rmse:.2g}): information criteria are not defined"
+                )
+                o = o.model_copy(
+                    update={
+                        "outcome": "exact_fit",
+                        "metrics": o.metrics.model_copy(update={"aicc": None, "bic": None}),
+                        "reason": "; ".join(filter(None, (note, o.reason))),
+                    }
+                )
+            result.append(o)
+    by_id = {o.candidate_id: o for o in result}
+    return [by_id[o.candidate_id] for o in outcomes]
 
 
 def annotate_same_curves(outcomes: Sequence[CandidateOutcome]) -> list[CandidateOutcome]:
     """Fill ``same_curve_as`` from the fitted values of the outcomes that carry them.
 
     Curves count as coinciding when their fitted values agree within ``1e-8`` of the data
-    range at every point. Outcomes without per-point values (a slimmed result) and every
-    other outcome keep what they had. Candidates are first grouped by the sum of their
-    fitted values, so the pairwise comparison only runs inside groups that could match.
+    range at every point (``1e-6`` when any outcome is an exact fit: in the noiseless regime
+    the optimizer stops anywhere in a flat valley). Outcomes without per-point values (a
+    slimmed result) and every other outcome keep what they had. Candidates are first grouped
+    by the sum of their fitted values, so the pairwise comparison only runs inside groups that
+    could match; only vectors of the same length are compared.
     """
-    fitted: dict[str, np.ndarray[Any, np.dtype[np.float64]]] = {}
+    exact = any(o.outcome == "exact_fit" for o in outcomes)
+    rtol = EXACT_SAME_CURVE_RTOL if exact else SAME_CURVE_RTOL
+    by_size: dict[int, dict[str, np.ndarray[Any, np.dtype[np.float64]]]] = {}
     scale = 0.0
     for o in outcomes:
         if o.outcome in _FITTED and o.fit is not None and o.fit.fitted:
             values = np.asarray(o.fit.fitted, dtype=np.float64)
-            fitted[o.candidate_id] = values
+            by_size.setdefault(values.size, {})[o.candidate_id] = values
             if scale == 0.0:
                 scale = float(np.ptp(values + np.asarray(o.fit.residuals, dtype=np.float64)))
-    if len(fitted) < 2:
-        return list(outcomes)
-    same: dict[str, tuple[str, ...]] = dict.fromkeys(fitted, ())
-    window = SAME_CURVE_RTOL * scale * next(iter(fitted.values())).size
-    order = sorted(fitted, key=lambda i: float(fitted[i].sum()))
-    run: list[str] = [order[0]]
-    for previous, current in pairwise(order):
-        if float(fitted[current].sum()) - float(fitted[previous].sum()) > window:
-            _compare(run, fitted, scale, same)
-            run = []
-        run.append(current)
-    _compare(run, fitted, scale, same)
+    same: dict[str, tuple[str, ...]] = {}
+    for fitted in by_size.values():
+        if len(fitted) < 2:
+            continue
+        same.update(dict.fromkeys(fitted, ()))
+        window = rtol * scale * next(iter(fitted.values())).size
+        order = sorted(fitted, key=lambda i: float(fitted[i].sum()))
+        run: list[str] = [order[0]]
+        for previous, current in pairwise(order):
+            if float(fitted[current].sum()) - float(fitted[previous].sum()) > window:
+                _compare(run, fitted, scale, rtol, same)
+                run = []
+            run.append(current)
+        _compare(run, fitted, scale, rtol, same)
     return [
         o.model_copy(update={"same_curve_as": same[o.candidate_id]})
         if o.candidate_id in same
@@ -102,10 +195,11 @@ def _compare(
     ids: list[str],
     fitted: dict[str, np.ndarray[Any, np.dtype[np.float64]]],
     scale: float,
+    rtol: float,
     same: dict[str, tuple[str, ...]],
 ) -> None:
     if len(ids) > 1:
-        same.update(find_same_curves({i: fitted[i] for i in ids}, scale))
+        same.update(find_same_curves({i: fitted[i] for i in ids}, scale, rtol))
 
 
 def _r2_definition(o: CandidateOutcome) -> str:
@@ -125,6 +219,7 @@ def _overfitting_note(
         if other_kind == kind
         and other.model_id != row.model_id
         and other.model_id not in row.same_curve_as
+        and other.status != "exact_fit"
         and other.metrics.r2 is not None
         and row.metrics.k - other.metrics.k >= OVERFIT_PARAMETER_GAP
         and abs(row.metrics.r2 - other.metrics.r2) <= OVERFIT_R2_GAP + 1e-12
@@ -132,21 +227,26 @@ def _overfitting_note(
     if not close:
         return None
     simplest = min(close, key=lambda r: (r.metrics.k, -(r.metrics.r2 or 0.0), r.model_id))
-    return (
-        f"{row.name} uses {row.metrics.k} parameters (R2 {row.metrics.r2:.4f}), but "
+    head = (
+        f"{row.name} has the lowest AICc, which already charges it for its {row.metrics.k} "
+        f"parameters, but {simplest.name} ({simplest.model_id}) reaches R2 "
+        f"{simplest.metrics.r2:.4f} with only {simplest.metrics.k} (against "
+        f"{row.metrics.r2:.4f}); treat the preference as weak and check cross-validation."
+        if row.delta_aicc == 0.0
+        else f"{row.name} uses {row.metrics.k} parameters (R2 {row.metrics.r2:.4f}), but "
         f"{simplest.name} ({simplest.model_id}) reaches R2 {simplest.metrics.r2:.4f} with only "
         f"{simplest.metrics.k}; the extra parameters may be fitting noise, so compare AICc or "
         "cross-validation before preferring it."
     )
+    return head
 
 
-def _rows(outcomes: Sequence[CandidateOutcome]) -> list[tuple[RankedFit, bool]]:
-    """One unranked row per fitted outcome, with whether it is an exact fit."""
-    base: list[tuple[RankedFit, bool, str]] = []
+def _rows(outcomes: Sequence[CandidateOutcome]) -> list[RankedFit]:
+    """One unranked row per fitted outcome, with Akaike deltas and weights and notes."""
+    base: list[tuple[RankedFit, str]] = []
     for o in outcomes:
         if o.outcome not in _FITTED or o.metrics is None or o.fit is None:
             continue
-        exact = o.outcome == "exact_fit"
         row = RankedFit(
             rank=0,
             model_id=o.candidate_id,
@@ -156,14 +256,39 @@ def _rows(outcomes: Sequence[CandidateOutcome]) -> list[tuple[RankedFit, bool]]:
             parameters=o.fit.parameters,
             metrics=o.metrics,
             same_curve_as=o.same_curve_as,
-            status="exact_fit" if exact else o.fit.status.value,
+            status="exact_fit" if o.outcome == "exact_fit" else o.fit.status.value,
             warnings=o.fit.warnings,
+            generated=o.generated,
+            shape_parameters=o.shape_parameters,
+            degenerate=any(w.startswith("DEGENERATE_FIT") for w in o.fit.warnings),
         )
-        base.append((row, exact, _r2_definition(o)))
-    pool = [(row, kind) for row, _, kind in base]
+        base.append((row, _r2_definition(o)))
+    aiccs = [r.metrics.aicc for r, _ in base if r.metrics.aicc is not None]
+    best = min(aiccs) if aiccs else None
+    if best is not None:
+        raw = {
+            r.model_id: math.exp(-(r.metrics.aicc - best) / 2.0)
+            for r, _ in base
+            if r.metrics.aicc is not None
+        }
+        total = sum(raw.values())
+        base = [
+            (
+                r.model_copy(
+                    update={
+                        "delta_aicc": r.metrics.aicc - best,
+                        "akaike_weight": raw[r.model_id] / total,
+                    }
+                )
+                if r.metrics.aicc is not None
+                else r,
+                kind,
+            )
+            for r, kind in base
+        ]
     return [
-        (row.model_copy(update={"overfitting_note": _overfitting_note(row, pool, kind)}), exact)
-        for row, exact, kind in base
+        row.model_copy(update={"overfitting_note": _overfitting_note(row, base, kind)})
+        for row, kind in base
     ]
 
 
@@ -171,19 +296,34 @@ def rank_outcomes(outcomes: Sequence[CandidateOutcome], rank_by: RankBy) -> tupl
     """The ranked rows of the fitted ``outcomes`` under ``rank_by``.
 
     Only fitted candidates (``converged`` and ``exact_fit``) become rows. An exact fit has no
-    AICc or BIC, so it takes part only in the orderings that need none (R2, adjusted R2, RMSE,
-    CV-RMSE); under the others it stays out of the list and is reported through
+    AICc or BIC, so it takes part only in the orderings that do not need one (best overall,
+    R2, adjusted R2, RMSE, CV-RMSE), where the exact fits form a block above the rest; under
+    ``AICC`` and ``BIC`` it stays out of the list and is reported through
     :attr:`AutoFitResult.exact_fits`. ``same_curve_as`` is read from the outcomes; pass them
-    through :func:`annotate_same_curves` first when they come straight from the engine.
+    through :func:`resolve_exactness` and :func:`annotate_same_curves` first when they come
+    straight from the engine. Candidates fitted on the full data of a very large run are
+    ranked above those fitted on its subsample only (their criteria are not comparable).
     """
-    keep_exact = rank_by in _RANKS_EXACT_FITS
-    rows = [row for row, exact in _rows(outcomes) if keep_exact or not exact]
-    return rank(rows, rank_by)
+    keep_exact = rank_by is not RankBy.AICC and rank_by is not RankBy.BIC
+    ranked: list[RankedFit] = []
+    for on_subsample in (False, True):
+        rows = _rows([o for o in outcomes if o.on_subsample == on_subsample])
+        block = rank([r for r in rows if keep_exact or r.status != "exact_fit"], rank_by)
+        offset = len(ranked)
+        ranked.extend(
+            r.model_copy(update={"rank": r.rank + offset}) if offset else r for r in block
+        )
+    return tuple(ranked)
 
 
 def partial_ranking(outcomes: Sequence[CandidateOutcome], rank_by: RankBy) -> tuple[RankedFit, ...]:
-    """Rank the outcomes seen so far (for example while streaming from ``iter_autofit``)."""
-    return rank_outcomes(annotate_same_curves(outcomes), rank_by)
+    """Rank the outcomes seen so far (for example while streaming from ``iter_autofit``).
+
+    A candidate that appears twice (a screening outcome, later replaced by its full multistart
+    outcome) counts once, with its latest outcome.
+    """
+    latest = {o.candidate_id: o for o in outcomes}
+    return rank_outcomes(annotate_same_curves(resolve_exactness(list(latest.values()))), rank_by)
 
 
 class AutoFitResult(BaseModel):
@@ -197,7 +337,9 @@ class AutoFitResult(BaseModel):
     candidates that reproduce the data exactly (no information criteria exist for them).
     ``curves`` holds the sampled curve and bands of the top ``config.curve_top_n`` candidates
     under every ranking criterion, so a UI can plot any ordering without refitting.
-    ``cancelled`` is true for a partial result.
+    ``cancelled`` is true for a partial result. ``subsample_n`` is the size of the subsample
+    a very large dataset (over 5000 active points) was screened on, else ``None``; the per-point
+    vectors of such a result are kept only for the rows that have a curve.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -215,6 +357,7 @@ class AutoFitResult(BaseModel):
     curves: dict[str, RowCurve] = Field(default_factory=dict)
     overfitting_note: str | None = None
     elapsed_seconds: FiniteFloat = 0.0
+    subsample_n: int | None = None
 
     @property
     def failed(self) -> dict[str, str]:

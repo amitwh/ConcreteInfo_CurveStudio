@@ -15,6 +15,7 @@ from curvestudio.discovery import (
     PolynomialRef,
     RegisteredRef,
     candidate_seed,
+    resolve_exactness,
     run_candidate,
 )
 from curvestudio.models import CustomModelDefinition, ModelSpec, Parameter, register
@@ -114,15 +115,32 @@ def test_custom_candidate_is_built_from_its_definition() -> None:
     assert outcome.metrics is not None and outcome.metrics.k == 3
 
 
-def test_exact_fit_has_no_information_criteria_but_keeps_cv() -> None:
+def test_noiseless_fit_is_resolved_to_an_exact_fit_without_information_criteria() -> None:
     x = np.arange(15.0)
     outcome = run_candidate(make_job(PolynomialRef(degree=1), x=x, y=2.0 * x + 1.0))
+    (resolved,) = resolve_exactness([outcome], y_range=float(np.ptp(2.0 * x + 1.0)))
+    assert resolved.outcome == "exact_fit"
+    assert resolved.metrics is not None
+    assert resolved.metrics.aicc is None and resolved.metrics.bic is None
+    assert resolved.metrics.r2 == pytest.approx(1.0)
+    assert resolved.metrics.cv_rmse is not None
+    assert "exact" in resolved.reason
+
+
+def test_a_perfect_fit_refused_by_the_criteria_is_an_exact_fit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import curvestudio.discovery.worker as worker
+    from curvestudio.statistics import StatisticsError
+
+    def perfect(*args: Any, **kwargs: Any) -> Any:
+        raise StatisticsError("PERFECT_FIT", "SSE = 0")
+
+    monkeypatch.setattr(worker, "information_criteria", perfect)
+    outcome = run_candidate(make_job(RegisteredRef(model_id="exp_offset")))
     assert outcome.outcome == "exact_fit"
-    assert outcome.metrics is not None
-    assert outcome.metrics.aicc is None and outcome.metrics.bic is None
-    assert outcome.metrics.r2 == pytest.approx(1.0)
+    assert outcome.metrics is not None and outcome.metrics.aicc is None
     assert outcome.metrics.cv_rmse is not None
-    assert "exact" in outcome.reason
 
 
 def test_cv_disabled_leaves_cv_rmse_none_without_a_note() -> None:
