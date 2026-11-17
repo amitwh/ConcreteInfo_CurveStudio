@@ -115,6 +115,20 @@ forbidden_modules = [
     "curvestudio.cli",
 ]
 
+[[tool.importlinter.contracts]]
+name = "The project format imports data and fitting only"
+type = "forbidden"
+source_modules = ["curvestudio.project"]
+forbidden_modules = [
+    "curvestudio.expressions",
+    "curvestudio.models",
+    "curvestudio.testing",
+    "curvestudio.statistics",
+    "curvestudio.diagnostics",
+    "curvestudio.cli",
+]
+allow_indirect_imports = true
+
 # scipy.odr (deprecated) cannot be a contract here: import-linter rejects subpackages of
 # external packages. tests/unit/test_architecture.py::test_forbidden_odr_import enforces it.
 
