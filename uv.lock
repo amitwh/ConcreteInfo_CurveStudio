@@ -717,15 +717,20 @@ source = { virtual = "." }
 dependencies = [
     { name = "curvestudio-api" },
     { name = "curvestudio-core" },
-    { name = "curvestudio-desktop" },
     { name = "curvestudio-engineering" },
     { name = "curvestudio-models" },
-    { name = "curvestudio-plotting" },
-    { name = "curvestudio-reporting" },
 ]
 
 [package.dev-dependencies]
+desktop = [
+    { name = "curvestudio-desktop" },
+    { name = "curvestudio-plotting" },
+    { name = "curvestudio-reporting" },
+]
 dev = [
+    { name = "curvestudio-desktop" },
+    { name = "curvestudio-plotting" },
+    { name = "curvestudio-reporting" },
     { name = "httpx" },
     { name = "hypothesis" },
     { name = "import-linter" },
@@ -741,15 +746,20 @@ dev = [
 requires-dist = [
     { name = "curvestudio-api", editable = "apps/api" },
     { name = "curvestudio-core", editable = "packages/core" },
-    { name = "curvestudio-desktop", editable = "apps/desktop" },
     { name = "curvestudio-engineering", editable = "packages/engineering" },
     { name = "curvestudio-models", editable = "packages/model_library" },
-    { name = "curvestudio-plotting", editable = "packages/plotting" },
-    { name = "curvestudio-reporting", editable = "packages/reporting" },
 ]
 
 [package.metadata.requires-dev]
+desktop = [
+    { name = "curvestudio-desktop", editable = "apps/desktop" },
+    { name = "curvestudio-plotting", editable = "packages/plotting" },
+    { name = "curvestudio-reporting", editable = "packages/reporting" },
+]
 dev = [
+    { name = "curvestudio-desktop", editable = "apps/desktop" },
+    { name = "curvestudio-plotting", editable = "packages/plotting" },
+    { name = "curvestudio-reporting", editable = "packages/reporting" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "hypothesis", specifier = ">=6.170.15" },
     { name = "import-linter", specifier = ">=2.16" },

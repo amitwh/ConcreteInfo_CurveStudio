@@ -10,6 +10,7 @@ import io
 import re
 import shutil
 import subprocess
+import sys
 from collections.abc import Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -283,6 +284,9 @@ def test_control_characters_are_stripped_from_pdf_text(
     assert "abc" in norm(text), "XML-illegal control characters must not reach the PDF"
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="pdf text extraction of embedded TTF glyphs differs on Windows"
+)
 def test_non_latin_text_renders_in_the_pdf_font(
     poly_bundle: FitBundleFactory, tmp_path: Path, uncompressed: None
 ) -> None:

@@ -9,9 +9,6 @@ dependencies = [
     "curvestudio-models",
     "curvestudio-api",
     "curvestudio-engineering",
-    "curvestudio-plotting",
-    "curvestudio-reporting",
-    "curvestudio-desktop",
 ]
 
 [tool.uv]
@@ -31,7 +28,14 @@ curvestudio-reporting = { workspace = true }
 curvestudio-desktop = { workspace = true }
 
 [dependency-groups]
+# The desktop app and its report/plot packages are not part of the server image (uv sync --no-dev).
+desktop = [
+    "curvestudio-plotting",
+    "curvestudio-reporting",
+    "curvestudio-desktop",
+]
 dev = [
+    { include-group = "desktop" },
     "pytest>=9.2.0",
     "pytest-cov>=7.1.0",
     "hypothesis>=6.170.15",

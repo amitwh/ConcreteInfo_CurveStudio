@@ -46,6 +46,10 @@ COPY packages/core/pyproject.toml packages/core/README.md packages/core/
 COPY packages/model_library/pyproject.toml packages/model_library/README.md packages/model_library/
 COPY packages/engineering/pyproject.toml packages/engineering/README.md packages/engineering/
 COPY apps/api/pyproject.toml apps/api/README.md apps/api/
+# Workspace members the image does not install still have to exist for uv's workspace resolution.
+COPY packages/plotting/pyproject.toml packages/plotting/README.md packages/plotting/
+COPY packages/reporting/pyproject.toml packages/reporting/README.md packages/reporting/
+COPY apps/desktop/pyproject.toml apps/desktop/README.md apps/desktop/
 RUN uv sync --frozen --no-dev --no-install-workspace
 
 # Sources: rebuilds only the workspace members (curvestudio-core, -models, -engineering, -api)
