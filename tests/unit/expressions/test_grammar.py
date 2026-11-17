@@ -92,6 +92,20 @@ def test_node_and_depth_caps() -> None:
         validate_expression("-" * MAX_DEPTH + "x", NAMES)  # 41 deep
 
 
+def test_flat_sum_past_the_depth_cap_names_the_sum() -> None:
+    # A flat +/- chain is the one shape of depth violation the author experiences as "too
+    # many terms", not as nesting: the message must say so, while the limit stays MAX_DEPTH.
+    with pytest.raises(
+        ValueError, match=r"sum has too many terms \(limit \d+\); group terms or simplify"
+    ):
+        validate_expression("+".join(f"a*{('b', 'k', 'x')[i % 3]}" for i in range(40)), NAMES)
+    # one term fewer still fits (39 terms nest 39+1 levels: at, not past, the cap)
+    validate_expression("+".join(f"a*{('b', 'k', 'x')[i % 3]}" for i in range(39)), NAMES)
+    # a deep chain that is not a sum keeps the generic nesting message
+    with pytest.raises(ValueError, match="nested too deeply"):
+        validate_expression("sin(" * 40 + "x" + ")" * 40, NAMES)
+
+
 def test_length_cap_applies_before_parsing() -> None:
     with pytest.raises(ValueError, match="too long"):
         validate_expression("(" * 1001, NAMES)

@@ -186,9 +186,9 @@ def _syntax_message(text: str, exc: SyntaxError) -> str:
 def _check_size(root: ast.expr) -> None:
     """Bound node count and depth with an explicit stack, before any recursion."""
     nodes = 0
-    stack: list[tuple[ast.AST, int]] = [(root, 1)]
+    stack: list[tuple[ast.AST, int, tuple[ast.AST, ...]]] = [(root, 1, ())]
     while stack:
-        node, depth = stack.pop()
+        node, depth, path = stack.pop()
         if isinstance(node, ast.expr):
             nodes += 1
             if nodes > MAX_NODES:
@@ -197,11 +197,30 @@ def _check_size(root: ast.expr) -> None:
                     "and names); simplify it"
                 )
             if depth > MAX_DEPTH:
-                raise ValueError(
-                    f"expression is nested too deeply (limit {MAX_DEPTH} levels); simplify it"
-                )
+                raise ValueError(_depth_message(path))
         child_depth = depth + 1 if isinstance(node, ast.expr) else depth
-        stack.extend((child, child_depth) for child in ast.iter_child_nodes(node))
+        stack.extend((child, child_depth, (*path, node)) for child in ast.iter_child_nodes(node))
+
+
+def _depth_message(path: tuple[ast.AST, ...]) -> str:
+    """The message for a depth violation: a flat ``+``/``-`` chain gets its own wording.
+
+    Python parses ``a + b + c`` as a left-leaning chain, one level per term, so a long flat
+    sum trips the depth cap although the author wrote no nesting at all. When such a chain
+    itself consumes more than half the nesting budget it is the cause of the violation, and
+    the message says "too many terms" (a flat sum of product terms fits ``MAX_DEPTH - 1``;
+    sums of bare names one more) instead of "nested too deeply". The limit is unchanged.
+    """
+    chain = run = 0
+    for node in path:
+        if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Add, ast.Sub)):
+            run += 1
+            chain = max(chain, run)
+        else:
+            run = 0
+    if chain > MAX_DEPTH // 2:
+        return f"sum has too many terms (limit {MAX_DEPTH - 1}); group terms or simplify"
+    return f"expression is nested too deeply (limit {MAX_DEPTH} levels); simplify it"
 
 
 def _plain_number(value: object) -> float | None:

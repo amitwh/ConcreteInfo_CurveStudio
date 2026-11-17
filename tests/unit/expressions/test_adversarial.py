@@ -11,6 +11,7 @@ from hypothesis import strategies as st
 
 from curvestudio.expressions import validate_expression
 from curvestudio.expressions.grammar import FUNCTIONS
+from curvestudio.models import CustomModelDefinition, ParameterDefinition, build_custom_model
 
 CORPUS = Path(__file__).resolve().parents[2] / "data" / "expressions" / "adversarial.txt"
 NAMES = frozenset({"a", "b", "x", "y", "z"})
@@ -144,3 +145,23 @@ def test_fuzz_never_escapes(text: str) -> None:
 @given(st.lists(st.sampled_from(_TOKENS), max_size=80).map("".join))
 def test_fuzz_unspaced_token_soup_never_escapes(text: str) -> None:
     _check_never_escapes(text)
+
+
+def test_corpus_is_rejected_quickly_by_the_custom_builder() -> None:
+    """The whole hostile corpus also dies fast when driven through ``build_custom_model``."""
+    hostile = [entry for entry in _corpus() if entry != "y = a*x"]  # prefix is accepted
+    for text in hostile:
+        start = time.perf_counter()
+        with pytest.raises(ValueError):
+            build_custom_model(CustomModelDefinition(id="h", name="h", expression=text))
+        with pytest.raises(ValueError):
+            build_custom_model(
+                CustomModelDefinition(
+                    id="h",
+                    name="h",
+                    expression="a*x + b",
+                    parameters=(ParameterDefinition(name=text),),
+                )
+            )
+        elapsed = time.perf_counter() - start
+        assert elapsed < 1.0, f"{text[:40]!r} took {elapsed:.2f}s via the builder"
