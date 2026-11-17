@@ -10,3 +10,5 @@ docs/
 *.egg-info/
 dist/
 .playwright-mcp/
+||||||| 096aee7
+data/
