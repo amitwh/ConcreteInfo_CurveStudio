@@ -31,9 +31,9 @@ ENV TZ=Asia/Kolkata \
     CURVESTUDIO_DATA_DIR=/data \
     CURVESTUDIO_WEB_DIST=/app/web
 
-# tzdata so TZ=Asia/Kolkata resolves; nothing else is needed at runtime.
+# tzdata so TZ=Asia/Kolkata resolves; curl because Coolify's health check shells out to curl/wget.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends tzdata \
+ && apt-get install -y --no-install-recommends tzdata curl ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 
 COPY --from=ghcr.io/astral-sh/uv:0.13.1 /uv /uvx /usr/local/bin/
