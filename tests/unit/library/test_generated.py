@@ -126,7 +126,7 @@ def test_parameter_cap() -> None:
 
 
 def test_extended_tc3_models_are_listed_only_exhaustively() -> None:
-    assert "tc3_id_x_ln" in DEFAULT_IDS
+    assert "tc3_id_x_sqrt" in DEFAULT_IDS
     assert "tc3_id_x_cube" not in DEFAULT_IDS
     assert "tc3_id_x_cube" in EXHAUSTIVE_IDS
     extended = {"cube", "invsqr", "lnsq", "xlnx", "invsqrt"}
@@ -244,8 +244,8 @@ def _reasons(model_id: str, x: list[float], y: list[float]) -> list[str]:
 
 
 def test_domain_checks_name_the_problem() -> None:
-    assert _reasons("tc_id_sqrt", [1.0, 2.0, 3.0], [1.0, 2.0, 3.0]) == []
-    assert any("non-negative" in r for r in _reasons("tc_id_sqrt", [-1.0, 2.0], [1.0, 2.0]))
+    assert _reasons("tc3_id_x_sqrt", [1.0, 2.0, 3.0], [1.0, 2.0, 3.0]) == []
+    assert any("non-negative" in r for r in _reasons("tc3_id_x_sqrt", [-1.0, 2.0], [1.0, 2.0]))
     assert any("strictly positive" in r for r in _reasons("tc_sqr_ln", [0.0, 2.0], [1.0, 2.0]))
     assert any("not be zero" in r for r in _reasons("tc_sqr_inv", [0.0, 2.0], [1.0, 2.0]))
     assert any("strictly positive" in r for r in _reasons("tc_exp_inv", [1.0, 2.0], [0.0, 2.0]))
@@ -285,7 +285,7 @@ def test_register_generated_is_idempotent() -> None:
 
 @pytest.mark.usefixtures("clean_registry")
 def test_register_generated_refuses_a_prefix_someone_else_owns() -> None:
-    register_family("tc_", lambda _e: [], lambda i: build("tc_id_sqrt"))
+    register_family("tc_", lambda _e: [], lambda i: build("tc_id_sqr"))
     with pytest.raises(ValueError, match="already registered"):
         register_generated()
 
@@ -296,10 +296,10 @@ def test_register_all_registers_the_generated_families_and_skips_them_on_a_clash
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     register_all()
-    assert "tc3_id_x_ln" in list_model_ids()
+    assert "tc3_id_x_sqrt" in list_model_ids()
     assert family_failures() == {}
     _clear_registry()
-    template = build("tc_id_sqrt")
+    template = build("tc_id_sqr")
     register(
         ModelSpec(
             id="tc_hand_written_clash",

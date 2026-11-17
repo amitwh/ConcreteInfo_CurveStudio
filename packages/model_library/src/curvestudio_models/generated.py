@@ -1111,6 +1111,11 @@ _EQUAL_TO = {
     "tc3_exp_x_sqr": "gaussian",
     "tc3_exp_ln_lnsq": "a log-normal peak",
     "tc3_exp_x_ln": "exponential_power_growth",
+    "tc_id_sqrt": "square_root_offset",
+    "tc3_id_x_ln": "linear_log",
+    "exp_sum_2": "exponential_decay_double",
+    "pow_sum_2": "power_sum_double",
+    "exp_sum_2_offset": "exponential_decay_double_offset",
 }
 
 
