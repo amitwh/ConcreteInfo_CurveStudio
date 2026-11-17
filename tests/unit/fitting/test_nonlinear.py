@@ -2,6 +2,7 @@
 
 import json
 import math
+import time
 import warnings
 from collections.abc import Iterator
 from pathlib import Path
@@ -742,6 +743,28 @@ def test_huge_jacobian_withholds_covariance_instead_of_zero_standard_errors() ->
         warnings.simplefilter("error")
         se, covariance, corr = _uncertainties(jac, stats)
     assert (se, covariance, corr) == (None, None, None)
+
+
+# -- cooperative time limit ---------------------------------------------------------------
+
+
+def test_timed_out_fit_round_trips_like_any_result(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A wall-clock deadline that passes mid-optimisation ends the start NOT_CONVERGED
+    # with a reason naming the limit (the stopping behaviour itself, the skip warning and
+    # the validation are covered by test_time_limit.py); the engine-level contract here
+    # is that such a result still serialises and rebuilds like any other FitResult.
+    original = ModelSpec.evaluate
+
+    def sleeping(self: ModelSpec, x: FloatArray, **params: float) -> FloatArray:
+        time.sleep(0.02)
+        return original(self, x, **params)
+
+    monkeypatch.setattr(ModelSpec, "evaluate", sleeping)
+    res = fit(EXP_DECAY, prd_data(), FitConfig(time_limit=0.05))
+    assert res.status is FitStatus.NOT_CONVERGED
+    assert "time limit" in res.termination_reason
+    assert res.parameters == ()
+    FitResult_round_trip(res)
 
 
 HUGE_SCALE = ModelSpec(

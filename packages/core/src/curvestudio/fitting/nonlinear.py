@@ -34,9 +34,17 @@ and the optimizer backs off instead of continuing on NaN. A non-finite *Jacobian
 cannot be patched honestly (the search direction would be fiction), so it stops the run
 and the run is reported as ``FAILED``. NumPy floating-point warnings are suppressed
 inside the engine; their effect is always visible as a status or warning instead.
+
+Cooperative time limit (``FitConfig.time_limit``): the deadline is checked inside
+``guarded_residuals`` — the single choke point every optimizer's objective passes
+through — so a start stops within one model evaluation of the deadline, ends
+``NOT_CONVERGED`` with a reason naming the limit, and the multistart loop skips the
+starts that remain. The limit is cooperative by design: a single stuck model
+evaluation cannot be interrupted, only the calls after it.
 """
 
 import math
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -86,15 +94,25 @@ class _NonFiniteJacobianError(Exception):
     """Raised inside the optimizer callback when the Jacobian has NaN/inf entries."""
 
 
+class _TimeLimit(Exception):
+    """Raised from the residual evaluation when the run's wall-clock deadline has passed."""
+
+
 @dataclass(frozen=True)
 class _Problem:
-    """The active-point least-squares problem for one model and dataset."""
+    """The active-point least-squares problem for one model and dataset.
+
+    ``deadline`` (a :func:`time.monotonic` reading) is the cooperative stop for the whole
+    multistart run; ``None`` means unlimited and makes the check in
+    :meth:`guarded_residuals` a no-op comparison.
+    """
 
     model: ModelSpec
     x: FloatArray
     y: FloatArray
     root_w: FloatArray
     names: tuple[str, ...]
+    deadline: float | None = None
 
     def params(self, theta: FloatArray) -> dict[str, float]:
         return {name: float(v) for name, v in zip(self.names, theta, strict=True)}
@@ -112,6 +130,8 @@ class _Problem:
             return -self.root_w[:, None] * jac
 
     def guarded_residuals(self, theta: FloatArray) -> FloatArray:
+        if self.deadline is not None and time.monotonic() >= self.deadline:
+            raise _TimeLimit("wall-clock time limit reached")
         r = self.residuals(theta)
         return np.where(np.isfinite(r), r, NON_FINITE_PENALTY)
 
@@ -223,6 +243,12 @@ def _run_once(
                 active_mask = np.asarray(ret.active_mask)
         resid = problem.residuals(theta)
         jac = problem.jacobian(theta)
+    except _TimeLimit:
+        return _Run(
+            start,
+            FitStatus.NOT_CONVERGED,
+            f"time limit of {config.time_limit} s reached before this start converged",
+        )
     except _NonFiniteJacobianError as exc:
         return _Run(start, FitStatus.FAILED, str(exc))
     except Exception as exc:  # reported as FAILED with its message, never swallowed
@@ -436,7 +462,8 @@ def fit_nonlinear(
             FitStatus.INVALID_INPUT, f"model {model.id!r} does not apply: {'; '.join(reasons)}"
         )
 
-    problem = _Problem(model, x[active], y[active], np.sqrt(w[active]), names)
+    deadline = None if config.time_limit is None else time.monotonic() + config.time_limit
+    problem = _Problem(model, x[active], y[active], np.sqrt(w[active]), names, deadline=deadline)
     base, start_error = _base_start(model, problem, config)
     if base is None:
         return build(FitStatus.FAILED, start_error)
@@ -449,7 +476,17 @@ def fit_nonlinear(
             initial=problem.params(base),
         )
     starts = generate_starts(base, lower, upper, config.n_starts, config.seed)
-    runs = [_run_once(problem, s, method, lower, upper, config) for s in starts]
+    runs: list[_Run] = []
+    stopped_after: int | None = None
+    for index, start in enumerate(starts, start=1):
+        runs.append(_run_once(problem, start, method, lower, upper, config))
+        # Every remaining start would raise _TimeLimit at its first residual evaluation;
+        # once the deadline has passed there is nothing left to try, so skip them.
+        if deadline is not None and index < len(starts) and time.monotonic() >= deadline:
+            stopped_after = index
+            break
+    if stopped_after is not None:
+        warnings.append(f"time limit reached after {stopped_after} of {len(starts)} starts")
     winner = _pick_winner(runs)
     initial = problem.params(winner.start)
     if winner.status is FitStatus.FAILED or winner.theta is None:

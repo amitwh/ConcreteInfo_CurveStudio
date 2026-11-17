@@ -75,6 +75,35 @@ Rule 1 — a CONVERGED fit must be right: minimum parameter LRE >= 5 and SSE LRE
 | Wampler4 | converged | 8.0 | - |
 | Filip | converged | 7.4 | HIGH_ORDER_POLYNOMIAL, ILL_CONDITIONED |
 
+## Table 4 — nonlinear hard set, multistart (20 starts, seed 0, from start 1)
+
+Recorded: 2026-11-17T08:35:50+05:30 (IST) — Task 4.12 evidence; `tests/numerical/test_nist_multistart.py`
+asserts the same runs. Thurber, Rat43 and Bennett5 are vendored unchanged under
+`tests/data/nist_strd/nonlinear_hard` (Eckerle4 and MGH09 are the `nonlinear` catalogue problems).
+The honesty rule for this table is stricter than rule 1: a CONVERGED fit must match the certified
+values to a minimum parameter LRE >= 6, and any other outcome must not claim CONVERGED.
+
+| Problem | Difficulty | Status | Min param LRE | SSE LRE | Converged starts | Matching certified |
+| --- | --- | --- | --- | --- | --- | --- |
+| Eckerle4 * | higher | converged | 10.1 | 10.7 | 7/20 | 2/20 |
+| MGH09 | higher | converged | 6.9 | 11.6 | 8/20 | 1/20 |
+| Thurber | higher | converged | 7.9 | 11.2 | 17/20 | 1/20 |
+| Rat43 | higher | converged | 8.0 | 11.4 | 1/20 | 1/20 |
+| Bennett5 | higher | converged | 11.0 | 11.2 | 5/20 | 1/20 |
+
+- * Eckerle4 matched its sign mirror ((b1, b2) negated, b3 unchanged — see the mirror note below);
+  its min param LRE is measured against the closer of the certified values and their mirror.
+- Rows still failing: none. All five fits converge to the certified (or mirror) minimum, so the
+  multistart winner rule — the lowest-SSE converged start — reaches the global minimum even though
+  only 1–2 of the 20 starts match it for MGH09, Thurber, Rat43 and Bennett5 (for Rat43 the single
+  converged start is the base start itself). The Phase 3 concern that Eckerle4's 2-of-20 basin share
+  might not suffice did not materialise: its winner is the mirror minimum at LRE 10.1.
+- 'Converged starts' and 'Matching certified' follow Table 2's replay definition (independent
+  re-runs of the engine's own 20 starts, rule-1 LREs, mirror-aware for Eckerle4).
+- This section is hand-recorded by Task 4.12; regenerating the file with scripts/nist_report.py
+  rewrites Tables 1–3 and the Summary/Notes but not this table — re-measure it with
+  tests/numerical/test_nist_multistart.py instead.
+
 ## Summary
 
 - Nonlinear single-start CONVERGED with rule 1 satisfied: 23/24
