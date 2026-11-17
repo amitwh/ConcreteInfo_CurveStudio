@@ -254,7 +254,7 @@ def test_domain_checks_name_the_problem() -> None:
     assert any("must be finite" in r for r in _reasons("rat_3_1", [1.0, np.nan], [1.0, 2.0]))
     assert any("non-negative" in r for r in _reasons("rat_3_1", [-1.0, 2.0], [1.0, 2.0]))
     assert any("not be zero" in r for r in _reasons("recip_3", [0.0, 1.0], [1.0, 2.0]))
-    assert any("strictly positive" in r for r in _reasons("pow_sum_2", [0.0, 1.0], [1.0, 2.0]))
+    assert any("strictly positive" in r for r in _reasons("pow_sum_3", [0.0, 1.0], [1.0, 2.0]))
     assert _reasons("fourier_1", [-5.0, 0.0, 5.0], [-1.0, 0.0, 1.0]) == []
 
 
