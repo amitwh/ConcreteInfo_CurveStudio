@@ -1110,6 +1110,7 @@ _EQUAL_TO = {
     "tc3_inv_x_sqr": "invpoly_2",
     "tc3_exp_x_sqr": "gaussian",
     "tc3_exp_ln_lnsq": "a log-normal peak",
+    "tc3_exp_x_ln": "exponential_power_growth",
 }
 
 

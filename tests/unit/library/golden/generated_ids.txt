@@ -190,7 +190,6 @@ tc3_inv_lnsq_xlnx
 tc3_inv_lnsq_invsqrt
 tc3_inv_xlnx_invsqrt
 tc3_exp_x_inv
-tc3_exp_x_ln
 tc3_exp_x_sqrt
 tc3_exp_x_expneg
 tc3_exp_x_cube
