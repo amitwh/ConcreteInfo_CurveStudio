@@ -19,7 +19,7 @@ from collections.abc import Callable
 import numpy as np
 from numpy.typing import NDArray
 
-from curvestudio.models.registry import list_models, register
+from curvestudio.models.registry import _REGISTRY, register
 from curvestudio.models.spec import ModelExample, ModelSpec, Parameter
 
 FloatArray = NDArray[np.float64]
@@ -543,8 +543,14 @@ def register_starter_models() -> None:
 
     A different model already holding one of these ids is a programming error and still
     raises ``ValueError`` from :func:`register` rather than being silently kept.
+
+    This reads the registry dictionary directly instead of calling ``list_models()``: that
+    would load the model plugins, and this function runs while ``curvestudio.models`` is
+    still being imported, when a plugin importing from it would fail (and a plugin package
+    imported first would be dropped). Plugin loading stays lazy until the first public
+    ``list_*`` / ``get_model`` call.
     """
-    existing = {m.id: m for m in list_models()}
+    existing = dict(_REGISTRY)
     for spec in STARTER_MODELS:
         if existing.get(spec.id) is not spec:
             register(spec)
