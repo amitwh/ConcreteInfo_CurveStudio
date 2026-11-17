@@ -2,13 +2,27 @@
 
 from curvestudio.statistics.bands import Band, confidence_band, prediction_band
 from curvestudio.statistics.errors import StatisticsError
+from curvestudio.statistics.validation import (
+    CrossValidation,
+    Fitter,
+    NonlinearFitter,
+    PolynomialFitter,
+    k_fold_cv,
+    loo_cv,
+)
 from curvestudio.statistics.view import FitView, build_view
 
 __all__ = [
     "Band",
+    "CrossValidation",
     "FitView",
+    "Fitter",
+    "NonlinearFitter",
+    "PolynomialFitter",
     "StatisticsError",
     "build_view",
     "confidence_band",
+    "k_fold_cv",
+    "loo_cv",
     "prediction_band",
 ]
