@@ -2,6 +2,7 @@
 
 import io
 import multiprocessing
+import sys
 import threading
 import time
 import zipfile
@@ -9,6 +10,7 @@ from collections.abc import Callable
 from typing import Any
 
 import api_job_workers
+import pytest
 from fastapi.testclient import TestClient
 from openpyxl import Workbook
 

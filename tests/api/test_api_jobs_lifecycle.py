@@ -1,6 +1,7 @@
 """Job lifecycle with injected workers: cancel, timeout, crash recovery, restart recovery."""
 
 import multiprocessing
+import sys
 import time
 import uuid
 from collections.abc import Callable

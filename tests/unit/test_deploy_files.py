@@ -6,6 +6,7 @@ behavioural check is ``deploy/smoke.sh`` against a running container (CI runs it
 freshly built image); what we can assert cheaply here is shape.
 """
 
+import sys
 from pathlib import Path
 
 import pytest
