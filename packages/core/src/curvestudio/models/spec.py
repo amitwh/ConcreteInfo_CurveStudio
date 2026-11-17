@@ -1,23 +1,26 @@
 """Declarative model specification: one SymPy expression gives value, Jacobian and text.
 
 Model authors write the right-hand side of ``y = f(x; parameters)`` as a string. The
-string is untrusted input: :func:`curvestudio.expressions.to_sympy` checks it against a
-strict grammar and builds the SymPy tree by walking the parsed syntax tree, so nothing
-is ever passed to ``eval``.
+string is untrusted input: :func:`curvestudio.expressions.validate_expression` checks it
+against a strict grammar when the spec is built, and :func:`curvestudio.expressions.to_sympy`
+builds the SymPy tree by walking the parsed syntax tree, so nothing is ever passed to ``eval``.
+The (slow) SymPy compilation is deferred to first use; see :meth:`ModelSpec.compile`.
 """
 
 import keyword
 import math
 import re
+import threading
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
+from types import MappingProxyType
 from typing import Any
 
 import numpy as np
 import sympy
 from numpy.typing import NDArray
 
-from curvestudio.expressions import RESERVED_NAMES, to_sympy
+from curvestudio.expressions import RESERVED_NAMES, to_sympy, validate_expression
 from curvestudio.expressions.special import NUMPY_CALLABLES
 
 FloatArray = NDArray[np.float64]
@@ -48,6 +51,35 @@ class _Compiled:
     expr: Any
     value: Callable[..., Any]
     derivatives: tuple[Callable[..., Any], ...]
+
+
+@dataclass(frozen=True)
+class ModelExample:
+    """A worked example: true parameter values and the x range to sample them on.
+
+    The example drives noiseless parameter-recovery tests and gives documentation and the
+    UI a realistic curve to show. ``n`` evenly spaced x values are used.
+
+    The example is immutable and hashable (``params`` becomes a read-only mapping), so a
+    ``ModelSpec`` holding one stays hashable.
+    """
+
+    params: Mapping[str, float]
+    x_range: tuple[float, float]
+    n: int = 60
+
+    def __hash__(self) -> int:
+        return hash((tuple(sorted(self.params.items())), self.x_range, self.n))
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "params", MappingProxyType(dict(sorted(self.params.items()))))
+        low, high = self.x_range
+        if not (math.isfinite(low) and math.isfinite(high) and low < high):
+            raise ValueError(f"example x_range must be finite with low < high, got {self.x_range}")
+        if self.n < 2:
+            raise ValueError(f"example needs at least 2 points, got n={self.n}")
+        if not all(math.isfinite(v) for v in self.params.values()):
+            raise ValueError("example parameter values must be finite")
 
 
 def _compile(spec: ModelSpec) -> _Compiled:
@@ -85,10 +117,16 @@ def _format_number(value: float, digits: int) -> str:
 class ModelSpec:
     """A named, documented model ``y = expression(variables; parameters)``.
 
-    The expression is parsed once at construction (invalid or unsafe expressions raise
-    ``ValueError`` there). ``initial_guess`` is stored but never called here.
-    For a single variable ``x`` is a 1-D array; with several variables it is a 2-D
+    The expression is checked against the grammar at construction (invalid or unsafe
+    expressions raise ``ValueError`` there). Building the SymPy tree, the Jacobian and the
+    NumPy callables is the expensive part, so it happens on first use (``evaluate``,
+    ``jacobian``, ``latex``) or when :meth:`compile` is called; a catalogue of hundreds of
+    specs therefore costs nothing at import. ``initial_guess`` is stored but never called
+    here. For a single variable ``x`` is a 1-D array; with several variables it is a 2-D
     array whose columns follow ``variables``.
+
+    ``aliases`` are other names of the same equation (for search), ``description`` is a
+    one-sentence summary and ``example`` holds true parameters for a noiseless demo curve.
     """
 
     id: str
@@ -101,7 +139,13 @@ class ModelSpec:
     domain_check: Callable[[FloatArray, FloatArray], list[str]] | None = None
     references: tuple[str, ...] = ()
     assumptions: str = ""
-    _compiled: _Compiled = field(init=False, repr=False, compare=False)
+    aliases: tuple[str, ...] = ()
+    description: str = ""
+    example: ModelExample | None = None
+    _compiled: _Compiled | None = field(init=False, default=None, repr=False, compare=False)
+    _compile_lock: Any = field(
+        init=False, default_factory=threading.Lock, repr=False, compare=False
+    )
 
     def __post_init__(self) -> None:
         if not self.id.strip():
@@ -121,7 +165,60 @@ class ModelSpec:
         for p in self.parameters:
             if not p.lower <= p.upper:
                 raise ValueError(f"parameter {p.name!r} has lower bound above upper bound")
-        object.__setattr__(self, "_compiled", _compile(self))
+        validate_expression(self.expression, frozenset(names))
+        self._validate_aliases()
+        if self.example is not None:
+            self._validate_example(self.example)
+
+    def _validate_aliases(self) -> None:
+        for alias in self.aliases:
+            if not alias.strip():
+                raise ValueError(f"model {self.id!r} has an empty alias")
+        if len(set(self.aliases)) != len(self.aliases) or self.id in self.aliases:
+            raise ValueError(f"model {self.id!r} has duplicate aliases: {list(self.aliases)}")
+
+    def _validate_example(self, example: ModelExample) -> None:
+        expected = {p.name for p in self.parameters}
+        if set(example.params) != expected:
+            raise ValueError(
+                f"example of {self.id!r} must give exactly the parameters {sorted(expected)}; "
+                f"got {sorted(example.params)}"
+            )
+        if len(self.variables) != 1:
+            raise ValueError(f"example of {self.id!r}: only one-variable models can have one")
+
+    # -- compilation ------------------------------------------------------------------
+
+    def compile(self) -> None:
+        """Build the SymPy expression, Jacobian and NumPy callables now (idempotent).
+
+        Normally this happens on first use. Call it to surface an expression that passes the
+        grammar but cannot be turned into a usable real-valued SymPy expression early.
+
+        Raises:
+            ValueError: the expression cannot be compiled (for example it is undefined for
+                every real input, or SymPy cannot differentiate it).
+        """
+        self._ready()
+
+    def _ready(self) -> _Compiled:
+        compiled = self._compiled
+        if compiled is not None:
+            return compiled
+        with self._compile_lock:  # concurrent first uses compile exactly once
+            if self._compiled is not None:
+                return self._compiled
+            try:
+                compiled = _compile(self)
+            except ValueError:
+                raise
+            except Exception as exc:  # SymPy raises many types; report them uniformly
+                raise ValueError(
+                    f"model {self.id!r}: expression {self.expression!r} cannot be compiled: "
+                    f"{type(exc).__name__}: {exc}"
+                ) from exc
+            object.__setattr__(self, "_compiled", compiled)
+            return compiled
 
     # -- evaluation -------------------------------------------------------------------
 
@@ -150,7 +247,7 @@ class ModelSpec:
         """Model values at ``x``; non-finite entries mark points outside the domain."""
         args, n = self._arguments(x, params)
         with np.errstate(all="ignore"):
-            out = self._compiled.value(*args)
+            out = self._ready().value(*args)
         return np.array(np.broadcast_to(np.asarray(out, dtype=np.float64), (n,)))
 
     def jacobian(self, x: FloatArray, **params: float) -> FloatArray:
@@ -158,15 +255,26 @@ class ModelSpec:
         args, n = self._arguments(x, params)
         jac = np.empty((n, len(self.parameters)), dtype=np.float64)
         with np.errstate(all="ignore"):
-            for j, derivative in enumerate(self._compiled.derivatives):
+            for j, derivative in enumerate(self._ready().derivatives):
                 jac[:, j] = np.broadcast_to(np.asarray(derivative(*args), dtype=np.float64), (n,))
         return jac
+
+    def example_data(self) -> tuple[FloatArray, FloatArray]:
+        """Noiseless ``(x, y)`` of the model at its example parameters.
+
+        Raises:
+            ValueError: the model has no ``example``.
+        """
+        if self.example is None:
+            raise ValueError(f"model {self.id!r} has no example")
+        x = np.linspace(self.example.x_range[0], self.example.x_range[1], self.example.n)
+        return x, self.evaluate(x, **self.example.params)
 
     # -- presentation -----------------------------------------------------------------
 
     def latex(self) -> str:
         """LaTeX for the model equation, e.g. ``y = a e^{b x}``."""
-        return f"y = {sympy.latex(self._compiled.expr)}"
+        return f"y = {sympy.latex(self._ready().expr)}"
 
     def equation_text(self, params: Mapping[str, float], digits: int = 6) -> str:
         """The original expression with fitted values substituted, e.g. ``y = 2*exp(0.5*x)``.

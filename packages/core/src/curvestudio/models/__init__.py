@@ -1,7 +1,36 @@
 """Model layer: declarative model specifications and their registry."""
 
 from curvestudio.models import starter as _starter  # noqa: F401  (registers the starter set)
-from curvestudio.models.registry import get_model, list_models, register
-from curvestudio.models.spec import ModelSpec, Parameter
+from curvestudio.models.guess import GuessRule, guess_from_rules, rules_guess
+from curvestudio.models.registry import (
+    PluginError,
+    PluginFailure,
+    family_errors,
+    get_model,
+    list_model_ids,
+    list_models,
+    load_plugins,
+    plugin_failures,
+    register,
+    register_family,
+)
+from curvestudio.models.spec import ModelExample, ModelSpec, Parameter
 
-__all__ = ["ModelSpec", "Parameter", "get_model", "list_models", "register"]
+__all__ = [
+    "GuessRule",
+    "ModelExample",
+    "ModelSpec",
+    "Parameter",
+    "PluginError",
+    "PluginFailure",
+    "family_errors",
+    "get_model",
+    "guess_from_rules",
+    "list_model_ids",
+    "list_models",
+    "load_plugins",
+    "plugin_failures",
+    "register",
+    "register_family",
+    "rules_guess",
+]

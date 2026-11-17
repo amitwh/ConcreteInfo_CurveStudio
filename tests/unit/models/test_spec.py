@@ -1,11 +1,13 @@
 """Tests for ModelSpec: parsing safety, evaluation, Jacobian, text rendering, contract."""
 
+import threading
 from dataclasses import dataclass
 
 import numpy as np
 import pytest
 
-from curvestudio.models import ModelSpec, Parameter
+from curvestudio.models import ModelExample, ModelSpec, Parameter
+from curvestudio.models.starter import STARTER_MODELS, register_starter_models
 from curvestudio.testing.model_contract import check_model_contract
 
 
@@ -324,3 +326,200 @@ def test_contract_fails_when_evaluation_is_not_finite() -> None:
 def test_contract_fails_when_true_params_do_not_match_parameters() -> None:
     with pytest.raises(AssertionError, match="true_params"):
         check_model_contract(make_spec(), np.linspace(0.0, 2.0, 20), {"a": 2.0})
+
+
+# -- Phase 4: aliases, description, example -------------------------------------------------
+
+
+def _example_spec(**extra: object) -> ModelSpec:
+    return ModelSpec(
+        id="demo",
+        name="Demo",
+        category="exponential",
+        expression="a*exp(b*x)",
+        parameters=(Parameter("a"), Parameter("b")),
+        initial_guess=lambda x, y: {"a": 1.0, "b": 1.0},
+        **extra,  # type: ignore[arg-type]
+    )
+
+
+def test_new_fields_default_to_empty() -> None:
+    spec = _example_spec()
+    assert spec.aliases == ()
+    assert spec.description == ""
+    assert spec.example is None
+
+
+def test_example_data_is_the_noiseless_curve() -> None:
+    spec = _example_spec(
+        example=ModelExample({"a": 2.0, "b": 0.5}, x_range=(0.0, 2.0), n=5),
+        aliases=("growth curve",),
+        description="Exponential growth.",
+    )
+    x, y = spec.example_data()
+    np.testing.assert_allclose(x, [0.0, 0.5, 1.0, 1.5, 2.0])
+    np.testing.assert_allclose(y, 2.0 * np.exp(0.5 * x))
+    assert spec.aliases == ("growth curve",)
+
+
+def test_example_data_without_example_raises() -> None:
+    with pytest.raises(ValueError, match="no example"):
+        _example_spec().example_data()
+
+
+@pytest.mark.parametrize(
+    "example",
+    [
+        {"params": {"a": 1.0}, "x_range": (0.0, 1.0)},
+        {"params": {"a": 1.0, "b": 1.0, "c": 1.0}, "x_range": (0.0, 1.0)},
+    ],
+)
+def test_example_must_name_exactly_the_parameters(example: dict[str, object]) -> None:
+    with pytest.raises(ValueError, match="exactly the parameters"):
+        _example_spec(example=ModelExample(**example))  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"x_range": (1.0, 1.0)},
+        {"x_range": (2.0, 1.0)},
+        {"x_range": (0.0, float("inf"))},
+        {"x_range": (0.0, 1.0), "n": 1},
+    ],
+)
+def test_model_example_rejects_bad_ranges(kwargs: dict[str, object]) -> None:
+    with pytest.raises(ValueError):
+        ModelExample({"a": 1.0, "b": 1.0}, **kwargs)  # type: ignore[arg-type]
+
+
+def test_model_example_rejects_non_finite_parameter() -> None:
+    with pytest.raises(ValueError, match="finite"):
+        ModelExample({"a": float("nan")}, x_range=(0.0, 1.0))
+
+
+@pytest.mark.parametrize("aliases", [("",), ("a", "a"), ("demo",)])
+def test_bad_aliases_are_rejected(aliases: tuple[str, ...]) -> None:
+    with pytest.raises(ValueError, match="alias"):
+        _example_spec(aliases=aliases)
+
+
+def _metadata_spec(**overrides: object) -> ModelSpec:
+    kwargs: dict[str, object] = {
+        "id": "meta",
+        "name": "Meta",
+        "category": "exponential",
+        "expression": "a*exp(b*x)",
+        "parameters": (Parameter("a", "scale"), Parameter("b", "rate")),
+        "initial_guess": lambda x, y: {"a": 1.0, "b": 0.1},
+        "references": ("Someone (2000) A real book",),
+        "assumptions": "Constant relative growth.",
+        "description": "Exponential growth.",
+        "example": ModelExample({"a": 2.0, "b": 0.3}, x_range=(0.0, 2.0)),
+    }
+    kwargs.update(overrides)
+    return ModelSpec(**kwargs)  # type: ignore[arg-type]
+
+
+def test_strict_metadata_accepts_complete_model_and_is_off_by_default() -> None:
+    x = np.linspace(0.0, 2.0, 9)
+    check_model_contract(_metadata_spec(), x, {"a": 2.0, "b": 0.3}, strict_metadata=True)
+    bare = make_spec()
+    check_model_contract(bare, x, {"a": 2.0, "b": 0.3})  # lenient by default
+
+
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        ({"name": " "}, "name is empty"),
+        ({"category": "nonsense"}, "vocabulary"),
+        ({"category": "engineering"}, "sub-category"),
+        ({"category": "engineering.nonsense"}, "sub-category"),
+        ({"description": " "}, "description is empty"),
+        ({"example": None}, "no example"),
+        ({"references": ("Someone (2000) A real book", " ")}, "empty entry"),
+        ({"parameters": (Parameter("a", "scale"), Parameter("b"))}, "parameter 'b'"),
+        ({"references": ()}, "references"),
+        ({"assumptions": ""}, "assumptions"),
+    ],
+)
+def test_strict_metadata_rejects_incomplete_models(
+    overrides: dict[str, object], message: str
+) -> None:
+    x = np.linspace(0.0, 2.0, 9)
+    with pytest.raises(AssertionError, match=message):
+        check_model_contract(
+            _metadata_spec(**overrides), x, {"a": 2.0, "b": 0.3}, strict_metadata=True
+        )
+
+
+def test_strict_metadata_accepts_engineering_subcategory() -> None:
+    x = np.linspace(0.0, 2.0, 9)
+    spec = _metadata_spec(category="engineering.strength")
+    check_model_contract(spec, x, {"a": 2.0, "b": 0.3}, strict_metadata=True)
+
+
+def test_strict_metadata_allows_any_subcategory_of_a_vocabulary_head() -> None:
+    x = np.linspace(0.0, 2.0, 9)
+    spec = _metadata_spec(category="exponential.two_term")
+    check_model_contract(spec, x, {"a": 2.0, "b": 0.3}, strict_metadata=True)
+
+
+@pytest.mark.parametrize("starter", STARTER_MODELS, ids=lambda s: s.id)
+def test_every_starter_passes_the_strict_contract(starter: ModelSpec) -> None:
+    assert starter.example is not None
+    x, _ = starter.example_data()
+    check_model_contract(starter, x, dict(starter.example.params), strict_metadata=True)
+
+
+def test_spec_with_example_is_hashable_and_example_is_immutable() -> None:
+    spec = _metadata_spec()
+    assert spec.example is not None
+    assert hash(spec) == hash(spec)
+    assert len({spec, spec}) == 1
+    with pytest.raises(TypeError):
+        spec.example.params["a"] = 1.0  # type: ignore[index]
+    ModelExample({"b": 1.0, "a": 2.0}, (0.0, 1.0))
+    assert hash(ModelExample({"b": 1.0, "a": 2.0}, (0.0, 1.0))) == hash(
+        ModelExample({"a": 2.0, "b": 1.0}, (0.0, 1.0))
+    )
+    source = {"a": 2.0, "b": 0.3}
+    example = ModelExample(source, (0.0, 1.0))
+    source["a"] = 99.0  # the example took a copy
+    assert example.params["a"] == 2.0
+
+
+def test_hash_of_registered_starter_models_works() -> None:
+    from curvestudio.models import get_model
+
+    # Starters may have been cleared by another test module; re-register to be independent.
+    register_starter_models()
+    assert isinstance(hash(get_model("gaussian")), int)
+
+
+def test_concurrent_first_use_compiles_exactly_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    import sympy
+
+    calls: list[int] = []
+    real = sympy.lambdify
+
+    def counting(*args: object, **kwargs: object) -> object:
+        calls.append(1)
+        return real(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(sympy, "lambdify", counting)
+    spec = _metadata_spec()
+    barrier = threading.Barrier(8)
+    results: list[float] = []
+
+    def work() -> None:
+        barrier.wait()
+        results.append(float(spec.evaluate(np.array([1.0]), a=2.0, b=0.0)[0]))
+
+    threads = [threading.Thread(target=work) for _ in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert results == [2.0] * 8
+    assert len(calls) == 1 + len(spec.parameters)

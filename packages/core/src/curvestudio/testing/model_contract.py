@@ -7,6 +7,32 @@ from curvestudio.models import ModelSpec
 
 FloatArray = NDArray[np.float64]
 
+CATEGORY_VOCABULARY = frozenset(
+    {
+        "exponential",
+        "logarithmic",
+        "power",
+        "saturation",
+        "sigmoidal",
+        "growth",
+        "peak",
+        "distribution",
+        "dose_response",
+        "kinetics",
+        "physics",
+        "harmonic",
+        "rational",
+        "polynomial",
+        "engineering",
+    }
+)
+"""Allowed first dotted segment of ``ModelSpec.category``."""
+
+ENGINEERING_SUBCATEGORIES = frozenset(
+    {"strength", "properties", "cementitious", "durability", "packing"}
+)
+"""Allowed second segment of an ``engineering.*`` category."""
+
 _STEP = 1e-6
 _RTOL = 1e-6
 _NOISE_FRACTION = 0.01
@@ -18,18 +44,26 @@ def check_model_contract(
     true_params: dict[str, float],
     *,
     seed: int = 0,
+    strict_metadata: bool = False,
 ) -> None:
     """Raise ``AssertionError`` if ``spec`` breaks the model contract at ``true_params``.
 
     Checks: ``latex()`` is non-empty; ``evaluate`` returns finite float64 of shape
     ``(n,)``; the analytic Jacobian equals central finite differences (rtol 1e-6); and
     ``initial_guess`` — fed data drawn from the model plus 1 % noise (seeded by ``seed``)
-    — names every parameter with a finite value inside its bounds.
+    — names every parameter with a finite value inside its bounds. With
+    ``strict_metadata=True`` (shipped catalogue models) it also requires a non-empty name,
+    a category whose first dotted segment is in :data:`CATEGORY_VOCABULARY` (``engineering``
+    also needs a known sub-category), a description for every parameter and for the model,
+    non-empty references (no empty entries), non-empty assumptions and an ``example``.
     """
     names = [p.name for p in spec.parameters]
     if set(true_params) != set(names):
         raise AssertionError(f"true_params keys {sorted(true_params)} must equal {names}")
     x = np.asarray(x, dtype=np.float64)
+
+    if strict_metadata:
+        _check_metadata(spec)
 
     if not spec.latex().strip():
         raise AssertionError(f"{spec.id}: latex() is empty")
@@ -83,3 +117,30 @@ def _check_initial_guess(spec: ModelSpec, x: FloatArray, y: FloatArray, seed: in
             raise AssertionError(
                 f"{spec.id}: initial_guess {p.name}={value!r} outside bounds [{p.lower}, {p.upper}]"
             )
+
+
+def _check_metadata(spec: ModelSpec) -> None:
+    if not spec.name.strip():
+        raise AssertionError(f"{spec.id}: name is empty")
+    head, _, tail = spec.category.partition(".")
+    if head not in CATEGORY_VOCABULARY:
+        raise AssertionError(
+            f"{spec.id}: category {spec.category!r} is not in the vocabulary "
+            f"{sorted(CATEGORY_VOCABULARY)}"
+        )
+    if head == "engineering" and tail not in ENGINEERING_SUBCATEGORIES:
+        raise AssertionError(
+            f"{spec.id}: engineering category needs a sub-category from "
+            f"{sorted(ENGINEERING_SUBCATEGORIES)}, got {spec.category!r}"
+        )
+    for p in spec.parameters:
+        if not p.description.strip():
+            raise AssertionError(f"{spec.id}: parameter {p.name!r} has no description")
+    if not spec.references or any(not ref.strip() for ref in spec.references):
+        raise AssertionError(f"{spec.id}: references are empty or contain an empty entry")
+    if not spec.description.strip():
+        raise AssertionError(f"{spec.id}: description is empty")
+    if spec.example is None:
+        raise AssertionError(f"{spec.id}: the model has no example")
+    if not spec.assumptions.strip():
+        raise AssertionError(f"{spec.id}: assumptions are empty")
