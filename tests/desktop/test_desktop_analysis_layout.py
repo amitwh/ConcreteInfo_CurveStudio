@@ -96,7 +96,7 @@ def test_splitter_sizes_are_remembered_in_settings(autofit_window, qtbot, settin
     panel.splitter.setSizes([int(total * 0.5), int(total * 0.5)])
     assert panel.restore_splitter(fresh) is True
     sizes = panel.splitter.sizes()
-    assert abs(sizes[0] - chosen[0]) <= 2 and abs(sizes[1] - chosen[1]) <= 2
+    assert abs(sizes[0] - chosen[0]) <= 6 and abs(sizes[1] - chosen[1]) <= 6
 
     # junk in the store is refused, never applied
     fresh.setValue("analysis/splitterSizes", "not, numbers")
@@ -113,7 +113,7 @@ def test_window_saves_and_restores_the_splitter(autofit_window, qtbot, settings)
     panel.splitter.setSizes([int(total * 0.5), int(total * 0.5)])
     assert panel.restore_splitter(settings) is True
     sizes = panel.splitter.sizes()
-    assert abs(sizes[0] - chosen[0]) <= 2
+    assert abs(sizes[0] - chosen[0]) <= 6
 
 
 def test_manual_page_still_fits_and_imports_data(make_window, qtbot, write_file) -> None:

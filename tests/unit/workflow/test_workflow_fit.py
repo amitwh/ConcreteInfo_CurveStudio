@@ -654,7 +654,11 @@ def test_compact_subsamples_the_snapshot_deterministically() -> None:
     assert first.data.x[-1] == xy.x[-1]
     assert first.data.x == sorted(first.data.x)
     # the fit itself is computed on all rows
-    assert fit_dataset(xy, poly_spec(1)).result == first.result
+    # (the provenance timestamp has one-second resolution, so a slow runner can cross a second)
+    full = fit_dataset(xy, poly_spec(1)).result
+    assert full.model_dump(exclude={"provenance"}) == first.result.model_dump(
+        exclude={"provenance"}
+    )
     assert_json_safe(first)
 
 

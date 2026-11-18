@@ -2,6 +2,7 @@
 
 import csv
 import json
+from pathlib import Path
 
 from desktop_data import GOOD_CSV
 from test_desktop_autofit_run import NOISY_QUADRATIC, TINY, wait_stored
@@ -92,7 +93,7 @@ def test_mode_is_remembered_in_settings_and_manual_does_not_autostart(
     qtbot.addWidget(first)
     assert first.analysis_panel.mode() == "autofit"  # the product default
     first.analysis.set_mode("manual")
-    assert settings.fileName().startswith(str(tmp_path))  # isolated: nothing else written
+    assert Path(settings.fileName()).resolve().is_relative_to(tmp_path.resolve())  # isolated
     assert settings.value("analysis/mode") == "manual"
 
     second = make_window()

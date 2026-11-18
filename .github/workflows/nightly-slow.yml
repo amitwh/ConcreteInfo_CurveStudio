@@ -28,5 +28,8 @@ jobs:
           enable-cache: true
       - name: Sync dependencies (frozen)
         run: uv sync --frozen
+      - name: Install Qt offscreen libraries (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libxkbcommon-x11-0 libxcb-cursor0 libdbus-1-3
       - name: Slow numerical tests
         run: uv run pytest tests/numerical -m slow -q
