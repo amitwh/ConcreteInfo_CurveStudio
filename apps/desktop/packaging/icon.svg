@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- CurveStudio desktop icon source: dark rounded square, white axes, fitted
+       curve through data points. make_icon.py draws the same geometry with
+       Pillow to produce the PNG/ICO files the packaging needs. -->
+  <rect width="512" height="512" rx="96" fill="#20242c"/>
+  <path d="M112 96 v304 h304" stroke="#e8eaf0" stroke-width="28" stroke-linecap="round" fill="none"/>
+  <path d="M136 368 C 224 368 264 200 400 152" stroke="#e8734a" stroke-width="30" stroke-linecap="round" fill="none"/>
+  <circle cx="168" cy="344" r="18" fill="#9aa3b2"/>
+  <circle cx="248" cy="296" r="18" fill="#9aa3b2"/>
+  <circle cx="336" cy="216" r="18" fill="#9aa3b2"/>
+</svg>

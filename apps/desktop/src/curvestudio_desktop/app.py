@@ -2,8 +2,10 @@
 
 ``run_app`` is the real entry point; ``run_selftest`` is the headless smoke used
 by CI and packaging (D4): it builds the whole main window offscreen, loads the
-bundled example, runs one fit through the workflow layer and reports PASS/FAIL
-on stdout. It never shows a window and exits 0 only when everything worked.
+bundled example, runs one fit and one Auto-fit (through the spawn process pool,
+which a frozen build only survives with ``freeze_support()``) via the workflow
+layer and reports PASS/FAIL on stdout. It never shows a window and exits 0 only
+when everything worked.
 """
 
 import os
@@ -23,6 +25,7 @@ from PySide6.QtWidgets import QApplication
 from curvestudio_desktop import APP_NAME, ORG_NAME, __version__
 
 if TYPE_CHECKING:
+    from curvestudio.data import XY
     from curvestudio_desktop.views.main_window import MainWindow
 
 Shower = Callable[[str], None]
@@ -172,6 +175,42 @@ def run_app(argv: list[str] | None = None) -> int:
     return int(app.exec())
 
 
+def _selftest_autofit(xy: XY) -> tuple[bool, str]:
+    """One tiny Auto-fit through the spawn process pool.
+
+    Two workers force the multiprocessing pool even for this small run. In a
+    frozen (PyInstaller) build every worker re-executes the program, so this
+    returning proves ``freeze_support()`` runs before the app. The exponential
+    family only yields candidates when the model-library entry points were
+    found, so a plain ``importlib.metadata`` scan also gets proven here.
+
+    Returns ``(ok, summary)``; the summary is printed in the SELFTEST OK line.
+    """
+    from curvestudio.workflow import AutoFitConfig, run_autofit
+
+    result = run_autofit(
+        xy,
+        AutoFitConfig(
+            families=("exponential",),
+            n_starts=2,
+            time_limit=10.0,
+            cv_folds=None,
+            workers=2,  # the pool, not an in-process run
+            curve_top_n=0,
+            staged_starts=False,
+        ),
+    )
+    if result.cancelled:
+        return False, "the Auto-fit run was cancelled"
+    catalogue = [o for o in result.outcomes if not o.candidate_id.startswith("poly")]
+    if not catalogue:
+        return False, "Auto-fit saw no registered models (the entry points did not load)"
+    if not result.ranked:
+        return False, "no Auto-fit candidate converged"
+    best = result.ranked[0]
+    return True, f"autofit ({len(result.outcomes)} candidates, 2-worker pool, best {best.model_id})"
+
+
 def run_selftest(argv: list[str] | None = None) -> int:
     """Headless smoke test: window + bundled example + one fit + one Auto-fit.
 
@@ -226,6 +265,10 @@ def run_selftest(argv: list[str] | None = None) -> int:
         if str(bundle.result.status) != "converged":
             print(f"SELFTEST FAIL: fit did not converge ({bundle.result.status})", file=sys.stderr)
             return 1
+        pool_ok, pool_summary = _selftest_autofit(xy)
+        if not pool_ok:
+            print(f"SELFTEST FAIL: {pool_summary}", file=sys.stderr)
+            return 1
         r2 = bundle.summary.result_summary.get("r2", "n/a") if bundle.summary else "n/a"
 
         # Auto-fit starts by itself on import (the product rule); wait for its result
@@ -254,6 +297,7 @@ def run_selftest(argv: list[str] | None = None) -> int:
         )
         print(
             f"SELFTEST OK window, table ({model.rowCount()} rows), plot "
-            f"({len(x_plot)} points), fit ({bundle.result.status}, R² {r2}){top_text}"
+            f"({len(x_plot)} points), fit ({bundle.result.status}, R² {r2}){top_text}, "
+            f"{pool_summary}"
         )
         return 0

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=ConcreteInfo CurveStudio
+GenericName=Curve fitting
+Comment=Fit curves to concrete test data offline: 100+ models, Auto-fit, reports
+Exec=curvestudio-desktop
+TryExec=curvestudio-desktop
+Icon=curvestudio-desktop
+Terminal=false
+Categories=Science;DataVisualization;Education;
+StartupWMClass=curvestudio-desktop
