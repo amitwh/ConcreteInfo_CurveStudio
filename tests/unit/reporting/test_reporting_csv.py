@@ -125,6 +125,16 @@ def test_neutralisation_covers_every_dangerous_prefix() -> None:
     assert neutralise("1e-3 x") == "1e-3 x"
 
 
+def test_safe_text_is_exported_from_the_package_root() -> None:
+    # callers outside the package (the desktop ranking CSV) must not reach into
+    # the private csv_report submodule for the standard cell treatment
+    import curvestudio_reporting
+
+    assert curvestudio_reporting.safe_text("=cmd()") == "'=cmd()"
+    assert curvestudio_reporting.safe_text("day") == "day"
+    assert "safe_text" in curvestudio_reporting.__all__
+
+
 def test_neutralisation_covers_leading_whitespace_before_a_formula() -> None:
     from curvestudio_reporting.csv_report import neutralise
 

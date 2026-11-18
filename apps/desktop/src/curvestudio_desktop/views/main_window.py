@@ -7,7 +7,7 @@ axes, reset, export) delegate to PlotView. Nothing here computes anything.
 
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from PySide6.QtCore import QByteArray, QPoint, QSettings, Qt
 from PySide6.QtGui import QAction, QCloseEvent, QKeySequence
@@ -26,8 +26,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from curvestudio.workflow import ImportOutcome
+from curvestudio.discovery import AutoFitResult
+from curvestudio.workflow import FitBundle, FitSpec, ImportOutcome
 from curvestudio_desktop import APP_NAME, NO_NETWORK_NOTE
+from curvestudio_desktop.controllers import exports
+from curvestudio_desktop.controllers.analysis import AnalysisController
+from curvestudio_desktop.controllers.analysis_jobs import AutoFitLive
 from curvestudio_desktop.controllers.project import ProjectController
 from curvestudio_desktop.controllers.selection import SelectionController
 from curvestudio_desktop.jobs import JobHandle, JobRunner
@@ -62,16 +66,21 @@ class MainWindow(QMainWindow):
         self._settings = settings if settings is not None else QSettings()
         self._running_job: JobHandle | None = None
         self._busy_cursor = False
+        self._suppress_autostart = False
         self.layout_restored = False
         self.setWindowTitle(APP_NAME)
         self.setMinimumSize(*MINIMUM_SIZE)
         self.setObjectName("mainWindow")
 
+        self.analysis = AnalysisController(
+            controller, self.selection, settings=self._settings, parent=self
+        )
+
         self.plot_view = PlotView(self)
         self.setCentralWidget(self.plot_view)
 
         self.project_dock = ProjectDock(self)
-        self.analysis_panel = AnalysisPanel(self)
+        self.analysis_panel = AnalysisPanel(self.analysis, self.selection, self)
         self.table_dock = DataTableDock(self)
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.project_dock)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.analysis_panel)
@@ -154,6 +163,21 @@ class MainWindow(QMainWindow):
         )
         self.action_export_plot.triggered.connect(self.export_plot)
 
+        self.action_export_results = self._action(
+            "Export &results…", None, "Export the current fit (JSON, XLSX, PDF or CSV)"
+        )
+        self.action_export_results.triggered.connect(self.export_results)
+
+        self.action_export_ranking = self._action(
+            "Export &ranking table…", None, "Export the Auto-fit ranking as CSV"
+        )
+        self.action_export_ranking.triggered.connect(self.export_ranking)
+
+        self.action_export_publication = self._action(
+            "Export plot (&publication)…", None, "Matplotlib figure of the fit (PNG/SVG/PDF)"
+        )
+        self.action_export_publication.triggered.connect(self.export_publication_plot)
+
         self.action_about = self._action("&About", None, "Licence and version")
         self.action_about.triggered.connect(self.show_about)
 
@@ -184,6 +208,12 @@ class MainWindow(QMainWindow):
         file_menu.addAction(self.action_import)
         file_menu.addAction(self.action_clipboard)
         file_menu.addSeparator()
+        export_menu = file_menu.addMenu("&Export")
+        export_menu.addAction(self.action_export_results)
+        export_menu.addAction(self.action_export_ranking)
+        export_menu.addAction(self.action_export_plot)
+        export_menu.addAction(self.action_export_publication)
+        file_menu.addSeparator()
         file_menu.addAction(self.action_quit)
 
         edit_menu = bar.addMenu("&Edit")
@@ -202,6 +232,7 @@ class MainWindow(QMainWindow):
         view_menu.addAction(self.action_log_y)
         view_menu.addAction(self.action_reset_view)
         view_menu.addAction(self.action_export_plot)
+        view_menu.addAction(self.action_export_publication)
 
         help_menu = bar.addMenu("&Help")
         help_menu.addAction(self.action_about)
@@ -310,15 +341,30 @@ class MainWindow(QMainWindow):
         controller.datasets_changed.connect(self._on_datasets_changed)
         controller.dataset_renamed.connect(self._on_dataset_renamed)
         controller.dataset_imported.connect(self._on_dataset_imported)
+        controller.analyses_changed.connect(self.refresh_tree)
         controller.dirty_changed.connect(lambda _dirty: self._refresh_title())
         controller.status_message.connect(self.statusBar().showMessage)
         controller.recent_files_changed.connect(self._refresh_recent_menu)
         controller.undo_available_changed.connect(self.action_undo.setEnabled)
         self.project_dock.tree.on_dataset_selected(self._on_tree_selection)
         self.project_dock.tree.on_dataset_menu(self._show_dataset_menu)
+        self.project_dock.tree.on_analysis_selected(self._on_tree_analysis)
+        self.project_dock.tree.set_analysis_labeller(self.analysis.analysis_label)
         self.selection.active_changed.connect(self.refresh_table)
         self.selection.active_changed.connect(self.refresh_plot)
         self.selection.active_changed.connect(self._sync_tree_selection)
+        self.selection.active_changed.connect(self._on_active_dataset_changed)
+        analysis = self.analysis
+        analysis.status_message.connect(self.statusBar().showMessage)
+        analysis.autofit_started.connect(self._on_autofit_started)
+        analysis.autofit_live.connect(self._on_autofit_live)
+        analysis.autofit_finished.connect(self._on_autofit_result)
+        analysis.autofit_failed.connect(self._on_autofit_failed)
+        analysis.fit_finished.connect(self._on_fit_shown)
+        analysis.fit_failed.connect(self._on_fit_failed)
+        panel = self.analysis_panel
+        panel.autofit_view.rowSelected.connect(self._plot_candidate)
+        panel.autofit_view.openRequested.connect(self._open_candidate)
         self._refresh_recent_menu()
 
     # -- imports -----------------------------------------------------------------------------
@@ -412,15 +458,127 @@ class MainWindow(QMainWindow):
         self.selection.set_project(self.controller.project)
         self.selection.set_active(dataset_id)  # show what was just imported
 
+    # -- analysis (D2): routing between the analysis controller and the views ----------------
+
+    def _on_active_dataset_changed(self) -> None:
+        """The active dataset (or its columns) moved: drop stale fit overlays, maybe auto-run."""
+        self._refresh_analysis_views()
+
+    def _refresh_analysis_views(self) -> None:
+        """Point the analysis dock at the active dataset: stored run, empty state, auto-start."""
+        panel = self.analysis_panel
+        self.analysis.clear_current_fit()
+        panel.results.clear_all()
+        self.plot_view.clear_fit()
+        panel.manual_view.refresh_data_options()
+        dataset_id = self.selection.active_id
+        if dataset_id is None:
+            panel.autofit_view.clear()
+            return
+        result = self.analysis.stored_autofit(dataset_id)
+        if result is not None and self.analysis.has_current_autofit(dataset_id):
+            self.analysis.showing_stored_autofit(dataset_id, result)
+            panel.autofit_view.show_result(result)
+        else:
+            self.analysis.showing_stored_autofit(dataset_id, None)
+            panel.autofit_view.clear()
+        if not self._suppress_autostart:
+            self.analysis.maybe_autostart(dataset_id)
+
+    def _on_autofit_started(self, dataset_id: str) -> None:
+        if dataset_id == self.selection.active_id:
+            self.analysis_panel.autofit_view.run_started(dataset_id)
+
+    def _on_autofit_live(self, live: object) -> None:
+        if self.analysis.running_dataset == self.selection.active_id:
+            self.analysis_panel.autofit_view.show_live(cast("AutoFitLive", live))
+
+    def _on_autofit_result(self, dataset_id: str, result: object) -> None:
+        if dataset_id == self.selection.active_id:
+            self.analysis_panel.autofit_view.show_result(cast("AutoFitResult", result))
+
+    def _on_autofit_failed(self, message: str) -> None:
+        # inline notice, not a modal box: an auto-started run the user never asked for
+        # must not interrupt them (the status bar carries the same text)
+        self.analysis_panel.autofit_view.show_failure(message)
+
+    def _on_fit_shown(self, bundle: object, spec: object, meta: object) -> None:
+        """A fit (fresh or restored) fills the tabs and draws its curve — if it has one."""
+        fit_bundle = cast("FitBundle", bundle)
+        panel = self.analysis_panel
+        panel.results.show_bundle(fit_bundle, cast("FitSpec", spec), meta)
+        panel.manual_view.clear_banner()
+        curve = fit_bundle.curve
+        if curve is None:
+            self.plot_view.clear_fit()  # never a stand-in curve for a fit without one
+            return
+        confidence = fit_bundle.confidence_band
+        prediction = fit_bundle.prediction_band
+        self.plot_view.set_fit(
+            curve.x,
+            curve.y,
+            (confidence.lower, confidence.upper) if confidence is not None else None,
+            (prediction.lower, prediction.upper) if prediction is not None else None,
+        )
+
+    def _on_fit_failed(self, message: str) -> None:
+        self.analysis_panel.manual_view.show_failure(message)
+
+    def _plot_candidate(self, candidate_id: str) -> None:
+        """A ranking row was selected: draw its stored curve (or none, honestly)."""
+        dataset_id = self.selection.active_id
+        result = None if dataset_id is None else self.analysis.autofit_for_display(dataset_id)
+        if result is None:
+            return
+        curve = result.curves.get(candidate_id)
+        if curve is None:
+            self.plot_view.clear_fit()
+            self.plot_view.show_hint("curve not sampled — Open full results")
+            self.statusBar().showMessage(
+                "no sampled curve for this row: use Open full results to refit it"
+            )
+            return
+        confidence = (
+            (curve.confidence_lower, curve.confidence_upper)
+            if curve.confidence_lower is not None and curve.confidence_upper is not None
+            else None
+        )
+        prediction = (
+            (curve.prediction_lower, curve.prediction_upper)
+            if curve.prediction_lower is not None and curve.prediction_upper is not None
+            else None
+        )
+        self.plot_view.set_fit(curve.x, curve.y, confidence, prediction)
+
+    def _open_candidate(self, candidate_id: str) -> None:
+        dataset_id = self.selection.active_id
+        result = None if dataset_id is None else self.analysis.autofit_for_display(dataset_id)
+        if dataset_id is None or result is None:
+            return
+        self.analysis.open_candidate(dataset_id, result, candidate_id)
+
+    def _on_tree_analysis(self, analysis_id: str) -> None:
+        """An analysis row was clicked: activate its dataset, then restore without refitting."""
+        dataset_id = self.analysis.dataset_of_analysis(analysis_id)
+        self._suppress_autostart = True
+        try:
+            if dataset_id is not None:
+                self.selection.set_active(dataset_id)
+        finally:
+            self._suppress_autostart = False
+        self.analysis.restore_analysis(analysis_id)
+
     # -- refresh -----------------------------------------------------------------------------
 
     def refresh_all(self) -> None:
         """Full rebuild: a different project is current (new, open, replace)."""
+        self.analysis.reset_for_project()
         if not self.selection.set_project(self.controller.project):
             # reconciliation did not move the active dataset (for example an empty
             # project) — the table and plot still must show the new reality
             self.refresh_table()
             self.refresh_plot()
+            self._refresh_analysis_views()
         self.refresh_tree()
         self._refresh_title()
         self._refresh_recent_menu()
@@ -552,6 +710,7 @@ class MainWindow(QMainWindow):
         geometry = self._settings.value(_LAYOUT_GEOMETRY_KEY, "")
         if isinstance(geometry, str) and geometry:
             self.restoreGeometry(QByteArray.fromBase64(bytes(geometry, encoding="ascii")))
+        self.analysis_panel.restore_splitter(self._settings)  # the ranking/tabs split
 
     def _save_layout(self) -> None:
         self._settings.setValue(
@@ -560,9 +719,80 @@ class MainWindow(QMainWindow):
         self._settings.setValue(
             _LAYOUT_GEOMETRY_KEY, bytes(self.saveGeometry().toBase64().data()).decode("ascii")
         )
+        self.analysis_panel.save_splitter(self._settings)
         self._settings.sync()
 
     # -- actions without a controller home ---------------------------------------------------
+
+    def export_results(self) -> None:
+        """Export the current fit as a report (JSON / XLSX / PDF / CSV by suffix)."""
+        bundle = self.analysis.current_bundle
+        if bundle is None:
+            self.controller.messenger.show_information(
+                "Export results", "Run or open a fit first; there is nothing to export yet."
+            )
+            return
+        target = self.controller.paths.choose_export_path(
+            "Export results", "CurveStudio report (*.json *.xlsx *.pdf *.csv)"
+        )
+        if target is None:
+            return
+        self._run_job(
+            f"Exporting {target.name}",
+            exports.export_fit,
+            target,
+            bundle,
+            on_result=lambda _done: self.statusBar().showMessage(f"Exported {target.name}"),
+            on_error=lambda exc: self.controller.messenger.show_error("Export failed", str(exc)),
+        )
+
+    def export_ranking(self) -> None:
+        """Export the active dataset's Auto-fit ranking table as formula-safe CSV."""
+        dataset_id = self.selection.active_id
+        result = None if dataset_id is None else self.analysis.stored_autofit(dataset_id)
+        if result is None:
+            self.controller.messenger.show_information(
+                "Export ranking table", "Run Auto-fit first; there is no ranking to export."
+            )
+            return
+        target = self.controller.paths.choose_export_path(
+            "Export ranking table", "CSV table (*.csv)"
+        )
+        if target is None:
+            return
+        if target.suffix.lower() != ".csv":
+            target = target.with_suffix(".csv")
+        self._run_job(
+            f"Exporting {target.name}",
+            exports.export_ranking_csv,
+            target,
+            result,
+            self.analysis.rank_by,
+            on_result=lambda _done: self.statusBar().showMessage(f"Exported {target.name}"),
+            on_error=lambda exc: self.controller.messenger.show_error("Export failed", str(exc)),
+        )
+
+    def export_publication_plot(self) -> None:
+        """Export the current fit as the Matplotlib publication figure (PNG/SVG/PDF)."""
+        bundle = self.analysis.current_bundle
+        if bundle is None:
+            self.controller.messenger.show_information(
+                "Export plot", "Run or open a fit first; there is nothing to export yet."
+            )
+            return
+        target = self.controller.paths.choose_export_path(
+            "Export plot (publication)", "PNG image (*.png);;SVG image (*.svg);;PDF report (*.pdf)"
+        )
+        if target is None:
+            return
+        self._run_job(
+            f"Exporting {target.name}",
+            exports.export_publication_plot,
+            target,
+            bundle,
+            on_result=lambda _done: self.statusBar().showMessage(f"Exported {target.name}"),
+            on_error=lambda exc: self.controller.messenger.show_error("Export failed", str(exc)),
+        )
 
     def export_plot(self) -> None:
         """Export the current plot via the export dialog; PNG or SVG by suffix."""

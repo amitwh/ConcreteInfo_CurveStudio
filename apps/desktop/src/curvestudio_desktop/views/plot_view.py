@@ -13,7 +13,7 @@ from typing import cast
 
 import numpy as np
 import pyqtgraph as pg
-from PySide6.QtCore import QPointF, Qt
+from PySide6.QtCore import QEvent, QObject, QPointF, Qt
 from PySide6.QtWidgets import QLabel, QStackedLayout, QVBoxLayout, QWidget
 
 
@@ -32,8 +32,19 @@ class PlotView(QWidget):
         self._plot = pg.PlotWidget(self)
         self._plot.setMouseEnabled(x=True, y=True)
         self._scatter: pg.PlotDataItem | None = None
+        self._fit_curve: pg.PlotDataItem | None = None
+        self._confidence: pg.FillBetweenItem | None = None
+        self._prediction: pg.FillBetweenItem | None = None
         self._empty_label = QLabel("Import data to see it plotted")
         self._empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        # a non-modal inline notice over the plot (a ranking row with no sampled curve)
+        self._hint = QLabel(self._plot)
+        self._hint.setStyleSheet(
+            "QLabel { background: rgba(90, 90, 90, 210); color: white;"
+            " border-radius: 4px; padding: 4px 10px; }"
+        )
+        self._hint.hide()
+        self._plot.installEventFilter(self)
         self._readout = QLabel("", self)
         self._readout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         stack = QStackedLayout()
@@ -73,6 +84,7 @@ class PlotView(QWidget):
         if self._scatter is not None:
             self._plot.removeItem(self._scatter)
             self._scatter = None
+        self.clear_fit()
         self._x = self._y = None
         self._stack.setCurrentWidget(self._empty_label)
         self._can_log_x = self._can_log_y = False
@@ -84,6 +96,101 @@ class PlotView(QWidget):
 
     def axis_labels(self) -> tuple[str, str]:
         return self._x_name, self._y_name
+
+    # -- fitted curve and bands ---------------------------------------------------------------
+
+    def set_fit(
+        self,
+        x: Sequence[float],
+        y: Sequence[float],
+        confidence: tuple[Sequence[float], Sequence[float]] | None = None,
+        prediction: tuple[Sequence[float], Sequence[float]] | None = None,
+    ) -> None:
+        """Draw the fitted curve (with optional bands) over the scatter.
+
+        The curve is the only thing that claims to be a result, so it is drawn in a strong
+        colour that reads on both the light and the dark theme; the bands are translucent
+        fills. Callers never call this for a fit that did not converge — there is no curve
+        to draw then (see :meth:`clear_fit`).
+        """
+        self.clear_fit()
+        if confidence is not None:
+            self._confidence = self._fill_between(x, confidence, (31, 119, 180), 70)
+            self._plot.addItem(self._confidence)
+        if prediction is not None:
+            self._prediction = self._fill_between(x, prediction, (127, 127, 127), 40)
+            self._plot.addItem(self._prediction)
+        self._fit_curve = pg.PlotDataItem(
+            np.asarray(x, dtype=np.float64),
+            np.asarray(y, dtype=np.float64),
+            pen=pg.mkPen("#d62728", width=2),
+        )
+        self._plot.addItem(self._fit_curve)
+
+    def clear_fit(self) -> None:
+        """Remove the curve and bands (a dataset switch, or a fit without a curve)."""
+        for item in (self._fit_curve, self._confidence, self._prediction):
+            if item is not None:
+                self._plot.removeItem(item)
+        self._fit_curve = None
+        self._confidence = None
+        self._prediction = None
+        self._hint.hide()
+
+    # -- inline hint -------------------------------------------------------------------------
+
+    def show_hint(self, text: str) -> None:
+        """A one-line notice centred at the top of the plot area.
+
+        Used when honesty beats drawing: a ranking row outside the sampled top-N has
+        no stored curve, and saying so inline beats silently clearing the overlay.
+        """
+        self._hint.setText(text)
+        self._hint.adjustSize()
+        self._hint.show()
+        self._position_hint()
+
+    def hint_text(self) -> str:
+        return self._hint.text()
+
+    def hint_visible(self) -> bool:
+        return not self._hint.isHidden()
+
+    def _position_hint(self) -> None:
+        """Keep the hint centred at the top of the plot as it resizes."""
+        if self._hint.isHidden():
+            return
+        left = max(8, (self._plot.width() - self._hint.width()) // 2)
+        self._hint.move(left, 8)
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        if watched is self._plot and event.type() is QEvent.Type.Resize:
+            self._position_hint()
+        return super().eventFilter(watched, event)
+
+    def fit_curve_data(self) -> tuple[np.ndarray, np.ndarray] | None:
+        """The drawn curve's arrays, or ``None`` when no curve is shown."""
+        if self._fit_curve is None:
+            return None
+        x, y = self._fit_curve.getData()
+        if x is None or y is None:
+            return None
+        return np.asarray(x), np.asarray(y)
+
+    def _fill_between(
+        self,
+        x: Sequence[float],
+        band: tuple[Sequence[float], Sequence[float]],
+        color: tuple[int, int, int],
+        alpha: int,
+    ) -> pg.FillBetweenItem:
+        lower = pg.PlotDataItem(
+            np.asarray(x, dtype=np.float64), np.asarray(band[0], dtype=np.float64)
+        )
+        upper = pg.PlotDataItem(
+            np.asarray(x, dtype=np.float64), np.asarray(band[1], dtype=np.float64)
+        )
+        return pg.FillBetweenItem(lower, upper, brush=pg.mkBrush(*color, alpha))
 
     # -- log axes ----------------------------------------------------------------------------
 
