@@ -126,6 +126,15 @@ def run_frozen_selftest() -> None:
         raise SystemExit(f"frozen selftest failed (exit code {proc.returncode})")
 
 
+def _has_qt_plugin(internal: Path, kind: str, pattern: str) -> bool:
+    """Is a Qt plugin of this kind in the bundle? The PySide6 wheel puts plugins under
+    ``PySide6/Qt/plugins`` on Linux and under ``PySide6/plugins`` on Windows."""
+    return any(
+        any(internal.glob(f"PySide6/{layout}/{kind}/{pattern}"))
+        for layout in ("Qt/plugins", "plugins")
+    )
+
+
 def check_bundle() -> None:
     """Fail loudly when a data ship the selftest cannot reach went missing.
 
@@ -145,16 +154,11 @@ def check_bundle() -> None:
             "reportlab fonts for the PDF reports",
         ),
         (
-            any(
-                internal.glob(
-                    # PySide6 wheel layout: libqsvg.so / qsvg.dll
-                    "PySide6/Qt/plugins/imageformats/*svg*"
-                )
-            ),
+            _has_qt_plugin(internal, "imageformats", "*svg*"),
             "the Qt SVG image format plugin",
         ),
         (
-            any(internal.glob("PySide6/Qt/plugins/iconengines/*")),
+            _has_qt_plugin(internal, "iconengines", "*"),
             "the Qt icon engine plugins",
         ),
         (
