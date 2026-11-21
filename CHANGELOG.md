@@ -2,6 +2,49 @@
 
 All notable changes are listed here. Dates are IST. Format: [Keep a Changelog](https://keepachangelog.com/); versions follow [SemVer](https://semver.org/).
 
+## [0.10.0] - 2026-11-22
+
+### Added
+- **Desktop, a real product UI.** The brand theme (Fusion palette and stylesheet generated
+  from the same tokens), bundled Inter and JetBrains Mono, dock title bars with collapse,
+  float and close (remembered), View → Panels / Theme / Reset layout, and an icon toolbar
+  with shortcut tooltips.
+- **Details window.** The five-tab report (equation, parameters, statistics, diagnostics,
+  predict) opens in one reusable, resizable, non-modal window with its geometry remembered;
+  the dock keeps a compact fit summary. Enter, double-click, "Open full results" and Ctrl+D
+  all reach it.
+- **Help browser (F1).** The same eleven sections the web `/help` page shows, with a section
+  index and a filtering search; Help → Keyboard shortcuts opens at that section, and Help →
+  About Qt is there too.
+- **A proper About.** ConcreteInfo logo on an always-white chip, live runtime versions, the
+  website and source links, the licence and the credits.
+- **Colour for comparisons.** One categorical palette in `curvestudio_plotting.palette`
+  drives the desktop plot, the web chart and the exported figures: rank 1 is the brand
+  accent, ranks 2-8 the design-system set, assigned by the row's position so tied ranks stay
+  distinguishable. Confidence and prediction bands are neutral greys so a band can never be
+  read as another model's curve, and a persisted "Show top 3" toggle overlays the three best
+  models in both apps. Ranking rows carry a matching swatch.
+- **Web:** a `/help` page with the canonical content, stable anchors and search; `/about`
+  gains the logo, the website and the credits; `lucide-react` supplies the interface icons.
+- Lucide icons in the desktop app, from the vendored SVG set (ISC).
+
+### Changed
+- Equations are shown and copied as `x^2`, never `x**2`: the engine keeps the parseable form
+  while the equation tab, details window, ranking, ranking CSV and the XLSX/PDF reports use
+  `^` (which Excel also evaluates). The JSON export keeps the stored form.
+- The desktop ranking shows Rank, Model, R², adj. R², RMSE and k only, sized from the widest
+  rendered value plus the stylesheet's own padding, so no numeric cell elides.
+- The desktop's fit summary, ranking and disclosure area share the dock without overlapping a
+  neighbouring dock at 1280×720 and above.
+
+### Fixed
+- Web chart bands were still filled with the abandoned `#0F6CBD` blue; they are neutral now.
+- A near-perfect fit printed as "R² 1" in the metrics strips; it reads "R² 1.0000".
+- The desktop analysis dock could be given more height than it had, painting its summary over
+  the data-table dock; the ranking's own 275 px floor was the cause.
+- The "Order by" control clipped a word; it elides with an ellipsis and keeps the full label
+  in its tooltip.
+
 ## [0.9.2] - 2026-11-21
 
 ### Added
