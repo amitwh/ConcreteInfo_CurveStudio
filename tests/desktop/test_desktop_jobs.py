@@ -171,3 +171,22 @@ def test_generic_api_shape(sync: bool, qtbot) -> None:
     assert hasattr(handle, "cancel")
     handle.cancel()
     assert handle.cancelled
+
+
+def test_a_torn_down_signal_source_is_not_an_error() -> None:
+    """A worker finishing during teardown must not raise on the deleted signal object.
+
+    Reproduces the intermittent "Signal source has been deleted" seen when a run ends
+    while Qt is already tearing down: the emit is best-effort, the work itself stands.
+    """
+    import shiboken6
+
+    from curvestudio_desktop.jobs import JobHandle, _JobSignals, _Runnable
+
+    signals = _JobSignals()
+    handle = JobHandle()
+    shiboken6.delete(signals)  # the C++ object is gone; the Python wrapper is not
+    assert not shiboken6.isValid(signals)
+    runnable = _Runnable(lambda: 42, (), {}, signals, handle)
+    runnable.run()  # must not raise
+    assert handle.done

@@ -25,7 +25,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, cast
 
-from PySide6.QtCore import QObject, QRunnable, QThreadPool, Signal
+from PySide6.QtCore import QObject, QRunnable, QThreadPool, Signal, SignalInstance
 
 ProgressCallback = Callable[[int, int], None]
 
@@ -91,18 +91,34 @@ class _Runnable(QRunnable):
         self._signals = signals
         self._handle = handle
 
+    def _emit(self, signal: SignalInstance, *args: object) -> None:
+        """Emit from the worker thread, tolerating a torn-down signal source.
+
+        A worker can still be finishing when the application tears its Qt objects
+        down (closing the window mid-fit, or a headless run ending). Emitting on the
+        already-deleted C++ object raises ``RuntimeError`` inside the thread, which
+        the thread hook reports as a crash *after* the work itself succeeded. The
+        delivery is pointless by then — the receiver is gone — so the emit is
+        best-effort, and only that exact condition is swallowed.
+        """
+        try:
+            signal.emit(*args)
+        except RuntimeError as exc:
+            if "has been deleted" not in str(exc):
+                raise
+
     def run(self) -> None:  # QThreadPool worker thread
         try:
             result = self._fn(*self._args, **self._kwargs)
         except BaseException as exc:  # delivered on the GUI thread, never re-raised here
             if not self._handle.cancelled:
-                self._signals.failed.emit(self._handle, exc)
+                self._emit(self._signals.failed, self._handle, exc)
         else:
             if not self._handle.cancelled:
-                self._signals.succeeded.emit(self._handle, result)
+                self._emit(self._signals.succeeded, self._handle, result)
         finally:
             self._handle._finish()
-            self._signals.settled.emit(self._handle)
+            self._emit(self._signals.settled, self._handle)
 
 
 def _declares_progress(fn: Callable[..., Any]) -> bool:
