@@ -125,9 +125,11 @@ def enumerate_with_capped(
     left out; it cannot be fitted. Custom models of the configuration are always included
     (the data decides in :func:`~curvestudio.discovery.screen` whether one can be fitted).
 
-    The second result maps the id of every model (and polynomial) that passes the category
-    filter but has more parameters than the cap to its parameter count, so the caller can
-    report each one instead of hiding it.
+    The second result maps the id of every registered model that passes the category filter
+    but has more parameters than the cap to its parameter count, plus the smallest over-cap
+    polynomials (the origin and free members one degree above the cap). Free polynomial
+    degrees are unbounded, so only that next step is listed; the caller can report every
+    entry instead of hiding it.
 
     Raises:
         AutoFitError: ``INVALID_CUSTOM_MODEL`` when a custom definition cannot be built,

@@ -2,9 +2,9 @@
 
 An Auto-fit result carries every row's numbers and a few sampled curves, not the full
 per-fit report. A UI that lets the user open any row calls :func:`bundle_for_candidate`,
-which refits that single candidate the way the Auto-fit worker did (same seed, starts and
-time limit, so the numbers are the row's own) and assembles the same bundle ``fit_dataset``
-returns.
+which refits that single candidate the way the Auto-fit worker did — same seed, time limit,
+number of starts and (for a very large dataset) the same subsample, so the numbers are the
+row's own — and assembles the same bundle ``fit_dataset`` returns.
 """
 
 from curvestudio.data import XY
@@ -14,6 +14,7 @@ from curvestudio.discovery import (
     candidate_seed,
     fit_candidate,
     resolve_spec,
+    subsample,
 )
 from curvestudio.workflow.bundle import FitBundle
 from curvestudio.workflow.errors import WorkflowError
@@ -21,13 +22,24 @@ from curvestudio.workflow.service import _assemble
 
 
 def bundle_for_candidate(
-    xy: XY, result: AutoFitResult, candidate_id: str, *, compact: bool = False
+    xy: XY,
+    result: AutoFitResult,
+    candidate_id: str,
+    *,
+    compact: bool = False,
+    n_starts: int | None = None,
+    on_subsample: bool | None = None,
 ) -> FitBundle:
     """Refit candidate ``candidate_id`` of ``result`` on ``xy`` and return its full bundle.
 
-    ``xy`` must be the data the run was made on (checked by fingerprint). The refit is
-    deterministic for the stored seed, so a converged row reproduces its stored parameters.
-    ``compact`` is as for :func:`~curvestudio.workflow.fit_dataset`.
+    ``xy`` must be the data the run was made on (checked by fingerprint on the full data).
+    The refit is deterministic for the stored seed, so a converged row reproduces its stored
+    parameters. The row's own stage is reproduced: its number of starts comes from ``n_starts``
+    when given, else from the stored outcome, else from the run's configuration; a row fitted
+    on the subsample of a very large dataset is fitted on that same deterministic subsample
+    when ``on_subsample`` is ``True`` (or the stored outcome says so), so it reproduces the
+    row's numbers rather than a full-data refit. ``compact`` is as for
+    :func:`~curvestudio.workflow.fit_dataset`.
 
     Raises:
         WorkflowError: ``DATA_MISMATCH`` (``xy`` is not the run's data), ``UNKNOWN_MODEL``
@@ -46,15 +58,24 @@ def bundle_for_candidate(
         raise WorkflowError("UNKNOWN_MODEL", str(exc.args[0])) from exc
     except ValueError as exc:
         raise WorkflowError("INVALID_SPEC", str(exc)) from exc
-    stored = next((o.fit for o in result.outcomes if o.candidate_id == candidate_id), None)
-    # a candidate kept from the two-start screening stage is reproduced with those two starts
-    n_starts = stored.n_starts if stored is not None and spec is not None else config.n_starts
+    stored = next((o for o in result.outcomes if o.candidate_id == candidate_id), None)
+    stored_fit = None if stored is None else stored.fit
+    # A row kept from the two-start screening stage is reproduced with those two starts.
+    starts = n_starts
+    if starts is None:
+        starts = stored_fit.n_starts if stored_fit is not None else config.n_starts
+    # A row of a very large run is reproduced on the same deterministic subsample it was
+    # fitted on; the full-data refit rows of that run say ``on_subsample=False``.
+    use_subsample = on_subsample
+    if use_subsample is None:
+        use_subsample = stored.on_subsample if stored is not None else False
+    data = subsample(xy) if use_subsample else xy
     fitted = fit_candidate(
-        xy,
+        data,
         ref,
         spec,
         seed=candidate_seed(config.seed, candidate_id),
-        n_starts=n_starts,
+        n_starts=starts,
         time_limit=config.time_limit,
     )
-    return _assemble(xy, fitted, spec, [], compact)
+    return _assemble(data, fitted, spec, [], compact)

@@ -131,10 +131,12 @@ def run_open_row_job(
     spec: dict[str, Any],
 ) -> dict[str, Any]:
     """Refit one candidate of a finished run (``spec``: ``config``, ``candidate_id``,
-    ``dataset_fingerprint``). Returns ``{"ok": True, "bundle": ...}`` or a workflow error."""
+    ``dataset_fingerprint``, and the row's ``n_starts``/``on_subsample``). Returns
+    ``{"ok": True, "bundle": ...}`` or a workflow error."""
     xy = decode_payload(payload, x_name=x_name, y_name=y_name, fingerprint=fingerprint)
     config = AutoFitConfig.model_validate(spec["config"])
-    # bundle_for_candidate reads only the run's configuration and the data fingerprint.
+    # Only the configuration and the data fingerprint are needed: the row's stage (start count
+    # and whether it was fitted on the subsample) travels in the spec.
     run = AutoFitResult(
         config=config,
         dataset_fingerprint=spec["dataset_fingerprint"],
@@ -148,7 +150,14 @@ def run_open_row_job(
         cancelled=False,
     )
     try:
-        bundle = bundle_for_candidate(xy, run, str(spec["candidate_id"]), compact=True)
+        bundle = bundle_for_candidate(
+            xy,
+            run,
+            str(spec["candidate_id"]),
+            compact=True,
+            n_starts=spec.get("n_starts"),
+            on_subsample=spec.get("on_subsample"),
+        )
     except WorkflowError as exc:
         return {"ok": False, "code": exc.code, "message": exc.message}
     return {"ok": True, "bundle": bundle.model_dump(mode="json")}

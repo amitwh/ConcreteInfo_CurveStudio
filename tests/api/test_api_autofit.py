@@ -16,7 +16,16 @@ from fastapi.testclient import TestClient
 from sqlalchemy import inspect, select
 
 from conftest import linear_csv, make_settings, signup, upload
-from curvestudio.discovery import AutoFitResult, RankBy
+from curvestudio.discovery import (
+    AutoFitConfig,
+    AutoFitResult,
+    CandidateOutcome,
+    PolynomialRef,
+    RankBy,
+    fit_candidate,
+    subsample,
+)
+from curvestudio.discovery.engine import LARGE_N
 from curvestudio.workflow import FitBundle, FitSpec, bundle_for_candidate, predict
 from curvestudio_api.app import create_app
 from curvestudio_api.export_openapi import generate
@@ -329,6 +338,69 @@ def test_only_fitted_rows_of_the_run_can_be_opened(run: dict[str, Any]) -> None:
     assert open_row(client, headers, autofit_id, "poly9").status_code == 404
     skipped = open_row(client, headers, autofit_id, "poly3")  # never a candidate (max 2 parameters)
     assert skipped.status_code == 404
+
+
+def test_opening_a_stored_subsampled_row_refits_it_on_the_subsample(run: dict[str, Any]) -> None:
+    """A row the engine fitted on the subsample is opened with the row's own starts and on that
+    same subsample, so the bundle reports the subsample rather than the full dataset."""
+    client, headers = run["client"], run["headers"]
+    with client.app.state.ctx.session_factory() as db:  # type: ignore[attr-defined]
+        user_id = db.get(Autofit, uuid.UUID(run["job"]["result_id"])).user_id
+
+    dataset = upload(client, headers, linear_csv(LARGE_N + 500)).json()
+    xy = stored_xy(client, dataset["id"])
+    sub = subsample(xy)
+    fit = fit_candidate(sub, PolynomialRef(degree=1), None, seed=1, n_starts=1, time_limit=None)
+    outcome = CandidateOutcome(
+        candidate_id="poly1",
+        outcome="converged",
+        fit=fit.model_copy(update={"n_starts": 2}),
+        on_subsample=True,
+        stage="screen",
+    )
+    config = AutoFitConfig(
+        workers=1, n_starts=5, cv_folds=None, families=("polynomial",), max_params=2
+    )
+    stored = AutoFitResult(
+        config=config,
+        dataset_fingerprint=xy.fingerprint,
+        n_active=int(xy.x.size),
+        ranked=(),
+        outcomes=(outcome,),
+        skipped={},
+        unconverged={},
+        exact_fits=(),
+        warnings=(),
+        cancelled=False,
+        subsample_n=len(sub.x),
+    )
+    autofit_id = uuid.uuid4()
+    with client.app.state.ctx.session_factory() as db:  # type: ignore[attr-defined]
+        db.add(
+            Autofit(
+                id=autofit_id,
+                user_id=user_id,
+                dataset_id=uuid.UUID(dataset["id"]),
+                config=config.model_dump(mode="json"),
+                result=stored.model_dump(mode="json"),
+                n_candidates=1,
+                best_model_id="poly1",
+            )
+        )
+        db.commit()
+
+    opened = open_row(client, headers, str(autofit_id), "poly1")
+    assert opened.status_code == 202, opened.text
+    job = wait_for(client, headers, opened.json()["job_id"])
+    assert job["status"] == "succeeded", job
+    assert job["spec"]["n_starts"] == 2  # the row's starts, not the configuration's 5
+    assert job["spec"]["on_subsample"] is True
+
+    bundle = FitBundle.model_validate(
+        client.get(f"{API}/fits/{job['result_ref']}", headers=headers).json()
+    )
+    assert bundle.data.n_total == len(sub.x)
+    assert bundle.data.n_total < len(xy.x)
 
 
 # -- export ----------------------------------------------------------------------------------------

@@ -265,6 +265,8 @@ def open_row(
             f"{candidate_id!r} cannot be opened as a fit: {exc.errors()[0]['msg']}",
             {"code": "ROW_NOT_OPENABLE"},
         ) from exc
+    fit = outcome.fit
+    assert fit is not None  # a fitted outcome always carries its fit
     job = Job(
         id=uuid.uuid4(),
         user_id=user.id,
@@ -277,6 +279,9 @@ def open_row(
             "config": autofit.config,
             "dataset_fingerprint": result.dataset_fingerprint,
             "fit_spec": fit_spec.model_dump(mode="json"),
+            # the row's own stage, so the refit reproduces its numbers rather than the run's
+            "n_starts": fit.n_starts,
+            "on_subsample": outcome.on_subsample,
         },
     )
     db.add(job)

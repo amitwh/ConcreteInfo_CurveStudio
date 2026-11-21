@@ -7,7 +7,7 @@ from curvestudio.discovery.candidates import (
     resolve_spec,
 )
 from curvestudio.discovery.curves import RowCurve
-from curvestudio.discovery.engine import Plan, autofit, iter_autofit, plan_run
+from curvestudio.discovery.engine import Plan, autofit, iter_autofit, plan_run, subsample
 from curvestudio.discovery.pool import (
     AutoFitPool,
     CancelToken,
@@ -85,4 +85,5 @@ __all__ = [
     "run_candidate",
     "screen",
     "shutdown_shared_pools",
+    "subsample",
 ]

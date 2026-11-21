@@ -222,12 +222,25 @@ def stream_pool(
                     job.ref.id in suspect_ids for job, _ in in_flight.values()
                 )
                 limit = 1 if isolating else window
+                broken = False
                 while len(in_flight) < limit and (suspects or (queue and not isolating)):
                     job = suspects.popleft() if suspects else queue.popleft()
-                    in_flight[active.executor().submit(run, job)] = (job, time.monotonic())
+                    try:
+                        submitted = active.executor().submit(run, job)
+                    except BrokenProcessPool:
+                        # A worker died asynchronously, so this job was never queued: isolate it
+                        # like the in-flight jobs below and replace the dead pool.
+                        suspect_ids.add(job.ref.id)
+                        suspects.append(job)
+                        broken = True
+                        break
+                    in_flight[submitted] = (job, time.monotonic())
 
-                done, _ = wait(in_flight, timeout=POLL_SECONDS, return_when=FIRST_COMPLETED)
-                broken = False
+                done: set[Future[CandidateOutcome]]
+                if broken:
+                    done = set()  # nothing was submitted here: go straight to the dead pool
+                else:
+                    done, _ = wait(in_flight, timeout=POLL_SECONDS, return_when=FIRST_COMPLETED)
                 for future in done:
                     job, _started = in_flight.pop(future)
                     try:
