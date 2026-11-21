@@ -2,6 +2,49 @@
 
 All notable changes are listed here. Dates are IST. Format: [Keep a Changelog](https://keepachangelog.com/); versions follow [SemVer](https://semver.org/).
 
+## [0.9.2] - 2026-11-21
+
+### Added
+- Debian package (`.deb`) and AppImage desktop builds from the local build driver
+  (`build.py deb|appimage|release`), alongside the existing tar.gz/zip archives.
+- Brand icons and favicons in the web app, plus the ConcreteInfo mark in the header.
+
+### Changed
+- Web UI adopts the ConcreteInfo/cams2 theme: brand orange accent, warm greys, Inter for
+  UI text and JetBrains Mono for equations and numbers (both self-hosted; the CSP now
+  allows the inlined `data:` font faces).
+- The Auto-fit ranking and fit results span the full workspace width instead of the
+  middle column, with horizontal scrolling removed at desktop widths.
+- The ranking paginates (10/25/50/100 rows per page) instead of rendering 100+ rows in
+  one page; metrics are right-aligned, statuses are labelled badges, and row actions are
+  compact ("Open", "Use manually") with full accessible names.
+- Chart and about page: chart height adapts below 800 px, Plotly uses the UI typeface,
+  and /about reports the real app version.
+
+### Fixed
+- Focus visibility on the custom dataset/history/tab/mode controls, `aria-current` /
+  `aria-pressed` state cues, re-rank and fits-history failures surfaced instead of
+  looking like an empty result, and X/Y column validation on upload.
+- Compact "Copy equation" no longer collapses to two lines.
+
+## [0.9.1] - 2026-11-21
+
+### Fixed
+- A worker crash during Auto-fit no longer aborts the whole run: `BrokenProcessPool`
+  raised from a submit is isolated to the affected candidates and the pool is rebuilt.
+- "Open full results" now reproduces the row's own numbers: the refit uses the row's
+  `n_starts` and the same deterministic subsample for very large datasets.
+- A missing static asset answers 404 instead of the SPA shell (stale chunks fail loudly).
+- Web Auto-fit state races: re-selecting a running dataset no longer starts a second run,
+  a replaced run's poll cannot overwrite the newer state, Cancel only targets a running
+  job, and a failed opened-row job no longer leaves every Open button disabled.
+- Cancelled runs' partial rows no longer offer an Open action that silently did nothing.
+
+### Changed
+- Version metadata is 0.9.1 everywhere (it still said 0.1.0.dev0 at the v0.9.0 release),
+  and the committed OpenAPI document is regenerated.
+- CI gains a web job (typecheck, lint, tests, build) — previously none of those ran.
+
 ## [0.9.0] - 2026-11-18 (public beta)
 
 ### Added

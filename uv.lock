@@ -582,7 +582,7 @@ wheels = [
 
 [[package]]
 name = "curvestudio-api"
-version = "0.9.1"
+version = "0.9.2"
 source = { editable = "apps/api" }
 dependencies = [
     { name = "alembic" },
@@ -613,7 +613,7 @@ requires-dist = [
 
 [[package]]
 name = "curvestudio-core"
-version = "0.9.1"
+version = "0.9.2"
 source = { editable = "packages/core" }
 dependencies = [
     { name = "lmfit" },
@@ -638,7 +638,7 @@ requires-dist = [
 
 [[package]]
 name = "curvestudio-desktop"
-version = "0.9.1"
+version = "0.9.2"
 source = { editable = "apps/desktop" }
 dependencies = [
     { name = "curvestudio-core" },
@@ -667,7 +667,7 @@ dev = [{ name = "pytest-qt", specifier = ">=4.5" }]
 
 [[package]]
 name = "curvestudio-engineering"
-version = "0.9.1"
+version = "0.9.2"
 source = { editable = "packages/engineering" }
 dependencies = [
     { name = "curvestudio-core" },
@@ -678,7 +678,7 @@ requires-dist = [{ name = "curvestudio-core", editable = "packages/core" }]
 
 [[package]]
 name = "curvestudio-models"
-version = "0.9.1"
+version = "0.9.2"
 source = { editable = "packages/model_library" }
 dependencies = [
     { name = "curvestudio-core" },
@@ -689,7 +689,7 @@ requires-dist = [{ name = "curvestudio-core", editable = "packages/core" }]
 
 [[package]]
 name = "curvestudio-plotting"
-version = "0.9.1"
+version = "0.9.2"
 source = { editable = "packages/plotting" }
 dependencies = [
     { name = "curvestudio-core" },
@@ -704,7 +704,7 @@ requires-dist = [
 
 [[package]]
 name = "curvestudio-reporting"
-version = "0.9.1"
+version = "0.9.2"
 source = { editable = "packages/reporting" }
 dependencies = [
     { name = "curvestudio-core" },
@@ -725,7 +725,7 @@ requires-dist = [
 
 [[package]]
 name = "curvestudio-workspace"
-version = "0.9.1"
+version = "0.9.2"
 source = { virtual = "." }
 dependencies = [
     { name = "curvestudio-api" },

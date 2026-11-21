@@ -1,5 +1,5 @@
 """CurveStudio core: data handling and curve-fitting engine."""
 
-__version__ = "0.9.1"
+__version__ = "0.9.2"
 
 __all__ = ["__version__"]
