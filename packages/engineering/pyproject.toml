@@ -1,6 +1,6 @@
 [project]
 name = "curvestudio-engineering"
-version = "0.1.0.dev0"
+version = "0.9.1"
 description = "CurveStudio engineering (concrete and civil) model catalogue (registered through the curvestudio.models entry point)"
 readme = "README.md"
 requires-python = ">=3.14"

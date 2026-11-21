@@ -1,6 +1,6 @@
 [project]
 name = "curvestudio-plotting"
-version = "0.1.0.dev0"
+version = "0.9.1"
 description = "CurveStudio publication plotting: Matplotlib figures of fits, bands and residuals"
 readme = "README.md"
 requires-python = ">=3.14"
