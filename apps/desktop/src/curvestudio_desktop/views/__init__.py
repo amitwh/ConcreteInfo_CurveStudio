@@ -3,6 +3,8 @@
 from curvestudio_desktop.views.analysis_panel import AnalysisPanel
 from curvestudio_desktop.views.autofit_view import AutoFitView
 from curvestudio_desktop.views.data_table import DatasetTableModel, DataTableDock
+from curvestudio_desktop.views.details_dialog import DetailsDialog
+from curvestudio_desktop.views.fit_summary import FitSummaryPanel
 from curvestudio_desktop.views.import_dialog import ClipboardImportDialog, ImportDialog
 from curvestudio_desktop.views.main_window import MainWindow
 from curvestudio_desktop.views.manual_fit_view import ManualFitView
@@ -17,6 +19,8 @@ __all__ = [
     "ClipboardImportDialog",
     "DataTableDock",
     "DatasetTableModel",
+    "DetailsDialog",
+    "FitSummaryPanel",
     "ImportDialog",
     "MainWindow",
     "ManualFitView",

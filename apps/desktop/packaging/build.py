@@ -128,10 +128,18 @@ def frozen_executable() -> Path:
 
 
 def run_frozen_selftest() -> None:
-    """Run the frozen ``--selftest``; fail unless it prints the OK line."""
+    """Run the frozen ``--selftest``; fail unless the OK line was reported.
+
+    A windowed Windows build has no console to capture, so the app also writes its
+    output to ``CURVESTUDIO_SELFTEST_OUT``; either channel is accepted.
+    """
     exe = frozen_executable()
+    log = WORK / "selftest.log"
     env = dict(os.environ)
     env["QT_QPA_PLATFORM"] = "offscreen"  # Qt Widgets renders offscreen on Windows too
+    env["CURVESTUDIO_SELFTEST_OUT"] = str(log)
+    if log.exists():
+        log.unlink()
     print(f"+ {exe} --selftest", flush=True)
     proc = subprocess.run(
         [str(exe), "--selftest"],
@@ -141,9 +149,11 @@ def run_frozen_selftest() -> None:
         cwd=DIST,
         timeout=SELFTEST_TIMEOUT,
     )
-    sys.stdout.write(proc.stdout)
-    sys.stderr.write(proc.stderr)
-    if proc.returncode != 0 or SELFTEST_OK not in proc.stdout:
+    captured = proc.stdout + proc.stderr
+    if log.exists():
+        captured += log.read_text(encoding="utf-8")
+    sys.stdout.write(captured)
+    if proc.returncode != 0 or SELFTEST_OK not in captured:
         raise SystemExit(f"frozen selftest failed (exit code {proc.returncode})")
 
 

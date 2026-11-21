@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import cast
 
 from curvestudio.discovery import AutoFitResult, RankBy
-from curvestudio.workflow import FitBundle
+from curvestudio.workflow import FitBundle, format_equation
 from curvestudio_plotting import FigureFormat, fit_figure, residual_figure, save_figure
 from curvestudio_reporting import (
     fit_to_json,
@@ -68,7 +68,7 @@ def ranking_csv(result: AutoFitResult, rank_by: RankBy) -> str:
             str(row.rank),
             row.name,
             row.category,
-            row.equation_fitted or "",
+            format_equation(row.equation_fitted),
             _metric(metrics.r2),
             _metric(metrics.adj_r2),
             _metric(metrics.rmse),

@@ -1,11 +1,16 @@
 """The ranked Auto-fit table: a QAbstractTableModel over ``RankedFit`` rows.
 
-Display rules that matter for honesty (Review Focus 3): undefined metrics render as
-``n/a``, never 0 or a blank that reads as zero; markers in the Model cell point at
-degenerate and redundant fits whose full explanation lives in the row tooltip; the
-equation text is the row's fitted equation, with a copy action (context menu and Ctrl+C).
-The table never re-sorts on its own — ordering is the ``RankBy`` selector's business, so
-click-sorting cannot fight the ranked order.
+The dock shows the decisive columns only — rank, model, R², adj. R², RMSE and k. The
+fitted equation, the information criteria, category and status live in the details
+window (ranked rows are converged by definition, and exact/degenerate/redundant state is
+already marked in the Model cell). Every numeric column is sized from its widest actual
+value, so a value is never elided; only the model column stretches and elides, keeping
+the table free of a horizontal scrollbar at the dock's default width. Display rules that
+matter for honesty (Review Focus 3): undefined metrics render as ``n/a``, never 0 or a
+blank that reads as zero; markers in the Model cell point at degenerate and redundant
+fits whose full explanation lives in the row tooltip; the row tooltip and the context
+menu still carry the fitted equation. The table never re-sorts on its own — ordering is
+the ``RankBy`` selector's business, so click-sorting cannot fight the ranked order.
 """
 
 from collections.abc import Sequence
@@ -23,22 +28,37 @@ from PySide6.QtGui import QGuiApplication, QKeyEvent
 from PySide6.QtWidgets import QAbstractItemView, QHeaderView, QMenu, QTableView, QWidget
 
 from curvestudio.discovery import RankedFit
+from curvestudio.workflow import format_equation
 
 _NA = "n/a"
 COLUMNS = (
     "Rank",
     "Model",
-    "Category",
-    "Equation (fitted)",
     "R²",
     "adj. R²",
     "RMSE",
-    "AICc",
-    "BIC",
-    "CV-RMSE",
     "k",
-    "Status",
 )
+_MODEL_COLUMN = 1
+_CENTERED = frozenset({0})
+_RIGHT_ALIGNED = frozenset({2, 3, 4, 5})
+#: Horizontal padding the stylesheet consumes inside a ranking cell, from
+#: ``views/styles.py``: ``QTableView#rankingTable::item { padding: 3px 4px; }`` (4 px
+#: left + 4 px right). It is part of the column width, so it must be added explicitly.
+ITEM_HORIZONTAL_PADDING = 8
+#: Horizontal padding the stylesheet consumes inside a ranking header section, from
+#: ``views/styles.py``: ``QHeaderView#rankingTableHeader::section { padding: 5px 4px; }``
+#: (4 px left + 4 px right). The same section width carries both the header title and
+#: the cells, so this padding is added as well.
+HEADER_HORIZONTAL_PADDING = 8
+#: Slack beyond both paddings: the eliding delegate reserves its own focus-frame margin
+#: (about 2 px a side) inside the cell before laying out the text, so the text rect is
+#: narrower than ``section - padding``. This covers that reservation and width rounding.
+DELEGATE_HORIZONTAL_SLACK = 8
+#: Total margin added to a numeric column's widest measured text. Composed from the QSS
+#: padding rules in ``views/styles.py`` and the delegate's own reservation above, so the
+#: three cannot drift apart behind a magic number.
+COLUMN_PADDING = ITEM_HORIZONTAL_PADDING + HEADER_HORIZONTAL_PADDING + DELEGATE_HORIZONTAL_SLACK
 _ROLE = Qt.ItemDataRole
 _NO_PARENT = QModelIndex()
 
@@ -46,6 +66,15 @@ _NO_PARENT = QModelIndex()
 def format_metric(value: float | None, digits: int = 6) -> str:
     """``n/a`` for an undefined metric, else a compact significant-digits form."""
     return _NA if value is None else f"{value:.{digits}g}"
+
+
+def format_fixed(value: float | None, digits: int = 4) -> str:
+    """``n/a`` for an undefined metric, else a fixed-decimal form for the metric strips.
+
+    The strips line up mixed magnitudes (R², adj. R²), where significant digits would
+    render a perfect fit as a misleading ``1`` rather than ``1.0000``.
+    """
+    return _NA if value is None else f"{value:.{digits}f}"
 
 
 def _markers(row: RankedFit) -> str:
@@ -127,8 +156,11 @@ class RankingTableModel(QAbstractTableModel):
         column = index.column()
         if role == _ROLE.ToolTipRole:
             return row_tooltip(row)
-        if role == _ROLE.TextAlignmentRole and column != 3:
-            return int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        if role == _ROLE.TextAlignmentRole:
+            if column in _CENTERED:
+                return int(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter)
+            if column in _RIGHT_ALIGNED:
+                return int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         if role != _ROLE.DisplayRole:
             return None
         return self._text(row, column)
@@ -140,24 +172,16 @@ class RankingTableModel(QAbstractTableModel):
         if column == 1:
             return row.name + _markers(row)
         if column == 2:
-            return row.category
+            # fixed 4 decimals: "1.0000" and "0.9999" stay in one precision regime, so
+            # an R² of 0.99999 never rounds to the same "1" as a true perfect fit
+            return format_fixed(metrics.r2, 4)
         if column == 3:
-            return row.equation_fitted or _NA
+            return format_fixed(metrics.adj_r2, 4)
         if column == 4:
-            return format_metric(metrics.r2, 4)
-        if column == 5:
-            return format_metric(metrics.adj_r2, 4)
-        if column == 6:
-            return format_metric(metrics.rmse)
-        if column == 7:
-            return format_metric(metrics.aicc)
-        if column == 8:
-            return format_metric(metrics.bic)
-        if column == 9:
-            return format_metric(metrics.cv_rmse)
-        if column == 10:
-            return str(metrics.k)
-        return row.status
+            # four significant digits keep the comparison readable; the details
+            # window carries the full precision
+            return format_metric(metrics.rmse, 4)
+        return str(metrics.k)
 
 
 class RankingTableView(QTableView):
@@ -175,11 +199,49 @@ class RankingTableView(QTableView):
         self.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.setAlternatingRowColors(True)
         self.setWordWrap(False)
-        self.horizontalHeader().setStretchLastSection(False)
-        self.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+        self.setTextElideMode(Qt.TextElideMode.ElideRight)
+        # the Rank column already identifies rows: the vertical header only steals width
+        self.verticalHeader().setVisible(False)
+        header = self.horizontalHeader()
+        header.setObjectName("rankingTableHeader")
+        header.setStretchLastSection(False)
+        header.setMinimumSectionSize(24)
+        for column in range(len(COLUMNS)):
+            if column != _MODEL_COLUMN:
+                header.setSectionResizeMode(column, QHeaderView.ResizeMode.Fixed)
+        # the model name takes the leftover width and elides; nothing else moves
+        header.setSectionResizeMode(_MODEL_COLUMN, QHeaderView.ResizeMode.Stretch)
+        self._fit_numeric_columns()
+        model = self.model()
+        if model is not None:
+            model.modelReset.connect(self._fit_numeric_columns)
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self._show_menu)
         self.doubleClicked.connect(lambda _index: self.openRequested.emit())
+
+    def _fit_numeric_columns(self) -> None:
+        """Size every non-model column to its widest rendered value plus padding.
+
+        A value like ``0.9999`` or ``1234`` must never elide, so the width comes from
+        the actual font metrics rather than a guessed table of fixed widths. The model
+        column keeps stretching into whatever is left.
+        """
+        model = self.model()
+        if model is None:
+            return
+        header = self.horizontalHeader()
+        values = self.fontMetrics()
+        headers = header.fontMetrics()
+        for column in range(model.columnCount()):
+            if column == _MODEL_COLUMN:
+                continue
+            title = str(model.headerData(column, Qt.Orientation.Horizontal))
+            widest = headers.horizontalAdvance(title)
+            for row in range(model.rowCount()):
+                text = model.data(model.index(row, column))
+                if text is not None:
+                    widest = max(widest, values.horizontalAdvance(str(text)))
+            header.resizeSection(column, widest + COLUMN_PADDING)
 
     def selected_row(self) -> RankedFit | None:
         indexes = self.selectedIndexes()
@@ -214,11 +276,12 @@ class RankingTableView(QTableView):
         return model.row_at(row)
 
     def copy_equation(self) -> bool:
-        """Copy the current row's fitted equation to the clipboard; False when there is none."""
+        """Copy the current row's fitted equation as shown (``^`` powers); False if none."""
         row = self.selected_row()
-        if row is None or row.equation_fitted is None:
+        text = "" if row is None else format_equation(row.equation_fitted)
+        if not text:
             return False
-        QGuiApplication.clipboard().setText(row.equation_fitted)
+        QGuiApplication.clipboard().setText(text)
         return True
 
     def keyPressEvent(self, event: QKeyEvent) -> None:

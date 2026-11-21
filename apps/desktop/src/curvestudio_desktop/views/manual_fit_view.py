@@ -46,6 +46,7 @@ from curvestudio.workflow import (
     list_models,
 )
 from curvestudio_desktop.controllers.analysis import AnalysisController
+from curvestudio_desktop.theme import mono_font
 
 POLYNOMIAL_ID = "polynomial"
 METHODS = ("auto", "lm", "trf", "dogbox", "nelder", "powell", "bfgs", "lbfgsb")
@@ -53,8 +54,6 @@ LOSSES = ("linear", "soft_l1", "huber", "cauchy", "arctan")
 DEBOUNCE_MS = 400
 _MAX_SEED = 2**31 - 1
 _ID_IN_TEXT = re.compile(r"^.*?\(([^()]+)\)")
-_ERROR_STYLE = "color: #b2182b;"
-_OK_STYLE = "color: #3c763d;"
 
 XyProvider = Callable[[], XY | None]
 
@@ -82,8 +81,7 @@ class ManualFitView(QWidget):
         self._build_parameters(layout)
         self._build_actions(layout)
         self._banner = QLabel("")
-        self._banner.setObjectName("manualFitBanner")
-        self._banner.setStyleSheet(_ERROR_STYLE)
+        self._banner.setObjectName("bannerError")
         self._banner.setWordWrap(True)
         self._banner.hide()
         layout.addWidget(self._banner)
@@ -111,6 +109,13 @@ class ManualFitView(QWidget):
         self.model_combo = QComboBox()
         self.model_combo.setObjectName("modelPicker")
         self.model_combo.setEditable(True)
+        # long catalogue names must never force the dock wide: the combo shows the
+        # selected entry clipped and the completer still searches the full text
+        self.model_combo.setSizeAdjustPolicy(
+            QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
+        )
+        self.model_combo.setMinimumContentsLength(18)
+        self.model_combo.setMinimumWidth(220)
         self.model_combo.setLineEdit(self.model_edit)
         self.model_combo.currentIndexChanged.connect(lambda _index: self._on_model_changed())
         self.model_edit.textEdited.connect(lambda _text: self._schedule_validation())
@@ -155,12 +160,13 @@ class ManualFitView(QWidget):
         optimisation.addWidget(self.method_combo)
         optimisation.addWidget(self.loss_combo)
         form.addRow("method / loss", optimisation)
-        self.weights_check = QCheckBox("weight by the data's weights column")
+        self.weights_check = QCheckBox("use the weights column")
         self.weights_check.toggled.connect(lambda _checked: self._schedule_validation())
         self.seed_check = QCheckBox("fixed seed")
         self.seed_spin = QSpinBox()
         self.seed_spin.setRange(0, _MAX_SEED)
         self.seed_spin.setValue(0)
+        self.seed_spin.setMaximumWidth(100)
         self.seed_spin.setEnabled(False)
         self.seed_check.toggled.connect(self.seed_spin.setEnabled)
         self.time_spin = QDoubleSpinBox()
@@ -169,16 +175,21 @@ class ManualFitView(QWidget):
         self.time_spin.setSingleStep(5.0)
         self.time_spin.setValue(0.0)
         self.time_spin.setSpecialValueText("no limit")
+        self.time_spin.setMaximumWidth(100)
         self.time_spin.valueChanged.connect(lambda _value: self._schedule_validation())
+        # stacked rows, not one very wide line: the dock's minimum width must stay
+        # small enough for the plot to keep the centre of the window
         seed_row = QHBoxLayout()
         seed_row.addWidget(self.seed_check)
         seed_row.addWidget(self.seed_spin)
-        seed_row.addWidget(QLabel("time limit (s)"))
-        seed_row.addWidget(self.time_spin)
-        misc = QHBoxLayout()
-        misc.addWidget(self.weights_check)
-        misc.addLayout(seed_row)
-        form.addRow("", misc)
+        seed_row.addStretch(1)
+        time_row = QHBoxLayout()
+        time_row.addWidget(QLabel("time limit (s)"))
+        time_row.addWidget(self.time_spin)
+        time_row.addStretch(1)
+        form.addRow("", self.weights_check)
+        form.addRow("", seed_row)
+        form.addRow("", time_row)
         holder = QWidget()
         holder.setLayout(form)
         layout.addWidget(holder)
@@ -190,6 +201,7 @@ class ManualFitView(QWidget):
         self._parameters_label.setWordWrap(True)
         self.parameters_table = QTableWidget(0, 4)
         self.parameters_table.setObjectName("manualParameters")
+        self.parameters_table.setFont(mono_font(9))
         self.parameters_table.setHorizontalHeaderLabels(
             ["parameter", "initial", "lower bound", "upper bound"]
         )
@@ -206,6 +218,7 @@ class ManualFitView(QWidget):
         row = QHBoxLayout()
         self.fit_button = QPushButton("Fit")
         self.fit_button.setObjectName("manualFitButton")
+        self.fit_button.setProperty("role", "primary")
         self.fit_button.clicked.connect(self.run_fit)
         self.cancel_button = QPushButton("Cancel")
         self.cancel_button.setObjectName("manualCancelButton")
@@ -293,6 +306,8 @@ class ManualFitView(QWidget):
                     "" if parameter.lower is None else repr(parameter.lower),
                     "" if parameter.upper is None else repr(parameter.upper),
                 )
+        # show the selected model from its start, not the scrolled-to-end tail
+        self.model_edit.setCursorPosition(0)
         self._schedule_validation()
 
     def _custom_parameters_edited(self, _text: str) -> None:
@@ -441,7 +456,11 @@ class ManualFitView(QWidget):
 
     def _set_validation(self, text: str, *, error: bool) -> None:
         self.validation_label.setText(text)
-        self.validation_label.setStyleSheet(_ERROR_STYLE if error else _OK_STYLE)
+        # dynamic property, styled by the QSS ``#validationLabel[state=...]`` rules
+        self.validation_label.setProperty("state", "error" if error else "ok")
+        style = self.validation_label.style()
+        style.unpolish(self.validation_label)
+        style.polish(self.validation_label)
 
     def validation_text(self) -> str:
         return self.validation_label.text()

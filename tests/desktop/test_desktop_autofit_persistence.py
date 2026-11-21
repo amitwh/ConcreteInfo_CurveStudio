@@ -237,6 +237,13 @@ def test_ranking_csv_neutralises_a_formula_named_model() -> None:
     assert rows[1][3] == "'=1+1"  # and so does the equation cell
 
 
+def test_ranking_csv_writes_caret_powers_for_a_reader() -> None:
+    result = _single_row_result("poly", "y = 1 + 2*x**2 + 1e-05*x**3", None)
+    rows = _parsed_rows(result)
+    assert rows[1][3] == "y = 1 + 2*x^2 + 1e-05*x^3"
+    assert "**" not in rows[1][3]
+
+
 def test_ranking_csv_keeps_negative_numbers_quoted_text_and_commas() -> None:
     result = _single_row_result('quo"te, name', "y = a*exp(-r*x), honest", -248.4)
     rows = _parsed_rows(result)

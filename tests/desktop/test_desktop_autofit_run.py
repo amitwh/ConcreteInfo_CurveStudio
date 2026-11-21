@@ -200,7 +200,7 @@ def test_rankby_resort_keeps_the_selected_row_and_its_curve(make_window, qtbot, 
         assert window.plot_view.fit_curve_data() is not None
 
     view.rank_combo.setCurrentIndex(4)  # AICc: a different order for the same rows
-    qtbot.waitUntil(lambda: "AICc" in view.order_label.text(), timeout=5000)
+    qtbot.waitUntil(lambda: "AICc" in view.rank_combo.currentText(), timeout=5000)
     selected = view.table.selected_row()
     assert selected is not None and selected.model_id == chosen.model_id
     if had_curve:
@@ -233,7 +233,7 @@ def test_rankby_resorts_without_refitting(make_window, qtbot, write_file) -> Non
     runs_before = window.analysis.run_count
 
     view.rank_combo.setCurrentIndex(4)  # AICc
-    qtbot.waitUntil(lambda: "AICc" in view.order_label.text(), timeout=5000)
+    qtbot.waitUntil(lambda: "AICc" in view.rank_combo.currentText(), timeout=5000)
     assert displayed_ids(window) == [r.model_id for r in result.ranked_by(RankBy.AICC)]
     view.rank_combo.setCurrentIndex(1)  # R²
     assert displayed_ids(window) == [r.model_id for r in result.ranked_by(RankBy.R2)]
@@ -243,18 +243,18 @@ def test_rankby_resorts_without_refitting(make_window, qtbot, write_file) -> Non
 
 
 def test_undefined_metrics_show_na_and_exact_fits_behave(make_window, qtbot, write_file) -> None:
+    from curvestudio_desktop.views.ranking_table import COLUMNS, format_metric
+
     window = make_tiny_window(make_window, write_file, config=TINY, text=EXACT_LINEAR)
     result = wait_stored(qtbot, window, active_id(window))
     view = window.analysis_panel.autofit_view
-    table = view.table
     assert result.exact_fits, "noiseless linear data is reproduced exactly"
-    model = table.model()
-    aicc_column = 7
-    assert model is not None
-    found_na = any(
-        model.data(model.index(row, aicc_column)) == "n/a" for row in range(model.rowCount())
-    )
-    assert found_na, "an exact fit has no AICc: the cell must say n/a, never a number"
+    # the dock's columns no longer include AICc; the undefined value must still never
+    # become a zero anywhere it is shown
+    assert "AICc" not in COLUMNS
+    assert format_metric(None) == "n/a"
+    exact = [row for row in result.ranked if row.model_id in result.exact_fits]
+    assert exact and all(row.metrics.aicc is None for row in exact)
     # under AICc the exact fits cannot take part at all
     view.rank_combo.setCurrentIndex(4)
     assert displayed_ids(window) == [r.model_id for r in result.ranked_by(RankBy.AICC)]

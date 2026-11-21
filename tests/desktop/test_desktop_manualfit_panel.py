@@ -82,8 +82,8 @@ def test_manual_polynomial_fit_equals_fit_dataset(make_window, qtbot, write_file
     assert shown[-1].result.parameters == expected.result.parameters
     assert shown[-1].result.stats is not None and expected.result.stats is not None
     assert shown[-1].result.stats.sse == expected.result.stats.sse
-    # the result went to the same results tabs an opened row uses
-    assert panel.results.parameters_text(0, 0) == "b0"
+    # the result went to the same result views an opened row uses (now in the details window)
+    assert window.details_dialog.results.parameters_text(0, 0) == "b0"
     assert window.plot_view.fit_curve_data() is not None
     fits = [a for a in window.controller.project.analyses if a.kind == "fit"]
     assert len(fits) == 1 and fits[0].result.model_id.startswith("poly2")
@@ -178,7 +178,7 @@ def test_nonconverged_fit_shows_banner_and_draws_no_curve(make_window, qtbot, wr
     qtbot.waitUntil(lambda: bool(shown), timeout=30000)
     bundle = shown[-1]
     assert str(bundle.result.status) != "converged"
-    banner = window.analysis_panel.results.banner_text()
+    banner = window.details_dialog.results.banner_text()
     assert "DID NOT CONVERGE" in banner
     assert "time limit" in banner
     assert window.plot_view.fit_curve_data() is None  # never a curve for a failed fit
@@ -220,7 +220,7 @@ def test_predict_tab_reports_values_and_refuses_oversized_requests(
     bundle = shown[-1]
     spec = window.analysis.current_spec
     assert spec is not None
-    predict_tab = panel.results
+    predict_tab = window.details_dialog.results
     predict_tab._predict_input.setPlainText("1\n2\n3.5\n")
     predict_tab._run_predict()
     assert predict_tab.predict_rows() == 3

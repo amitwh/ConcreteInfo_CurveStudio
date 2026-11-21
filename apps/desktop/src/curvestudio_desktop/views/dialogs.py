@@ -24,6 +24,11 @@ from curvestudio_desktop.controllers.providers import UnsavedAnswer
 _CSTUDIO_FILTER = "CurveStudio project (*.cstudio);;All files (*)"
 
 
+def active_parent() -> QWidget | None:
+    """The window a dialog must parent to, so it never opens behind the main window."""
+    return QApplication.activeWindow()
+
+
 def notice_text() -> str:
     """The bundled licence notice, read via ``importlib.resources`` (packaging-safe)."""
     try:
@@ -105,24 +110,25 @@ def show_crash_dialog(details: str) -> None:
     if QApplication.instance() is None:
         print(details, flush=True)
         return
-    CrashDialog(details).exec()
+    CrashDialog(details, active_parent()).exec()
 
 
 class MessageBoxMessenger:
     """The production :class:`Messenger`: message boxes, never tracebacks."""
 
     def show_error(self, title: str, message: str) -> None:
-        QMessageBox.critical(None, title, message)
+        QMessageBox.critical(active_parent(), title, message)
 
     def show_information(self, title: str, message: str) -> None:
-        QMessageBox.information(None, title, message)
+        QMessageBox.information(active_parent(), title, message)
 
 
 class DialogConfirmationProvider:
     """The production :class:`ConfirmationProvider`: Save / Discard / Cancel."""
 
     def confirm_unsaved_changes(self, action: str) -> UnsavedAnswer:
-        box = QMessageBox()
+        parent = active_parent()
+        box = QMessageBox(parent) if parent is not None else QMessageBox()
         box.setIcon(QMessageBox.Icon.Warning)
         box.setWindowTitle("Unsaved changes")
         box.setText(f"Save the changes to this project before {action}?")
@@ -145,16 +151,18 @@ class DialogPathProvider:
 
     def choose_open_path(self) -> Path | None:
         path, _ = QFileDialog.getOpenFileName(
-            None, "Open project", "", _CSTUDIO_FILTER, "CurveStudio project (*.cstudio)"
+            active_parent(), "Open project", "", _CSTUDIO_FILTER, "CurveStudio project (*.cstudio)"
         )
         return Path(path) if path else None
 
     def choose_save_path(self, suggested_name: str) -> Path | None:
-        path, _ = QFileDialog.getSaveFileName(None, "Save project", suggested_name, _CSTUDIO_FILTER)
+        path, _ = QFileDialog.getSaveFileName(
+            active_parent(), "Save project", suggested_name, _CSTUDIO_FILTER
+        )
         return Path(path) if path else None
 
     def choose_export_path(self, title: str, filters: str) -> Path | None:
-        path, _ = QFileDialog.getSaveFileName(None, title, "", filters)
+        path, _ = QFileDialog.getSaveFileName(active_parent(), title, "", filters)
         return Path(path) if path else None
 
 

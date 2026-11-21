@@ -12,7 +12,8 @@ keeps its partial ranking behind a clear notice.
 import time
 from collections.abc import Sequence
 
-from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtCore import QRect, Qt, QTimer, Signal
+from PySide6.QtGui import QPaintEvent, QPalette
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -23,7 +24,12 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QProgressBar,
     QPushButton,
+    QScrollArea,
+    QSizePolicy,
     QSpinBox,
+    QStyle,
+    QStyleOptionComboBox,
+    QStylePainter,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -45,6 +51,70 @@ RANK_LABELS: tuple[tuple[RankBy, str], ...] = (
     (RankBy.CV_RMSE, "CV-RMSE"),
 )
 _MAX_SEED = 2**31 - 1
+#: Smallest usable height of the disclosure scroll. The region can always shrink this far
+#: and scroll, so its content never raises the page's minimum past the dock's height.
+_DISCLOSURE_MIN_HEIGHT = 32
+
+
+class ElidingComboBox(QComboBox):
+    """A closed combo that elides its label with an ellipsis instead of clipping a word.
+
+    ``QComboBox`` paints the current item's text into whatever width the layout gives it,
+    so a label like "Best overall (recommended)" was cut mid-word at the dock's default
+    width. The popup keeps the full item labels; only the closed field elides, and the
+    full label stays in the widget's tooltip. :meth:`display_text` returns exactly what
+    the field paints, so tests can assert the visible string rather than the full label.
+    """
+
+    def _option(self) -> QStyleOptionComboBox:
+        option = QStyleOptionComboBox()
+        self.initStyleOption(option)
+        return option
+
+    def _text_rect(self) -> QRect:
+        option = self._option()
+        return self.style().subControlRect(
+            QStyle.ComplexControl.CC_ComboBox,
+            option,
+            QStyle.SubControl.SC_ComboBoxEditField,
+            self,
+        )
+
+    def display_text(self) -> str:
+        """The closed field's text: the full label when it fits, else an elided version."""
+        option = self._option()
+        return self.fontMetrics().elidedText(
+            option.currentText,
+            Qt.TextElideMode.ElideRight,
+            max(0, self._text_rect().width() - 2),
+        )
+
+    def paintEvent(self, event: QPaintEvent) -> None:
+        # draw the frame/arrow with an empty label, then the elided text in the field
+        option = self._option()
+        text = option.currentText
+        option.currentText = ""
+        painter = QStylePainter(self)
+        painter.drawComplexControl(QStyle.ComplexControl.CC_ComboBox, option)
+        rect = self.style().subControlRect(
+            QStyle.ComplexControl.CC_ComboBox,
+            option,
+            QStyle.SubControl.SC_ComboBoxEditField,
+            self,
+        )
+        flags = self.style().visualAlignment(
+            self.layoutDirection(), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+        )
+        painter.drawItemText(
+            rect,
+            int(flags),
+            option.palette,
+            self.isEnabled(),
+            self.fontMetrics().elidedText(
+                text, Qt.TextElideMode.ElideRight, max(0, rect.width() - 2)
+            ),
+            QPalette.ColorRole.Text,
+        )
 
 
 class AutoFitView(QWidget):
@@ -69,12 +139,11 @@ class AutoFitView(QWidget):
         self._build_run_row(layout)
         self._build_ranking(layout)
         self._build_sections(layout)
-        self._build_options(layout)
-        layout.addStretch(1)
         self._timer = QTimer(self)
         self._timer.setInterval(1000)
         self._timer.timeout.connect(self._tick_elapsed)
         analysis.rank_by_changed.connect(self._on_rank_changed)
+        self.refresh_order()  # the closed combo's tooltip carries its full label from the start
 
     # -- construction ------------------------------------------------------------------------
 
@@ -89,6 +158,7 @@ class AutoFitView(QWidget):
         self.elapsed_label = QLabel("")
         self.run_button = QPushButton("Run again")
         self.run_button.setObjectName("autofitRunButton")
+        self.run_button.setProperty("role", "primary")
         self.run_button.setToolTip("Fit every applicable model to the current data")
         self.run_button.clicked.connect(self._run_again)
         self.cancel_button = QPushButton("Cancel")
@@ -104,15 +174,22 @@ class AutoFitView(QWidget):
 
     def _build_ranking(self, layout: QVBoxLayout) -> None:
         self.notice = QLabel("")
-        self.notice.setObjectName("autofitNotice")
-        self.notice.setWordWrap(False)  # banners are single-line; the full text is the tooltip
-        self.notice.setStyleSheet("font-weight: 600;")
+        self.notice.setObjectName("bannerWarning")
+        self.notice.setWordWrap(True)  # a long notice wraps instead of being clipped
+        self.notice.setTextFormat(Qt.TextFormat.PlainText)
         self.notice.hide()
         layout.addWidget(self.notice)
         header = QHBoxLayout()
-        self.order_label = QLabel("Ordered by: —")
-        self.rank_combo = QComboBox()
+        self.order_label = QLabel("Order by")
+        self.order_label.setObjectName("orderByLabel")
+        self.rank_combo = ElidingComboBox()
         self.rank_combo.setObjectName("rankBySelector")
+        # long catalogue-style labels stay on the items, but must never force the dock
+        # wide: the combo clips instead of resizing the panel
+        self.rank_combo.setSizeAdjustPolicy(
+            QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
+        )
+        self.rank_combo.setMinimumContentsLength(16)
         for rank_by, label in RANK_LABELS:
             self.rank_combo.addItem(label, rank_by.value)
         self.rank_combo.setCurrentIndex(
@@ -122,26 +199,31 @@ class AutoFitView(QWidget):
         )
         self.rank_combo.currentIndexChanged.connect(self._rank_combo_changed)
         self.open_button = QPushButton("Open full results")
-        self.open_button.setToolTip("Refit the selected row and fill the result tabs")
+        self.open_button.setToolTip("Refit the selected row and open its details window")
         self.open_button.clicked.connect(self._open_selected)
-        header.addWidget(self.order_label, stretch=1)
+        header.addWidget(self.order_label)
         header.addWidget(self.rank_combo)
+        header.addStretch(1)
         header.addWidget(self.open_button)
         layout.addLayout(header)
         self.table = RankingTableView()
-        # the ranking is the primary result: it never shrinks under ~8 visible rows
+        # The ranking is the primary result and never collapses: five visible rows are the
+        # floor. More rows scroll (the vertical scrollbar is always available for that);
+        # the table is not inflated to eight rows, which used to push the whole dock past
+        # its own rect and over the Data-table dock at 1280x800.
+        self.table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         row_height = self.table.verticalHeader().defaultSectionSize()
         header_height = self.table.horizontalHeader().sizeHint().height()
-        self.table.setMinimumHeight(8 * row_height + header_height + 4)
+        self.table.setMinimumHeight(5 * row_height + header_height + 4)
         self.table.selectionModel().currentRowChanged.connect(
             lambda _current, _previous: self._emit_selected()
         )
         self.table.openRequested.connect(self._emit_open)
         layout.addWidget(self.table, stretch=1)
         self.overfit_banner = QLabel("")
-        self.overfit_banner.setObjectName("overfitBanner")
-        self.overfit_banner.setWordWrap(False)
-        self.overfit_banner.setStyleSheet("color: #8a6d3b;")
+        self.overfit_banner.setObjectName("bannerWarning")
+        self.overfit_banner.setWordWrap(True)
+        self.overfit_banner.setTextFormat(Qt.TextFormat.PlainText)
         self.overfit_banner.hide()
         layout.addWidget(self.overfit_banner)
 
@@ -150,11 +232,45 @@ class AutoFitView(QWidget):
         self.unconverged_section = CollapsibleSection("Not converged")
         self.skipped_section = CollapsibleSection("Skipped")
         self.warnings_label = QLabel("")
-        self.warnings_label.setWordWrap(False)  # one line per warning, never a wall of wrap
+        self.warnings_label.setObjectName("bannerWarning")
+        self.warnings_label.setWordWrap(True)
+        self.warnings_label.setTextFormat(Qt.TextFormat.PlainText)
+        self.warnings_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+        # a bounded, scrollable banner: several warnings can never overlap or push
+        # the ranking table off the dock
+        self.warnings_scroll = QScrollArea()
+        self.warnings_scroll.setObjectName("warningsScroll")
+        self.warnings_scroll.setWidgetResizable(True)
+        self.warnings_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.warnings_scroll.setMaximumHeight(96)
+        self.warnings_scroll.setWidget(self.warnings_label)
+        self.warnings_scroll.hide()
+        # The disclosures below the ranking can be tall (a long skipped list, a stack of
+        # warnings, the open options form). A tall set must scroll inside its own region
+        # instead of forcing the page's minimum past the dock: the splitter would then
+        # overflow into the neighbouring Data-table dock and cover the fit summary. The
+        # ranking table stays outside this scroll so the primary surface keeps its own
+        # space and its own scrolling.
+        self.disclosure_body = QWidget()
+        disclosure = QVBoxLayout(self.disclosure_body)
+        disclosure.setContentsMargins(0, 0, 0, 0)
+        disclosure.setSpacing(4)
         for section in (self.exact_section, self.unconverged_section, self.skipped_section):
             section.set_items([])
-            layout.addWidget(section)
-        layout.addWidget(self.warnings_label)
+            disclosure.addWidget(section)
+        disclosure.addWidget(self.warnings_scroll)
+        self._build_options(disclosure)
+        disclosure.addStretch(1)
+        self.disclosure_scroll = QScrollArea()
+        self.disclosure_scroll.setObjectName("autofitDisclosures")
+        self.disclosure_scroll.setWidgetResizable(True)
+        self.disclosure_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.disclosure_scroll.setSizePolicy(
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred
+        )
+        self.disclosure_scroll.setMinimumHeight(_DISCLOSURE_MIN_HEIGHT)
+        self.disclosure_scroll.setWidget(self.disclosure_body)
+        layout.addWidget(self.disclosure_scroll)
 
     def _build_options(self, layout: QVBoxLayout) -> None:
         self.options_button = QToolButton()
@@ -308,6 +424,7 @@ class AutoFitView(QWidget):
 
     def run_ended(self) -> None:
         self._running = False
+        self._started = 0.0  # no stale start time may read as an elapsed value later
         self._timer.stop()
         self.progress.hide()
         self.cancel_button.hide()
@@ -343,8 +460,8 @@ class AutoFitView(QWidget):
         self.skipped_section.set_items(
             sorted((cid, "; ".join(reasons)) for cid, reasons in result.skipped.items())
         )
-        self.warnings_label.setText("\n".join(result.warnings))
-        self.warnings_label.setVisible(bool(result.warnings))
+        self.warnings_label.setText("\n\n".join(result.warnings))
+        self.warnings_scroll.setVisible(bool(result.warnings))
 
     def show_failure(self, message: str) -> None:
         """The run could not start at all (too few points, no columns): say why inline."""
@@ -358,13 +475,14 @@ class AutoFitView(QWidget):
         self.notice.show()
 
     def refresh_order(self) -> None:
-        """Re-label the active ordering and re-render the rows under it (no refit)."""
+        """Re-render the rows under the active ordering (no refit)."""
         rank_by = self._analysis.rank_by
         label = next((text for rank, text in RANK_LABELS if rank is rank_by), rank_by.value)
-        recommended = (
-            " — the engine's recommended default" if rank_by is RankBy.BEST_OVERALL else ""
+        # the combo keeps the long label; the tooltip spells out the recommendation
+        self.rank_combo.setToolTip(
+            f"Order by {label}"
+            + (" — the engine's recommended default" if rank_by is RankBy.BEST_OVERALL else "")
         )
-        self.order_label.setText(f"Ordered by: {label}{recommended}")
         if self._running:
             # the live ranking is the truth while a run is in progress; a RankBy
             # change re-sorts those rows, never the previous result's
@@ -412,10 +530,13 @@ class AutoFitView(QWidget):
         for section in (self.exact_section, self.unconverged_section, self.skipped_section):
             section.set_items([])
         self.warnings_label.setText("")
-        self.warnings_label.hide()
+        self.warnings_scroll.hide()
         self.overfit_banner.hide()
         self.counts_label.setText("")
 
     def _tick_elapsed(self) -> None:
-        if self._started:
-            self.elapsed_label.setText(f"{time.monotonic() - self._started:.0f} s")
+        # a missing start time means the elapsed value is unknown, not zero
+        if not self._started:
+            self.elapsed_label.setText("—")
+            return
+        self.elapsed_label.setText(f"{time.monotonic() - self._started:.0f} s")

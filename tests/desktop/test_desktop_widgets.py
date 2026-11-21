@@ -26,19 +26,24 @@ def test_main_window_builds_with_all_docks(make_window, qtbot) -> None:
     assert window.minimumSize().width() >= 900
 
 
-def test_analysis_panel_has_the_result_tabs(make_window, qtbot) -> None:
+def test_analysis_dock_has_a_summary_and_the_details_window_has_the_result_tabs(
+    make_window, qtbot
+) -> None:
     window = make_window()
     qtbot.addWidget(window)
     panel = window.analysis_panel
-    assert panel.tab_titles() == [
+    # the dock slims to a summary; the five result views live in the details window
+    assert panel.summary.hint_visible()
+    tabs = window.details_dialog.results
+    assert tabs.tab_titles() == [
         "Parameters",
         "Statistics",
         "Diagnostics",
         "Equation",
         "Predict",
     ]
-    for index in range(panel.count()):
-        assert panel.tab_text_at(index).strip() == "No fit yet"
+    for index in range(tabs.count()):
+        assert tabs.tab_text_at(index).strip() == "No fit yet"
 
 
 def test_status_bar_shows_no_network_indicator(make_window, qtbot) -> None:

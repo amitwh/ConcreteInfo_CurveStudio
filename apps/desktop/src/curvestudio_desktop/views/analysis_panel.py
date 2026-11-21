@@ -1,12 +1,13 @@
-"""AnalysisPanel: the right-hand dock — mode switch, the active workflow's form, result tabs.
+"""AnalysisPanel: the right-hand dock — mode switch, the workflow's form, the fit summary.
 
 The dock is Auto-fit-first: the Auto-fit page is the default (and remembered in QSettings);
 Manual fit appears only when the user selects it. A vertical splitter puts the workflow
-pages — the ranking table's home — above the five result tabs: the ranking is THE primary
-result, so its page keeps at least 60% by default and the split is remembered in QSettings.
-The mode switch is a compact horizontal segmented control, never stacked full-width buttons.
-Nothing here computes anything: the pages talk to the AnalysisController, and the shell
-wires their signals to the plot and the tabs.
+pages — the ranking table's home — above a compact ``FitSummaryPanel``: the ranking is THE
+primary result, so its page keeps the dominant share and the split is remembered in
+QSettings. The five full result views live in the details window, not here. The mode switch
+is a compact horizontal segmented control, never stacked full-width buttons. Nothing here
+computes anything: the pages talk to the AnalysisController, and the shell wires their
+signals to the plot, the summary and the details window.
 """
 
 from PySide6.QtCore import QSettings, Qt
@@ -25,20 +26,17 @@ from PySide6.QtWidgets import (
 from curvestudio_desktop.controllers.analysis import MODE_AUTOFIT, MODE_MANUAL, AnalysisController
 from curvestudio_desktop.controllers.selection import SelectionController
 from curvestudio_desktop.views.autofit_view import AutoFitView
+from curvestudio_desktop.views.fit_summary import FitSummaryPanel
 from curvestudio_desktop.views.manual_fit_view import ManualFitView
-from curvestudio_desktop.views.results_tabs import EMPTY_TEXT, ResultsTabs
 
 _SPLITTER_KEY = "analysis/splitterSizes"
-_SEGMENTED_STYLE = (
-    "QPushButton { padding: 4px 12px; border: 1px solid palette(mid);"
-    " background: palette(base); }\n"
-    "QPushButton:checked { background: palette(highlight);"
-    " color: palette(highlightedText); font-weight: 600; }"
-)
+#: A fresh install shows the ranking and a fully visible summary at 1600x920 and
+#: 1280x800; the summary's own minimum height is the hard floor the splitter honours.
+_DEFAULT_SPLIT = (640, 240)
 
 
 class AnalysisPanel(QDockWidget):
-    """Right dock: ANALYSIS — mode switch, Auto-fit or Manual fit page, result tabs."""
+    """Right dock: ANALYSIS — mode switch, Auto-fit or Manual fit page, fit summary."""
 
     def __init__(
         self,
@@ -52,10 +50,7 @@ class AnalysisPanel(QDockWidget):
         self._split_restored = False
         self.autofit_view = AutoFitView(analysis)
         self.manual_view = ManualFitView(analysis, selection.xy)
-        self.results = ResultsTabs(predict_fn=analysis.predict)
-        # the tabs' content would demand the dock's whole height; an explicit floor
-        # keeps the splitter free to give the ranking table its dominant share
-        self.results.setMinimumHeight(170)
+        self.summary = FitSummaryPanel()
         self._pages = QStackedWidget()
         self._pages.addWidget(self.autofit_view)
         self._pages.addWidget(self.manual_view)
@@ -66,7 +61,7 @@ class AnalysisPanel(QDockWidget):
         self.manual_button.setObjectName("manualModeButton")
         self.manual_button.setCheckable(True)
         for button in (self.autofit_button, self.manual_button):
-            button.setStyleSheet(_SEGMENTED_STYLE)  # a checked segment that reads on both themes
+            button.setProperty("segment", "true")  # QSS styles the checked/unchecked pair
         group = QButtonGroup(self)
         group.addButton(self.autofit_button)
         group.addButton(self.manual_button)
@@ -79,12 +74,12 @@ class AnalysisPanel(QDockWidget):
         self.splitter = QSplitter(Qt.Orientation.Vertical)
         self.splitter.setObjectName("analysisSplitter")
         self.splitter.addWidget(self._pages)
-        self.splitter.addWidget(self.results)
-        self.splitter.setStretchFactor(0, 6)
-        self.splitter.setStretchFactor(1, 4)
+        self.splitter.addWidget(self.summary)
+        self.splitter.setStretchFactor(0, 7)
+        self.splitter.setStretchFactor(1, 3)
         self.splitter.setCollapsible(0, False)  # the workflow page never collapses away
-        self.splitter.setCollapsible(1, True)  # the detail tabs can, when the ranking is the focus
-        self.splitter.setSizes([600, 400])
+        self.splitter.setCollapsible(1, True)  # the summary can, when the ranking is the focus
+        self.splitter.setSizes(list(_DEFAULT_SPLIT))
         holder = QWidget(self)
         layout = QVBoxLayout(holder)
         layout.setContentsMargins(4, 4, 4, 4)
@@ -102,9 +97,9 @@ class AnalysisPanel(QDockWidget):
     def showEvent(self, event: QShowEvent) -> None:
         super().showEvent(event)
         if not self._split_restored:
-            # seed the 60/40 default once the dock has its real geometry; Qt scales
-            # the pair to the space available, so the ratio is what matters
-            self.splitter.setSizes([600, 400])
+            # seed the default once the dock has its real geometry; Qt scales the
+            # pair to the space available, so the ratio is what matters
+            self.splitter.setSizes(list(_DEFAULT_SPLIT))
 
     def save_splitter(self, settings: QSettings) -> None:
         """Remember the table/tabs split (the caller syncs the settings)."""
@@ -137,17 +132,3 @@ class AnalysisPanel(QDockWidget):
 
     def mode(self) -> str:
         return MODE_AUTOFIT if self._pages.currentWidget() is self.autofit_view else MODE_MANUAL
-
-    # -- D1 compatibility: the result tabs' API stays reachable through the panel -----------
-
-    def tab_titles(self) -> list[str]:
-        return self.results.tab_titles()
-
-    def tab_text_at(self, index: int) -> str:
-        return self.results.tab_text_at(index)
-
-    def count(self) -> int:
-        return self.results.count()
-
-    def empty_text(self) -> str:
-        return EMPTY_TEXT

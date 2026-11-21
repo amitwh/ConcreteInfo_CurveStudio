@@ -14,7 +14,13 @@ from typing import cast
 import numpy as np
 import pyqtgraph as pg
 from PySide6.QtCore import QEvent, QObject, QPointF, Qt
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QLabel, QStackedLayout, QVBoxLayout, QWidget
+
+from curvestudio_desktop.theme import current_scheme, mono_font
+
+_DARK_PLOT_BACKGROUND = "#1e1e1e"
+_DARK_PLOT_FOREGROUND = "#d4d4d4"
 
 
 class PlotView(QWidget):
@@ -47,6 +53,7 @@ class PlotView(QWidget):
         self._plot.installEventFilter(self)
         self._readout = QLabel("", self)
         self._readout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._readout.setFont(mono_font(9))
         stack = QStackedLayout()
         stack.addWidget(self._plot)
         stack.addWidget(self._empty_label)
@@ -61,6 +68,31 @@ class PlotView(QWidget):
         # distorts an unsorted scatter. clip-to-view stays on.
         self._plot.getPlotItem().setDownsampling(auto=False)
         self._plot.getPlotItem().setClipToView(True)
+        self.apply_scheme()
+
+    def apply_scheme(self, scheme: str | None = None) -> None:
+        """Repaint the plot surface, viewbox, axes and labels for the light/dark scheme.
+
+        ``apply_theme`` reconfigures pyqtgraph's *defaults*, but a PlotWidget built before
+        the switch keeps the background it was created with. This is the explicit repaint
+        the theme action calls, so a dark UI never surrounds a white plot.
+        """
+        resolved = scheme if scheme is not None else current_scheme()
+        dark = resolved == "dark"
+        background = _DARK_PLOT_BACKGROUND if dark else "w"
+        foreground = _DARK_PLOT_FOREGROUND if dark else "k"
+        self._plot.setBackground(background)
+        self._plot.getPlotItem().getViewBox().setBackgroundColor(background)
+        for axis_name in ("left", "bottom"):
+            axis = self._plot.getAxis(axis_name)
+            axis.setPen(foreground)
+            axis.setTextPen(foreground)
+            axis.label.setDefaultTextColor(QColor(foreground))
+        self._scheme = resolved
+
+    def plot_background(self) -> str:
+        """The drawn plot background as ``#rrggbb`` (what the theme tests assert)."""
+        return str(self._plot.backgroundBrush().color().name())
 
     # -- data --------------------------------------------------------------------------------
 

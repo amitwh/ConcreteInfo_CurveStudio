@@ -22,6 +22,7 @@ from PySide6.QtWidgets import QDockWidget, QHeaderView, QTableView, QVBoxLayout,
 
 from curvestudio.data import Dataset
 from curvestudio.workflow import ImportIssue
+from curvestudio_desktop.theme import mono_font
 
 _INCLUDED = "Included"
 _WEIGHT_HEADER = "Weight"
@@ -143,6 +144,7 @@ class DataTableDock(QDockWidget):
         layout.setContentsMargins(4, 4, 4, 4)
         self.view = QTableView()
         self.view.setObjectName("dataTable")
+        self.view.setFont(mono_font(9))
         self.view.setEditTriggers(QTableView.EditTrigger.NoEditTriggers)
         self.view.setAlternatingRowColors(True)
         self.view.verticalHeader().setDefaultSectionSize(24)

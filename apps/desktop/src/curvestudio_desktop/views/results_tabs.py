@@ -1,6 +1,8 @@
 """ResultsTabs: the five result tabs every fit fills (Parameters, Statistics, Diagnostics,
 Equation, Predict).
 
+The widget is deliberately self-contained: the analysis dock no longer shows it, the
+details window hosts it, and any other home could add it without re-implementing a tab.
 Each tab keeps an honest empty state ("No fit yet"). A fit that did not converge is shown
 as failed: a red banner with its reason, parameters with whatever uncertainty the engine
 could not give shown as ``n/a``, and no curve anywhere. Undefined statistics are ``n/a``,
@@ -16,7 +18,7 @@ from typing import Any, Literal
 
 import pyqtgraph as pg
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QGuiApplication
+from PySide6.QtGui import QGuiApplication, QResizeEvent, QShowEvent
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
@@ -34,11 +36,18 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from curvestudio.workflow import MAX_PREDICT_POINTS, FitBundle, FitSpec, Prediction, WorkflowError
+from curvestudio.workflow import (
+    MAX_PREDICT_POINTS,
+    FitBundle,
+    FitSpec,
+    Prediction,
+    WorkflowError,
+    format_equation,
+)
+from curvestudio_desktop.theme import mono_font
 from curvestudio_reporting.csv_report import statistics_rows
 
 EMPTY_TEXT = "No fit yet"
-_BANNER_STYLE = "color: #b2182b; font-weight: bold;"
 _NA = "n/a"
 PredictCaller = Callable[
     [FitBundle, FitSpec, list[float], Literal["confidence", "prediction"] | None],
@@ -55,6 +64,74 @@ def _placeholder(text: str = EMPTY_TEXT) -> QLabel:
     label.setAlignment(Qt.AlignmentFlag.AlignCenter)
     label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
     return label
+
+
+def _size_columns(header: QHeaderView, last_column: int) -> None:
+    """Content-size every column but the last, which stretches to fill the viewport.
+
+    The details window is wide; leaving the tables content-sized would pin them to a
+    fraction of the width and waste the rest of the window. Used where the last column is
+    prose (the statistics note) so the stretch is where the text needs it.
+    """
+    header.setStretchLastSection(False)
+    header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+    header.setSectionResizeMode(last_column, QHeaderView.ResizeMode.Stretch)
+
+
+#: Horizontal padding in the generic QSS table cells (``QTableView::item``: ``3px 6px``)
+#: plus the header's own margins and the delegate's focus-frame reservation. Measured from
+#: ``views/styles.py``, so a value is never elided by an under-sized section.
+_COLUMN_PADDING = 12 + 8 + 8
+
+
+def _distribute_columns(table: QTableWidget) -> None:
+    """Give every column a content-sized minimum, then share the slack by width.
+
+    Stretching only the last column made the parameters table read as a small grid plus a
+    mostly empty band: at 1150 px the "95% CI high" column absorbed ~700 px while the
+    data stayed cramped left. Here the extra width is spread over every column in
+    proportion to the content it holds, so the table stays one grid and still sums to the
+    viewport (no horizontal scrollbar).
+    """
+    header = table.horizontalHeader()
+    columns = header.count()
+    viewport = table.viewport().width()
+    if columns == 0 or viewport <= 0:
+        return
+    cell = table.fontMetrics()
+    title_font = header.fontMetrics()
+    minimums: list[int] = []
+    for column in range(columns):
+        heading = table.horizontalHeaderItem(column)
+        widest = 0 if heading is None else title_font.horizontalAdvance(heading.text())
+        for row in range(table.rowCount()):
+            item = table.item(row, column)
+            if item is not None:
+                widest = max(widest, cell.horizontalAdvance(item.text()))
+        minimums.append(widest + _COLUMN_PADDING)
+    content = sum(minimums)
+    if content <= 0:
+        return
+    if content < viewport:
+        slack = viewport - content
+        widths = [width + slack * width // content for width in minimums]
+        widths[-1] += viewport - sum(widths)  # rounding: the sum is still the viewport
+    else:
+        widths = minimums
+    for column, width in enumerate(widths):
+        header.resizeSection(column, width)
+
+
+class _ProportionalTable(QTableWidget):
+    """A result table whose columns share the viewport proportionally, never one band."""
+
+    def resizeEvent(self, event: QResizeEvent) -> None:
+        super().resizeEvent(event)
+        _distribute_columns(self)
+
+    def showEvent(self, event: QShowEvent) -> None:
+        super().showEvent(event)
+        _distribute_columns(self)
 
 
 class _Tab(QStackedLayout):
@@ -95,8 +172,7 @@ class ResultsTabs(QWidget):
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         self._banner = QLabel("")
-        self._banner.setObjectName("fitStatusBanner")
-        self._banner.setStyleSheet(_BANNER_STYLE)
+        self._banner.setObjectName("bannerError")
         self._banner.setWordWrap(True)
         self._banner.hide()
         outer.addWidget(self._banner)
@@ -115,15 +191,16 @@ class ResultsTabs(QWidget):
     # -- construction ------------------------------------------------------------------------
 
     def _build_parameters(self) -> None:
-        self._parameters = QTableWidget(0, 5)
+        self._parameters = _ProportionalTable(0, 5)
         self._parameters.setObjectName("parametersTable")
         self._parameters.setHorizontalHeaderLabels(
             ["parameter", "value", "std. err.", "95% CI low", "95% CI high"]
         )
         self._parameters.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        self._parameters.horizontalHeader().setSectionResizeMode(
-            QHeaderView.ResizeMode.ResizeToContents
-        )
+        self._parameters.setFont(mono_font(9))
+        header = self._parameters.horizontalHeader()
+        header.setStretchLastSection(False)
+        header.setSectionResizeMode(QHeaderView.ResizeMode.Fixed)
         self._parameters.verticalHeader().setVisible(True)
         self._parameters_tab = _Tab(self._parameters)
         self._tabs_of: list[_Tab] = [self._parameters_tab]
@@ -133,9 +210,8 @@ class ResultsTabs(QWidget):
         self._statistics.setObjectName("statisticsTable")
         self._statistics.setHorizontalHeaderLabels(["statistic", "value", "note"])
         self._statistics.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        self._statistics.horizontalHeader().setSectionResizeMode(
-            QHeaderView.ResizeMode.ResizeToContents
-        )
+        self._statistics.setFont(mono_font(9))
+        _size_columns(self._statistics.horizontalHeader(), 2)  # last: note
         self._statistics.verticalHeader().setVisible(False)
         self._statistics_tab = _Tab(self._statistics)
         self._tabs_of.append(self._statistics_tab)
@@ -148,7 +224,8 @@ class ResultsTabs(QWidget):
         titles = ("Residuals vs fitted", "Residuals vs x", "Normal Q-Q", "Histogram")
         for index, title in enumerate(titles):
             plot = pg.PlotWidget()
-            plot.setMinimumHeight(130)
+            # a sane floor per panel: four panels share one two-column grid
+            plot.setMinimumSize(140, 120)
             plot.setMenuEnabled(False)
             plot.hideButtons()
             if index < 2:  # the two residual panels read against a zero line
@@ -169,8 +246,10 @@ class ResultsTabs(QWidget):
         self._equation_label = _placeholder("")
         self._equation_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         self._equation_label.setWordWrap(True)
+        # the details window's headline number: large, mono and selectable
+        self._equation_label.setFont(mono_font(14))
         copy = QPushButton("Copy equation")
-        copy.clicked.connect(self._copy_equation)
+        copy.clicked.connect(self.copy_equation)
         layout.addWidget(self._equation_label, stretch=1)
         layout.addWidget(copy, alignment=Qt.AlignmentFlag.AlignRight)
         self._equation_tab = _Tab(content)
@@ -182,6 +261,7 @@ class ResultsTabs(QWidget):
         layout.setContentsMargins(6, 6, 6, 6)
         row = QHBoxLayout()
         self._predict_input = QPlainTextEdit()
+        self._predict_input.setFont(mono_font(10))
         self._predict_input.setPlaceholderText("x values, one per line (e.g. 2.5)")
         self._predict_input.setMaximumHeight(90)
         self._band_combo = QComboBox()
@@ -196,17 +276,16 @@ class ResultsTabs(QWidget):
         row.addLayout(side)
         layout.addLayout(row)
         self._predict_error = QLabel("")
+        self._predict_error.setObjectName("bannerError")
         self._predict_error.setWordWrap(True)
-        self._predict_error.setStyleSheet(_BANNER_STYLE)
         self._predict_error.hide()
         layout.addWidget(self._predict_error)
         self._predict_table = QTableWidget(0, 5)
         self._predict_table.setObjectName("predictTable")
         self._predict_table.setHorizontalHeaderLabels(["x", "ŷ", "lower", "upper", "extrapolated"])
         self._predict_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        self._predict_table.horizontalHeader().setSectionResizeMode(
-            QHeaderView.ResizeMode.ResizeToContents
-        )
+        self._predict_table.setFont(mono_font(9))
+        _size_columns(self._predict_table.horizontalHeader(), 4)  # last: extrapolated
         self._predict_table.verticalHeader().setVisible(False)
         layout.addWidget(self._predict_table, stretch=1)
         self._predict_tab = _Tab(content)
@@ -288,6 +367,7 @@ class ResultsTabs(QWidget):
                 if column and text == _NA:
                     item.setToolTip("not determined by this fit")
                 table.setItem(row, column, item)
+        _distribute_columns(table)
         self._parameters_tab.show_content(bool(estimates))
 
     def _fill_statistics(self, bundle: FitBundle) -> None:
@@ -362,7 +442,8 @@ class ResultsTabs(QWidget):
             plots[2].plot([low, high], [low, high], pen=pg.mkPen("#999999", width=1))
         edges, counts = residuals.hist_edges, residuals.hist_counts
         if len(edges) >= 2:
-            width = edges[1] - edges[0]
+            # the histogram's width must never depend on a data-bin width: the
+            # grid's minimum size (set above) is what keeps the panels sane
             plots[3].plot(
                 x=[(edges[i] + edges[i + 1]) / 2 for i in range(len(edges) - 1)],
                 y=list(counts),
@@ -372,7 +453,6 @@ class ResultsTabs(QWidget):
                 brush=pg.mkBrush(255, 127, 14, 150),
                 pen=pg.mkPen(None),
             )
-            plots[3].setMinimumWidth(int(max(1.0, width)))
         notes = [
             name
             for name, empty in (
@@ -386,12 +466,20 @@ class ResultsTabs(QWidget):
         self._diag_note.setText("n/a: " + ", ".join(notes) if notes else "")
 
     def _fill_equation(self, bundle: FitBundle) -> None:
-        self._equation_label.setText(bundle.equation_text)
+        self._equation_label.setText(format_equation(bundle.equation_text))
         self._equation_tab.show_content(True)
 
-    def _copy_equation(self) -> None:
-        if self._bundle is not None:
-            QGuiApplication.clipboard().setText(self._bundle.equation_text)
+    def equation_text(self) -> str:
+        """The equation exactly as shown ('' when there is no bundle)."""
+        return "" if self._bundle is None else format_equation(self._bundle.equation_text)
+
+    def copy_equation(self) -> bool:
+        """Copy the shown equation to the clipboard; ``False`` when there is none."""
+        text = self.equation_text()
+        if not text:
+            return False
+        QGuiApplication.clipboard().setText(text)
+        return True
 
     # -- prediction --------------------------------------------------------------------------
 

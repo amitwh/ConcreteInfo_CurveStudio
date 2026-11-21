@@ -9,8 +9,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
 
-from PySide6.QtCore import QByteArray, QPoint, QSettings, Qt
-from PySide6.QtGui import QAction, QCloseEvent, QKeySequence
+from PySide6.QtCore import QByteArray, QPoint, QSettings, QSize, Qt
+from PySide6.QtGui import QAction, QActionGroup, QCloseEvent, QKeySequence
 from PySide6.QtWidgets import (
     QApplication,
     QDockWidget,
@@ -20,33 +20,55 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMenu,
     QMenuBar,
+    QProgressBar,
     QPushButton,
     QTableView,
     QToolBar,
     QWidget,
 )
 
-from curvestudio.discovery import AutoFitResult
+from curvestudio.discovery import AutoFitResult, RankedFit
 from curvestudio.workflow import FitBundle, FitSpec, ImportOutcome
 from curvestudio_desktop import APP_NAME, NO_NETWORK_NOTE
 from curvestudio_desktop.controllers import exports
-from curvestudio_desktop.controllers.analysis import AnalysisController
+from curvestudio_desktop.controllers.analysis import MODE_AUTOFIT, AnalysisController
 from curvestudio_desktop.controllers.analysis_jobs import AutoFitLive
 from curvestudio_desktop.controllers.project import ProjectController
 from curvestudio_desktop.controllers.selection import SelectionController
 from curvestudio_desktop.jobs import JobHandle, JobRunner
+from curvestudio_desktop.theme import (
+    Preference,
+    Scheme,
+    apply_theme,
+    set_theme_preference,
+    theme_preference,
+)
 from curvestudio_desktop.views.analysis_panel import AnalysisPanel
 from curvestudio_desktop.views.data_table import DatasetTableModel, DataTableDock
+from curvestudio_desktop.views.details_dialog import DetailsDialog
+from curvestudio_desktop.views.dock_shell import DockTitleBar
+from curvestudio_desktop.views.fit_summary import model_identity
+from curvestudio_desktop.views.icons import app_icon, icon
 from curvestudio_desktop.views.import_dialog import ClipboardImportDialog, ImportDialog
 from curvestudio_desktop.views.plot_view import PlotView
 from curvestudio_desktop.views.project_tree import ProjectDock, ProjectTree
 
 MINIMUM_SIZE = (980, 640)
+DEFAULT_WINDOW_SIZE = (1280, 820)
 ANALYSIS_DOCK_WIDTH = 420
 """The right dock starts wide: fit parameters and statistics need the room."""
 _RECENT_LIMIT = 10
 _LAYOUT_STATE_KEY = "main_window/state"
 _LAYOUT_GEOMETRY_KEY = "main_window/geometry"
+_COLLAPSED_PREFIX = "main_window/collapsed/"
+_EXPANDED_PREFIX = "main_window/expanded/"
+_COLLAPSED_EXTENT = 40
+_UNBOUNDED = 16777215  # QWIDGETSIZE_MAX
+_THEME_CHOICES: tuple[tuple[Preference, str], ...] = (
+    ("system", "&System"),
+    ("light", "&Light"),
+    ("dark", "&Dark"),
+)
 
 
 class MainWindow(QMainWindow):
@@ -68,7 +90,12 @@ class MainWindow(QMainWindow):
         self._busy_cursor = False
         self._suppress_autostart = False
         self.layout_restored = False
+        self._theme_preference = theme_preference(self._settings)
+        self._collapsed: dict[str, bool] = {}
+        self._expanded_extent: dict[str, int] = {}
+        self._title_bars: dict[str, DockTitleBar] = {}
         self.setWindowTitle(APP_NAME)
+        self.setWindowIcon(app_icon())
         self.setMinimumSize(*MINIMUM_SIZE)
         self.setObjectName("mainWindow")
 
@@ -78,6 +105,10 @@ class MainWindow(QMainWindow):
 
         self.plot_view = PlotView(self)
         self.setCentralWidget(self.plot_view)
+        # one reusable, non-modal details window per main window (never a stack of them)
+        self.details_dialog = DetailsDialog(
+            self, settings=self._settings, predict_fn=self.analysis.predict
+        )
 
         self.project_dock = ProjectDock(self)
         self.analysis_panel = AnalysisPanel(self.analysis, self.selection, self)
@@ -86,11 +117,14 @@ class MainWindow(QMainWindow):
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.analysis_panel)
         self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.table_dock)
         self.resizeDocks((self.analysis_panel,), (ANALYSIS_DOCK_WIDTH,), Qt.Orientation.Horizontal)
+        self.resizeDocks((self.table_dock,), (220,), Qt.Orientation.Vertical)
+        self._setup_docks()
 
         self._build_actions()
         self._build_menus()
         self._build_toolbar()
         self._build_status_bar()
+        self._apply_icons()
         self._wire()
         self._restore_layout()
         self.refresh_all()
@@ -105,7 +139,33 @@ class MainWindow(QMainWindow):
     def project_tree(self) -> ProjectTree:
         return self.project_dock.tree
 
+    @property
+    def docks(self) -> dict[str, QDockWidget]:
+        """The three panels by their persisted name."""
+        return {
+            "project": self.project_dock,
+            "analysis": self.analysis_panel,
+            "table": self.table_dock,
+        }
+
     # -- construction ------------------------------------------------------------------------
+
+    def _setup_docks(self) -> None:
+        """Give every dock its custom title bar and the standard float/close features."""
+        titles = {"project": "Project", "analysis": "Analysis", "table": "Data table"}
+        for name, dock in self.docks.items():
+            dock.setFeatures(
+                QDockWidget.DockWidgetFeature.DockWidgetMovable
+                | QDockWidget.DockWidgetFeature.DockWidgetFloatable
+                | QDockWidget.DockWidgetFeature.DockWidgetClosable
+            )
+            bar = DockTitleBar(titles[name], dock, vertical=name != "table")
+            dock.setTitleBarWidget(bar)
+            bar.collapseToggled.connect(
+                lambda collapsed, dock_name=name: self.set_dock_collapsed(dock_name, collapsed)
+            )
+            self._title_bars[name] = bar
+            self._collapsed[name] = False
 
     def _build_actions(self) -> None:
         self.action_new = self._action(
@@ -158,6 +218,13 @@ class MainWindow(QMainWindow):
         )
         self.action_reset_view.triggered.connect(self.plot_view.reset_view)
 
+        self.action_details = self._action(
+            "&Details…",
+            QKeySequence("Ctrl+D"),
+            "Open the selected row's or the active fit's full results",
+        )
+        self.action_details.triggered.connect(self.open_details)
+
         self.action_export_plot = self._action(
             "&Export plot…", QKeySequence("Ctrl+E"), "Export the plot as PNG or SVG"
         )
@@ -180,6 +247,43 @@ class MainWindow(QMainWindow):
 
         self.action_about = self._action("&About", None, "Licence and version")
         self.action_about.triggered.connect(self.show_about)
+
+        self.action_reset_layout = self._action(
+            "&Reset layout", None, "Restore the default panel arrangement"
+        )
+        self.action_reset_layout.triggered.connect(self._reset_layout)
+
+        self._theme_group = QActionGroup(self)
+        self._theme_group.setExclusive(True)
+        self._theme_actions: dict[str, QAction] = {}
+        for preference, label in _THEME_CHOICES:
+            theme_action = self._action(label, None, f"Use the {preference} theme")
+            theme_action.setCheckable(True)
+            theme_action.setChecked(preference == self._theme_preference)
+            theme_action.triggered.connect(
+                lambda _checked=False, choice=preference: self.apply_theme_preference(choice)
+            )
+            self._theme_group.addAction(theme_action)
+            self._theme_actions[preference] = theme_action
+
+        self._icon_actions: list[tuple[QAction, str]] = [
+            (self.action_new, "new"),
+            (self.action_open, "open"),
+            (self.action_save, "save"),
+            (self.action_import, "import"),
+            (self.action_clipboard, "clipboard"),
+            (self.action_undo, "undo"),
+            (self.action_log_x, "log-x"),
+            (self.action_log_y, "log-y"),
+            (self.action_reset_view, "reset"),
+            (self.action_details, "details"),
+            (self.action_export_plot, "export"),
+            (self.action_export_results, "export"),
+            (self.action_export_ranking, "export"),
+            (self.action_export_publication, "export"),
+            (self.action_about, "about"),
+            (self.action_reset_layout, "reset"),
+        ]
 
     def _action(
         self,
@@ -221,24 +325,38 @@ class MainWindow(QMainWindow):
 
         view_menu = bar.addMenu("&View")
         self._view_menu = view_menu
-        for dock, label in (
-            (self.project_dock, "&Project tree"),
-            (self.analysis_panel, "&Analysis panel"),
-            (self.table_dock, "&Data table"),
+        panels_menu = view_menu.addMenu("&Panels")
+        self._panel_actions: dict[str, QAction] = {}
+        self._panel_icon_names = {
+            "project": "panel-project",
+            "analysis": "panel-analysis",
+            "table": "panel-table",
+        }
+        for name, label in (
+            ("project", "&Project tree"),
+            ("analysis", "&Analysis panel"),
+            ("table", "&Data table"),
         ):
-            view_menu.addAction(self._dock_toggle(dock, label))
+            action = self._dock_toggle(self.docks[name], label)
+            panels_menu.addAction(action)
+            self._panel_actions[name] = action
         view_menu.addSeparator()
         view_menu.addAction(self.action_log_x)
         view_menu.addAction(self.action_log_y)
         view_menu.addAction(self.action_reset_view)
+        view_menu.addAction(self.action_details)
         view_menu.addAction(self.action_export_plot)
         view_menu.addAction(self.action_export_publication)
+        view_menu.addSeparator()
+        view_menu.addAction(self.action_reset_layout)
+        theme_menu = view_menu.addMenu("&Theme")
+        for preference, _label in _THEME_CHOICES:
+            theme_menu.addAction(self._theme_actions[preference])
 
         help_menu = bar.addMenu("&Help")
         help_menu.addAction(self.action_about)
 
     def _dock_toggle(self, dock: QDockWidget, label: str) -> QAction:
-        dock.setWindowTitle(label.strip("&"))
         action = QAction(label, self)
         action.setCheckable(True)
         action.setChecked(dock.isVisible())
@@ -248,8 +366,11 @@ class MainWindow(QMainWindow):
 
     def _build_toolbar(self) -> None:
         toolbar: QToolBar = self.addToolBar("Main")
+        self._toolbar = toolbar
         toolbar.setObjectName("mainToolBar")
-        toolbar.setMovable(False)
+        toolbar.setMovable(True)
+        toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+        toolbar.setIconSize(QSize(18, 18))
         for action in (
             self.action_new,
             self.action_open,
@@ -265,6 +386,32 @@ class MainWindow(QMainWindow):
         toolbar.addAction(self.action_reset_view)
         toolbar.addAction(self.action_export_plot)
 
+    def _apply_icons(self) -> None:
+        """(Re-)render every icon and shortcut tooltip for the current theme."""
+        for action, icon_name in self._icon_actions:
+            action.setIcon(icon(icon_name))
+            tooltip = action.statusTip() or action.text().replace("&", "")
+            shortcut = action.shortcut().toString()
+            action.setToolTip(f"{tooltip} ({shortcut})" if shortcut else tooltip)
+        for name, action in self._panel_actions.items():
+            action.setIcon(icon(self._panel_icon_names[name]))
+        for bar in self._title_bars.values():
+            bar.refresh_icons()
+
+    def apply_theme_preference(self, preference: Preference, *, persist: bool = True) -> None:
+        """Switch the light/dark/system theme immediately and remember the choice."""
+        app = QApplication.instance()
+        resolved: Scheme = "light"
+        if app is not None:
+            resolved = apply_theme(cast("QApplication", app), preference=preference)
+        if persist:
+            set_theme_preference(preference, self._settings)
+        self._theme_preference = preference
+        for name, action in self._theme_actions.items():
+            action.setChecked(name == preference)
+        self._apply_icons()
+        self.plot_view.apply_scheme(resolved)
+
     def _build_status_bar(self) -> None:
         bar = self.statusBar()
         self._cancel_button = QPushButton("Cancel")
@@ -273,10 +420,17 @@ class MainWindow(QMainWindow):
         self._cancel_button.hide()
         self._cancel_button.clicked.connect(self._cancel_running_job)
         bar.addWidget(self._cancel_button)
+        self._job_progress = QProgressBar()
+        self._job_progress.setObjectName("jobProgress")
+        self._job_progress.setFixedWidth(120)
+        self._job_progress.setTextVisible(False)
+        self._job_progress.setRange(0, 0)  # indeterminate until a job reports counts
+        self._job_progress.hide()
         self._observations = QLabel("Observations: 0")
         self._observations.setObjectName("observationsLabel")
-        self._no_network = QLabel(NO_NETWORK_NOTE)
+        self._no_network = QLabel(f"Offline · {NO_NETWORK_NOTE}")
         self._no_network.setObjectName("noNetworkLabel")
+        bar.addPermanentWidget(self._job_progress)
         bar.addPermanentWidget(self._observations)
         bar.addPermanentWidget(self._no_network)
         bar.showMessage("Ready")
@@ -304,12 +458,18 @@ class MainWindow(QMainWindow):
         if cancellable:
             self._cancel_button.setEnabled(True)
             self._cancel_button.show()
+
+        def progress(done: int, total: int) -> None:
+            self._show_job_progress(done, total)
+            if on_progress is not None:
+                on_progress(done, total)
+
         handle = self.jobs.submit(
             fn,
             *args,
             on_result=on_result,
             on_error=on_error or self._job_failed,
-            on_progress=on_progress,
+            on_progress=progress if on_progress is not None else None,
         )
         self._running_job = handle if cancellable else None
         return handle
@@ -327,11 +487,23 @@ class MainWindow(QMainWindow):
         if busy and not self._busy_cursor:
             QApplication.setOverrideCursor(Qt.CursorShape.BusyCursor)
             self._busy_cursor = True
+            self._job_progress.setRange(0, 0)
+            self._job_progress.show()
         elif not busy and self._busy_cursor:
             QApplication.restoreOverrideCursor()
             self._busy_cursor = False
             self._cancel_button.hide()
             self._running_job = None
+            self._job_progress.hide()
+            self._job_progress.setRange(0, 0)
+            self._job_progress.setValue(0)
+
+    def _show_job_progress(self, done: int, total: int) -> None:
+        """Feed the status-bar bar when a job reports determinate progress."""
+        if total > 0:
+            self._job_progress.setRange(0, total)
+            self._job_progress.setValue(min(done, total))
+        self._job_progress.show()
 
     def _wire(self) -> None:
         controller = self.controller
@@ -365,6 +537,9 @@ class MainWindow(QMainWindow):
         panel = self.analysis_panel
         panel.autofit_view.rowSelected.connect(self._plot_candidate)
         panel.autofit_view.openRequested.connect(self._open_candidate)
+        panel.summary.openDetailsRequested.connect(self.open_details)
+        panel.summary.exportRequested.connect(self.export_results)
+        self.details_dialog.exportRequested.connect(self.export_results)
         self._refresh_recent_menu()
 
     # -- imports -----------------------------------------------------------------------------
@@ -468,12 +643,14 @@ class MainWindow(QMainWindow):
         """Point the analysis dock at the active dataset: stored run, empty state, auto-start."""
         panel = self.analysis_panel
         self.analysis.clear_current_fit()
-        panel.results.clear_all()
+        panel.summary.clear()
+        self.details_dialog.clear()
         self.plot_view.clear_fit()
         panel.manual_view.refresh_data_options()
         dataset_id = self.selection.active_id
         if dataset_id is None:
             panel.autofit_view.clear()
+            self._refresh_export_actions()
             return
         result = self.analysis.stored_autofit(dataset_id)
         if result is not None and self.analysis.has_current_autofit(dataset_id):
@@ -484,6 +661,7 @@ class MainWindow(QMainWindow):
             panel.autofit_view.clear()
         if not self._suppress_autostart:
             self.analysis.maybe_autostart(dataset_id)
+        self._refresh_export_actions()
 
     def _on_autofit_started(self, dataset_id: str) -> None:
         if dataset_id == self.selection.active_id:
@@ -495,19 +673,47 @@ class MainWindow(QMainWindow):
 
     def _on_autofit_result(self, dataset_id: str, result: object) -> None:
         if dataset_id == self.selection.active_id:
-            self.analysis_panel.autofit_view.show_result(cast("AutoFitResult", result))
+            auto_result = cast("AutoFitResult", result)
+            self.analysis_panel.autofit_view.show_result(auto_result)
+            if not auto_result.ranked:
+                # nothing to summarise: the hint, not a stale fit from another run
+                self.analysis_panel.summary.clear()
+        self._refresh_export_actions()
 
     def _on_autofit_failed(self, message: str) -> None:
         # inline notice, not a modal box: an auto-started run the user never asked for
         # must not interrupt them (the status bar carries the same text)
         self.analysis_panel.autofit_view.show_failure(message)
+        self._refresh_export_actions()
 
     def _on_fit_shown(self, bundle: object, spec: object, meta: object) -> None:
-        """A fit (fresh or restored) fills the tabs and draws its curve — if it has one."""
+        """A fit (fresh or restored) updates the summary/details window and draws its curve."""
         fit_bundle = cast("FitBundle", bundle)
+        fit_spec = cast("FitSpec", spec)
+        meta_dict = meta if isinstance(meta, dict) else {}
+        dataset_name = self._dataset_name(meta_dict.get("dataset_id"))
+        row = self._row_for_model(fit_bundle.result.model_id)
+        if row is not None:
+            name, category = row.name, row.category
+        else:
+            name, category = model_identity(fit_bundle.result.model_id)
         panel = self.analysis_panel
-        panel.results.show_bundle(fit_bundle, cast("FitSpec", spec), meta)
+        panel.summary.show_bundle(
+            fit_bundle, dataset_name=dataset_name, name=name, category=category
+        )
+        self.details_dialog.show_bundle(
+            fit_bundle,
+            fit_spec,
+            dataset_name=dataset_name,
+            name=name,
+            category=category,
+            meta=meta_dict,
+        )
         panel.manual_view.clear_banner()
+        self._refresh_export_actions()
+        # a fit the user asked for opens the details window; restoring one does not
+        if not meta_dict.get("restored", False):
+            self.details_dialog.reveal()
         curve = fit_bundle.curve
         if curve is None:
             self.plot_view.clear_fit()  # never a stand-in curve for a fit without one
@@ -523,13 +729,15 @@ class MainWindow(QMainWindow):
 
     def _on_fit_failed(self, message: str) -> None:
         self.analysis_panel.manual_view.show_failure(message)
+        self._refresh_export_actions()
 
     def _plot_candidate(self, candidate_id: str) -> None:
-        """A ranking row was selected: draw its stored curve (or none, honestly)."""
+        """A ranking row was selected: draw its stored curve and mirror it in the summary."""
         dataset_id = self.selection.active_id
         result = None if dataset_id is None else self.analysis.autofit_for_display(dataset_id)
         if result is None:
             return
+        self._show_row_summary(dataset_id)
         curve = result.curves.get(candidate_id)
         if curve is None:
             self.plot_view.clear_fit()
@@ -557,6 +765,54 @@ class MainWindow(QMainWindow):
             return
         self.analysis.open_candidate(dataset_id, result, candidate_id)
 
+    # -- details window ----------------------------------------------------------------------
+
+    def open_details(self) -> None:
+        """Open the details of the selected ranked row, or of the active fit.
+
+        The ranking's selected row wins in Auto-fit mode: it is what the user is looking
+        at. A row already refitted into the current bundle reuses that bundle instead of
+        fitting twice; any other row refits first and the window opens when it arrives.
+        """
+        row = self._selected_row()
+        bundle = self.analysis.current_bundle
+        if row is not None and self.analysis.mode == MODE_AUTOFIT:
+            if bundle is not None and bundle.result.model_id == row.model_id:
+                self.details_dialog.reveal()
+            else:
+                self._open_candidate(row.model_id)
+            return
+        if bundle is not None:
+            self.details_dialog.reveal()
+            return
+        self.statusBar().showMessage(
+            "Select a ranked row, or run or open a fit, to see its details"
+        )
+
+    def _selected_row(self) -> RankedFit | None:
+        return self.analysis_panel.autofit_view.table.selected_row()
+
+    def _row_for_model(self, model_id: str) -> RankedFit | None:
+        return next(
+            (
+                row
+                for row in self.analysis_panel.autofit_view.table.rows()
+                if row.model_id == model_id
+            ),
+            None,
+        )
+
+    def _dataset_name(self, dataset_id: object) -> str:
+        if not isinstance(dataset_id, str):
+            return "—"
+        entry = next((e for e in self.controller.project.datasets if e.id == dataset_id), None)
+        return entry.name if entry is not None else "—"
+
+    def _show_row_summary(self, dataset_id: str | None) -> None:
+        row = self._selected_row()
+        if row is not None:
+            self.analysis_panel.summary.show_row(row, self._dataset_name(dataset_id))
+
     def _on_tree_analysis(self, analysis_id: str) -> None:
         """An analysis row was clicked: activate its dataset, then restore without refitting."""
         dataset_id = self.analysis.dataset_of_analysis(analysis_id)
@@ -567,6 +823,7 @@ class MainWindow(QMainWindow):
         finally:
             self._suppress_autostart = False
         self.analysis.restore_analysis(analysis_id)
+        self._refresh_export_actions()
 
     # -- refresh -----------------------------------------------------------------------------
 
@@ -582,6 +839,7 @@ class MainWindow(QMainWindow):
         self.refresh_tree()
         self._refresh_title()
         self._refresh_recent_menu()
+        self._refresh_export_actions()
 
     def _on_datasets_changed(self) -> None:
         """Datasets were added/removed: reconcile the selection, rebuild the tree.
@@ -592,6 +850,7 @@ class MainWindow(QMainWindow):
         """
         self.selection.set_project(self.controller.project)
         self.refresh_tree()
+        self._refresh_export_actions()
 
     def _on_dataset_renamed(self, dataset_id: str) -> None:
         entry = next((e for e in self.controller.project.datasets if e.id == dataset_id), None)
@@ -652,12 +911,12 @@ class MainWindow(QMainWindow):
             self.action_log_x.setChecked(False)
             self.action_log_x.setToolTip("Log axis needs strictly positive x values")
         else:
-            self.action_log_x.setToolTip("")
+            self.action_log_x.setToolTip("Logarithmic x-axis")
         if not self.plot_view.can_log_y:
             self.action_log_y.setChecked(False)
             self.action_log_y.setToolTip("Log axis needs strictly positive y values")
         else:
-            self.action_log_y.setToolTip("")
+            self.action_log_y.setToolTip("Logarithmic y-axis")
 
     def _on_tree_selection(self, dataset_id: str | None) -> None:
         if dataset_id is not None:
@@ -701,7 +960,7 @@ class MainWindow(QMainWindow):
     # -- layout persistence ----------------------------------------------------------------------
 
     def _restore_layout(self) -> None:
-        """Dock layout and geometry from QSettings, when a previous session left them."""
+        """Dock layout, geometry and collapsed panels from QSettings, when stored."""
         state = self._settings.value(_LAYOUT_STATE_KEY, "")
         if isinstance(state, str) and state:
             self.layout_restored = bool(
@@ -710,7 +969,21 @@ class MainWindow(QMainWindow):
         geometry = self._settings.value(_LAYOUT_GEOMETRY_KEY, "")
         if isinstance(geometry, str) and geometry:
             self.restoreGeometry(QByteArray.fromBase64(bytes(geometry, encoding="ascii")))
-        self.analysis_panel.restore_splitter(self._settings)  # the ranking/tabs split
+        self.analysis_panel.restore_splitter(self._settings)  # the ranking/summary split
+        for name in self.docks:
+            extended = self._settings.value(f"{_EXPANDED_PREFIX}{name}", None)
+            try:
+                if extended is not None:
+                    self._expanded_extent[name] = int(str(extended))
+            except ValueError:
+                pass
+            self.set_dock_collapsed(name, self._stored_collapsed(name), persist=False)
+
+    def _stored_collapsed(self, name: str) -> bool:
+        value = self._settings.value(f"{_COLLAPSED_PREFIX}{name}", False)
+        if isinstance(value, str):
+            return value.strip().lower() in ("1", "true", "yes", "on")
+        return bool(value)
 
     def _save_layout(self) -> None:
         self._settings.setValue(
@@ -719,18 +992,98 @@ class MainWindow(QMainWindow):
         self._settings.setValue(
             _LAYOUT_GEOMETRY_KEY, bytes(self.saveGeometry().toBase64().data()).decode("ascii")
         )
+        for name, collapsed in self._collapsed.items():
+            self._settings.setValue(f"{_COLLAPSED_PREFIX}{name}", collapsed)
+            if name in self._expanded_extent:
+                self._settings.setValue(f"{_EXPANDED_PREFIX}{name}", self._expanded_extent[name])
         self.analysis_panel.save_splitter(self._settings)
+        self.details_dialog.save_geometry()
         self._settings.sync()
 
+    def set_dock_collapsed(self, name: str, collapsed: bool, *, persist: bool = True) -> None:
+        """Collapse a panel to a slim title strip (or expand it back to its size)."""
+        dock = self.docks[name]
+        bar = self._title_bars[name]
+        if self._collapsed.get(name, False) == collapsed:
+            bar.set_collapsed(collapsed)
+            return
+        vertical = name != "table"
+        content = dock.widget()
+        if collapsed:
+            extent = dock.width() if vertical else dock.height()
+            # a restored layout may already be narrow: keep the remembered expanded
+            # extent instead of learning the collapsed strip as the "previous size"
+            if extent > _COLLAPSED_EXTENT or name not in self._expanded_extent:
+                self._expanded_extent[name] = extent
+            if content is not None:
+                content.hide()
+            if vertical:
+                dock.setMinimumWidth(_COLLAPSED_EXTENT)
+                dock.setMaximumWidth(_COLLAPSED_EXTENT)
+                dock.resize(_COLLAPSED_EXTENT, dock.height())
+            else:
+                strip = max(28, bar.sizeHint().height())
+                dock.setMinimumHeight(strip)
+                dock.setMaximumHeight(strip)
+                dock.resize(dock.width(), strip)
+        else:
+            if content is not None:
+                content.show()
+            restore = self._expanded_extent.get(name, ANALYSIS_DOCK_WIDTH if vertical else 220)
+            if vertical:
+                dock.setMinimumWidth(0)
+                dock.setMaximumWidth(_UNBOUNDED)
+                self.resizeDocks([dock], [restore], Qt.Orientation.Horizontal)
+            else:
+                dock.setMinimumHeight(0)
+                dock.setMaximumHeight(_UNBOUNDED)
+                self.resizeDocks([dock], [restore], Qt.Orientation.Vertical)
+        self._collapsed[name] = collapsed
+        bar.set_collapsed(collapsed)
+        if persist:
+            self._settings.setValue(f"{_COLLAPSED_PREFIX}{name}", collapsed)
+            if name in self._expanded_extent:
+                self._settings.setValue(f"{_EXPANDED_PREFIX}{name}", self._expanded_extent[name])
+            self._settings.sync()
+
+    def _reset_layout(self) -> None:
+        """Forget the stored layout and re-apply the default panel arrangement."""
+        for key in (_LAYOUT_STATE_KEY, _LAYOUT_GEOMETRY_KEY, "analysis/splitterSizes"):
+            self._settings.remove(key)
+        for name in self.docks:
+            self._settings.remove(f"{_COLLAPSED_PREFIX}{name}")
+            self._settings.remove(f"{_EXPANDED_PREFIX}{name}")
+        self.layout_restored = False
+        for name, dock in self.docks.items():
+            self.set_dock_collapsed(name, False, persist=False)
+            dock.setFloating(False)
+            dock.show()
+        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.project_dock)
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.analysis_panel)
+        self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.table_dock)
+        self.resizeDocks((self.analysis_panel,), (ANALYSIS_DOCK_WIDTH,), Qt.Orientation.Horizontal)
+        self.resizeDocks((self.table_dock,), (220,), Qt.Orientation.Vertical)
+        self.analysis_panel.splitter.setSizes([700, 220])
+        self.resize(*DEFAULT_WINDOW_SIZE)
+        self._settings.sync()
+        self.statusBar().showMessage("Layout reset")
+
     # -- actions without a controller home ---------------------------------------------------
+
+    def _refresh_export_actions(self) -> None:
+        """Export results/ranking and Details are enabled only when there is something to show."""
+        has_bundle = self.analysis.current_bundle is not None
+        has_rows = bool(self.analysis_panel.autofit_view.table.rows())
+        self.action_export_results.setEnabled(has_bundle)
+        self.action_details.setEnabled(has_bundle or has_rows)
+        dataset_id = self.selection.active_id
+        stored = None if dataset_id is None else self.analysis.stored_autofit(dataset_id)
+        self.action_export_ranking.setEnabled(stored is not None)
 
     def export_results(self) -> None:
         """Export the current fit as a report (JSON / XLSX / PDF / CSV by suffix)."""
         bundle = self.analysis.current_bundle
-        if bundle is None:
-            self.controller.messenger.show_information(
-                "Export results", "Run or open a fit first; there is nothing to export yet."
-            )
+        if bundle is None:  # the action is disabled; a programmatic call just no-ops
             return
         target = self.controller.paths.choose_export_path(
             "Export results", "CurveStudio report (*.json *.xlsx *.pdf *.csv)"
@@ -750,10 +1103,7 @@ class MainWindow(QMainWindow):
         """Export the active dataset's Auto-fit ranking table as formula-safe CSV."""
         dataset_id = self.selection.active_id
         result = None if dataset_id is None else self.analysis.stored_autofit(dataset_id)
-        if result is None:
-            self.controller.messenger.show_information(
-                "Export ranking table", "Run Auto-fit first; there is no ranking to export."
-            )
+        if result is None:  # the action is disabled; a programmatic call just no-ops
             return
         target = self.controller.paths.choose_export_path(
             "Export ranking table", "CSV table (*.csv)"
@@ -821,6 +1171,9 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event: QCloseEvent) -> None:
         if self.controller.maybe_quit():
             self._save_layout()
+            # the details window is a top-level child: leaving it open would keep the
+            # application alive after the main window has gone
+            self.details_dialog.close()
             event.accept()
         else:
             event.ignore()

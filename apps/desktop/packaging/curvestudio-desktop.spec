@@ -28,6 +28,7 @@ Linux the ELF format has no icon slot, so it is only used on Windows.
 """
 
 import os
+import sys
 
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules, copy_metadata
 
@@ -86,8 +87,9 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=False,
-    # console stays on: `--selftest` output must be capturable on every platform
-    console=True,
+    # Windows ships as a GUI app (no console window); elsewhere the console stays
+    # on so `--selftest` output is capturable
+    console=sys.platform != "win32",
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,

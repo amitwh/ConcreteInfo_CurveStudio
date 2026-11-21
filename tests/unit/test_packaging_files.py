@@ -250,3 +250,35 @@ def test_appimage_requires_the_appimagetool_host_tool(
     message = str(excinfo.value)
     assert "appimagetool" in message
     assert "host tool" in message
+
+
+def test_frozen_selftest_reads_the_log_file_when_there_is_no_console(
+    fake_repo: FakeRepo, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A windowed Windows build prints nothing on stdout, so the driver reads the file."""
+    import subprocess
+
+    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        env = kwargs["env"]
+        assert isinstance(env, dict)
+        Path(str(env["CURVESTUDIO_SELFTEST_OUT"])).write_text(
+            "SELFTEST OK window, table (20 rows)\n", encoding="utf-8"
+        )
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(build.subprocess, "run", fake_run)
+    build.run_frozen_selftest()  # must not raise
+    assert (fake_repo.work / "selftest.log").is_file()
+
+
+def test_frozen_selftest_still_fails_without_the_ok_line(
+    fake_repo: FakeRepo, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import subprocess
+
+    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(command, 0, stdout="nothing useful\n", stderr="")
+
+    monkeypatch.setattr(build.subprocess, "run", fake_run)
+    with pytest.raises(SystemExit, match="frozen selftest failed"):
+        build.run_frozen_selftest()

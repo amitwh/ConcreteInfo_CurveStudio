@@ -8,16 +8,17 @@ layer and reports PASS/FAIL on stdout. It never shows a window and exits 0 only
 when everything worked.
 """
 
+import io
 import os
 import sys
 import tempfile
 import threading
 import time
 from collections.abc import Callable, Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, redirect_stderr, redirect_stdout
 from pathlib import Path
 from types import TracebackType
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from PySide6.QtCore import QSettings
 from PySide6.QtWidgets import QApplication
@@ -48,7 +49,7 @@ def selftest_settings() -> Iterator[QSettings]:
 
 
 def create_application(argv: list[str] | None = None) -> QApplication:
-    """The one QApplication, with identity, DPI policy and a sensible app name."""
+    """The one QApplication, with identity, DPI policy and the Fusion base style."""
     from PySide6.QtCore import Qt
     from PySide6.QtWidgets import QApplication
 
@@ -60,6 +61,13 @@ def create_application(argv: list[str] | None = None) -> QApplication:
     app.setOrganizationName(ORG_NAME)
     app.setApplicationVersion(__version__)
     app.setDesktopFileName("curvestudio-desktop")
+    # Fusion first: icons render against the final style/palette
+    app.setStyle("Fusion")
+    from curvestudio_desktop.theme import ensure_fonts_loaded
+    from curvestudio_desktop.views.icons import app_icon
+
+    ensure_fonts_loaded()
+    app.setWindowIcon(app_icon())
     return app
 
 
@@ -145,6 +153,7 @@ def build_main_window(settings: QSettings | None = None) -> MainWindow:
     injects its throwaway INI so it neither reads nor writes the user's config.
     """
     from curvestudio_desktop.controllers.project import ProjectController
+    from curvestudio_desktop.theme import apply_theme, theme_preference
     from curvestudio_desktop.views.dialogs import (
         DialogConfirmationProvider,
         DialogPathProvider,
@@ -152,15 +161,19 @@ def build_main_window(settings: QSettings | None = None) -> MainWindow:
     )
     from curvestudio_desktop.views.main_window import MainWindow
 
+    store = settings if settings is not None else QSettings()
+    app = QApplication.instance()
+    if app is not None:  # the remembered look applies before any icon is built
+        apply_theme(cast("QApplication", app), preference=theme_preference(store))
     controller = ProjectController(
         confirmation=DialogConfirmationProvider(),
         paths=DialogPathProvider(),
         messenger=MessageBoxMessenger(),
-        settings=settings if settings is not None else QSettings(),
+        settings=store,
     )
     # the window shares the controller's settings: a split (injected controller
     # settings, default window settings) would read two different stores
-    return MainWindow(controller, settings=settings)
+    return MainWindow(controller, settings=store)
 
 
 def run_app(argv: list[str] | None = None) -> int:
@@ -212,6 +225,24 @@ def _selftest_autofit(xy: XY) -> tuple[bool, str]:
 
 
 def run_selftest(argv: list[str] | None = None) -> int:
+    """Run the smoke test, optionally logging to ``CURVESTUDIO_SELFTEST_OUT``.
+
+    A windowed Windows build has no console, so the packaging driver asks for the log in
+    a file; with a console (Linux/macOS, CI) the same text still reaches stdout.
+    """
+    out_path = os.environ.get("CURVESTUDIO_SELFTEST_OUT")
+    if out_path is None:
+        return _run_selftest(argv)
+    sink = io.StringIO()
+    with redirect_stdout(sink), redirect_stderr(sink):
+        code = _run_selftest(argv)
+    text = sink.getvalue()
+    Path(out_path).write_text(text, encoding="utf-8")
+    sys.stdout.write(text)  # a silent no-op when the frozen app has no console
+    return code
+
+
+def _run_selftest(argv: list[str] | None = None) -> int:
     """Headless smoke test: window + bundled example + one fit + one Auto-fit.
 
     Exit 0 is pass. Used by CI and the packaging build. Prints each step so a failure
