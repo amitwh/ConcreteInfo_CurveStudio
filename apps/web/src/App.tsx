@@ -1,11 +1,13 @@
 /** Routes and the app shell: header with nav, theme toggle and session controls. */
 
 import type { ReactElement, ReactNode } from "react";
+import { CircleHelp, Info, LayoutGrid, Moon, Sun } from "lucide-react";
 import { Link, Navigate, Route, Routes } from "react-router-dom";
 import { useAuth } from "./api/auth";
 import { ThemeProvider, useTheme } from "./components/ThemeToggle";
 import { Loading } from "./components/States";
 import { AboutPage } from "./pages/AboutPage";
+import { HelpPage } from "./pages/HelpPage";
 import { LoginPage } from "./pages/LoginPage";
 import { RegisterPage } from "./pages/RegisterPage";
 import { WorkspacePage } from "./pages/WorkspacePage";
@@ -33,17 +35,31 @@ function Header(): ReactElement {
         <span className="brand__product">CurveStudio</span>
       </Link>
       <nav aria-label="Main" className="app-nav">
-        <Link to="/">Workspace</Link>
-        <Link to="/about">About</Link>
+        <Link to="/">
+          <LayoutGrid className="icon" aria-hidden="true" focusable="false" />
+          Workspace
+        </Link>
+        <Link to="/help">
+          <CircleHelp className="icon" aria-hidden="true" focusable="false" />
+          Help
+        </Link>
+        <Link to="/about">
+          <Info className="icon" aria-hidden="true" focusable="false" />
+          About
+        </Link>
       </nav>
       <div className="app-header__right">
         <button
           type="button"
-          className="btn btn--small"
+          className="btn btn--small btn--icon"
           onClick={toggle}
           aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
         >
-          {theme === "dark" ? "Light" : "Dark"}
+          {theme === "dark" ? (
+            <Sun className="icon" aria-hidden="true" focusable="false" />
+          ) : (
+            <Moon className="icon" aria-hidden="true" focusable="false" />
+          )}
         </button>
         {status === "authed" && user !== null && (
           <>
@@ -76,6 +92,7 @@ export default function App(): ReactElement {
           />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
+          <Route path="/help" element={<HelpPage />} />
           <Route path="/about" element={<AboutPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

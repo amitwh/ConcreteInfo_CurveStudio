@@ -7,6 +7,7 @@
  */
 
 import { useEffect, useState, type ReactElement } from "react";
+import { ChevronDown, Download } from "lucide-react";
 import {
   api,
   saveBlob,
@@ -165,9 +166,11 @@ export function AutofitPanel({
           {stored !== null && (
             <>
               <button type="button" className="btn btn--small" onClick={() => onExport("csv")}>
+                <Download className="icon" aria-hidden="true" focusable="false" />
                 Export CSV
               </button>
               <button type="button" className="btn btn--small" onClick={() => onExport("json")}>
+                <Download className="icon" aria-hidden="true" focusable="false" />
                 Export JSON
               </button>
             </>
@@ -444,6 +447,11 @@ function OutcomeSections({
       {unconverged.length > 0 && (
         <details className="details">
           <summary>
+            <ChevronDown
+              className="icon details__chevron"
+              aria-hidden="true"
+              focusable="false"
+            />
             Not converged ({fmtInt(unconverged.length)}) — the run took{" "}
             {fmtNumber(result.elapsed_seconds ?? 0)} s
           </summary>
@@ -460,7 +468,14 @@ function OutcomeSections({
 
       {skipped.length > 0 && (
         <details className="details">
-          <summary>Skipped ({fmtInt(skipped.length)})</summary>
+          <summary>
+            <ChevronDown
+              className="icon details__chevron"
+              aria-hidden="true"
+              focusable="false"
+            />
+            Skipped ({fmtInt(skipped.length)})
+          </summary>
           <ul className="autofit-outcomes__list">
             {skipped.map(([id, reasons]) => (
               <li key={id}>

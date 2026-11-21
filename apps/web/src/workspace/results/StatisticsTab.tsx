@@ -5,6 +5,7 @@
  */
 
 import type { ReactElement } from "react";
+import { ChevronDown } from "lucide-react";
 import { CopyButton } from "../../components/CopyButton";
 import type { FitBundle } from "../../api/client";
 import { fmtInt, fmtNumber, fmtPValue } from "../../format";
@@ -23,7 +24,14 @@ function Diagnostics({ bundle }: { bundle: FitBundle }): ReactElement | null {
   if (tests.length === 0) return null;
   return (
     <details className="details" open>
-      <summary>Diagnostic tests ({tests.length})</summary>
+      <summary>
+        <ChevronDown
+          className="icon details__chevron"
+          aria-hidden="true"
+          focusable="false"
+        />
+        Diagnostic tests ({tests.length})
+      </summary>
       <ul className="diagnostics">
         {tests.map((test) => (
           <li key={test.name} className="diagnostic">

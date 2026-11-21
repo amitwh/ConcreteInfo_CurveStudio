@@ -5,6 +5,7 @@
  */
 
 import { useMemo, useRef, useState, type ReactElement } from "react";
+import { Database, Download } from "lucide-react";
 import { PlotChart, downloadPlotPng } from "../components/PlotChart";
 import type { DatasetDetailOut, FitBundle } from "../api/client";
 import { buildTraces, isConverged, logAxesAllowed, mergeLayout, themeLayout, type ChartToggles } from "./traces";
@@ -108,6 +109,7 @@ export function ChartPanel({ dataset, bundle, dark }: ChartPanelProps): ReactEle
             disabled={points === null}
             onClick={() => downloadPlotPng(chartRootRef.current, dataset?.name ?? "chart")}
           >
+            <Download className="icon" aria-hidden="true" focusable="false" />
             Download PNG
           </button>
         </div>
@@ -128,7 +130,10 @@ export function ChartPanel({ dataset, bundle, dark }: ChartPanelProps): ReactEle
           ariaLabel={`Scatter plot of ${dataset?.x_column ?? "x"} against ${dataset?.y_column ?? "y"}${converged ? " with fitted curve" : ""}`}
         />
       ) : (
-        <p className="state state--empty">Select a dataset to see its points.</p>
+        <p className="state state--empty">
+          <Database className="icon icon--lg" aria-hidden="true" focusable="false" />
+          Select a dataset to see its points.
+        </p>
       )}
     </section>
   );

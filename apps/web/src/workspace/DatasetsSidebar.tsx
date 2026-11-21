@@ -6,6 +6,7 @@
  */
 
 import { useRef, useState, type ChangeEvent, type DragEvent, type ReactElement } from "react";
+import { Database, Trash2, Upload } from "lucide-react";
 import {
   ApiError,
   MAX_UPLOAD_BYTES,
@@ -174,6 +175,7 @@ export function DatasetsSidebar({
           onClick={() => fileInputRef.current?.click()}
           disabled={uploading}
         >
+          <Upload className="icon" aria-hidden="true" focusable="false" />
           Choose file
         </button>
         <input
@@ -268,6 +270,7 @@ export function DatasetsSidebar({
             </select>
           </div>
           <button type="submit" className="btn btn--primary" disabled={uploading}>
+            <Upload className="icon" aria-hidden="true" focusable="false" />
             Upload with these columns
           </button>
         </form>
@@ -280,7 +283,10 @@ export function DatasetsSidebar({
       {deleteError !== null && <ErrorBox error={deleteError} />}
 
       {!loading && loadError === null && datasets.length === 0 && (
-        <p className="state state--empty">No datasets yet — upload one above.</p>
+        <p className="state state--empty">
+          <Database className="icon icon--lg" aria-hidden="true" focusable="false" />
+          No datasets yet — upload one above.
+        </p>
       )}
 
       <ul className="dataset-list">
@@ -306,6 +312,7 @@ export function DatasetsSidebar({
               <span className="dataset__confirm">
                 <span>Delete “{dataset.name}” and its fits?</span>
                 <button type="button" className="btn btn--small btn--danger" onClick={() => void onDelete(dataset.id)}>
+                  <Trash2 className="icon" aria-hidden="true" focusable="false" />
                   Delete
                 </button>
                 <button type="button" className="btn btn--small" onClick={() => setConfirmDelete(null)}>
@@ -319,6 +326,7 @@ export function DatasetsSidebar({
                 aria-label={`Delete ${dataset.name}`}
                 onClick={() => setConfirmDelete(dataset.id)}
               >
+                <Trash2 className="icon" aria-hidden="true" focusable="false" />
                 Delete
               </button>
             )}

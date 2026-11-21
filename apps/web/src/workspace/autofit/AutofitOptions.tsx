@@ -6,6 +6,7 @@
  */
 
 import { useMemo, type ReactElement } from "react";
+import { ChevronDown } from "lucide-react";
 import type { ModelInfo } from "../../api/client";
 import { DEFAULT_AUTOFIT_OPTIONS, type AutoFitOptions } from "./useAutofit";
 
@@ -36,7 +37,14 @@ export function AutofitOptions({
 
   return (
     <details className="details autofit-options">
-      <summary>Options</summary>
+      <summary>
+        <ChevronDown
+          className="icon details__chevron"
+          aria-hidden="true"
+          focusable="false"
+        />
+        Options
+      </summary>
       <p className="hint">
         Defaults suit most data. Changed options apply on the next “Run again”. Custom
         equations stay in Manual fit.

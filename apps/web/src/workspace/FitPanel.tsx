@@ -6,6 +6,7 @@
  */
 
 import { useEffect, useMemo, useState, type ReactElement } from "react";
+import { Search } from "lucide-react";
 import type { DatasetDetailOut, ModelInfo } from "../api/client";
 import { fmtEquation } from "../format";
 import {
@@ -168,13 +169,16 @@ export function FitPanel({ dataset, models, busy, onFit, fitError, preset }: Fit
 
       <div className="field">
         <label htmlFor="model-search">Search models</label>
-        <input
-          id="model-search"
-          type="search"
-          placeholder="id, name, category or equation"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
+        <span className="search-field">
+          <Search className="icon" aria-hidden="true" focusable="false" />
+          <input
+            id="model-search"
+            type="search"
+            placeholder="id, name, category or equation"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </span>
       </div>
 
       <div className="field">

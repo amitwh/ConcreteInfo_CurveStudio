@@ -9,6 +9,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState, type ReactElement } from "react";
+import { Upload } from "lucide-react";
 import { useAuth } from "../api/auth";
 import {
   api,
@@ -397,6 +398,7 @@ export function WorkspacePage(): ReactElement {
         {detailError !== null && <ErrorBox error={detailError} />}
         {detail === null && !detailLoading && detailError === null && (
           <p className="state state--empty">
+            <Upload className="icon icon--lg" aria-hidden="true" focusable="false" />
             Upload a dataset and every model is tried and ranked automatically — or switch
             to Manual fit to choose one yourself.
           </p>

@@ -1,6 +1,7 @@
 /** Earlier fits of this dataset: click to load one, delete with an inline confirm. */
 
 import { useState, type ReactElement } from "react";
+import { History, Trash2 } from "lucide-react";
 import type { FitSummaryOut } from "../../api/client";
 import { ErrorBox } from "../../components/States";
 import { fmtDate, fmtEquation } from "../../format";
@@ -35,7 +36,12 @@ export function HistoryTab({
   }
 
   if (fits.length === 0) {
-    return <p className="state state--empty">No fits recorded for this dataset yet.</p>;
+    return (
+      <p className="state state--empty">
+        <History className="icon icon--lg" aria-hidden="true" focusable="false" />
+        No fits recorded for this dataset yet.
+      </p>
+    );
   }
 
   return (
@@ -70,6 +76,7 @@ export function HistoryTab({
           {confirmId === fit.id ? (
             <span className="history__confirm">
               <button type="button" className="btn btn--small btn--danger" onClick={() => onDelete(fit.id)}>
+                <Trash2 className="icon" aria-hidden="true" focusable="false" />
                 Delete
               </button>
               <button type="button" className="btn btn--small" onClick={() => setConfirmId(null)}>
@@ -83,6 +90,7 @@ export function HistoryTab({
               aria-label={`Delete fit ${fit.id}`}
               onClick={() => setConfirmId(fit.id)}
             >
+              <Trash2 className="icon" aria-hidden="true" focusable="false" />
               Delete
             </button>
           )}

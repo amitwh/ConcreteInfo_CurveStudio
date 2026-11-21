@@ -1,6 +1,7 @@
 /** Copy text to the clipboard with visible feedback; keyboard and screen-reader friendly. */
 
 import { useRef, useState, type ReactElement } from "react";
+import { Check, Copy } from "lucide-react";
 
 export function CopyButton({
   text,
@@ -29,13 +30,18 @@ export function CopyButton({
     timerRef.current = window.setTimeout(() => setCopied(false), 1500);
   };
 
+  const Icon = copied ? Check : Copy;
+
   return (
     <button
       type="button"
       className="btn btn--small"
       onClick={() => void onClick()}
-      {...(compact ? { "aria-label": `Copy ${label}` } : {})}
+      {...(compact
+        ? { "aria-label": copied ? `Copied ${label}` : `Copy ${label}` }
+        : {})}
     >
+      <Icon className="icon" aria-hidden="true" focusable="false" />
       {copied ? "Copied" : compact ? "Copy" : `Copy ${label}`}
     </button>
   );

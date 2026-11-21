@@ -4,6 +4,7 @@
  */
 
 import { useState, type ReactElement, type SubmitEvent } from "react";
+import { Download } from "lucide-react";
 import { api, saveBlob, type FitBundle, type Prediction } from "../../api/client";
 import { ErrorBox } from "../../components/States";
 import { fmtNumber } from "../../format";
@@ -149,9 +150,11 @@ export function PredictTab({
       <h3>Export this fit</h3>
       <p className="btn-row">
         <button type="button" className="btn" onClick={() => void onExport("csv")}>
+          <Download className="icon" aria-hidden="true" focusable="false" />
           Download CSV
         </button>
         <button type="button" className="btn" onClick={() => void onExport("json")}>
+          <Download className="icon" aria-hidden="true" focusable="false" />
           Download JSON
         </button>
       </p>

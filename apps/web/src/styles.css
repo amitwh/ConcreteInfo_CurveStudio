@@ -891,10 +891,18 @@ textarea {
 }
 
 .details summary {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  list-style: none;
   cursor: pointer;
   font-weight: 600;
   font-size: 0.9rem;
   margin: 0.6rem 0 0.3rem;
+}
+
+.details summary::-webkit-details-marker {
+  display: none;
 }
 
 .residual-grid {
@@ -1221,4 +1229,327 @@ textarea {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
   gap: 0.25rem 0.6rem;
+}
+
+/* ---- Icons ---- */
+
+/* Lucide icons inherit `currentColor`; sizing comes from these classes, not inline
+   width/height, so an icon always matches the text it sits beside. */
+.icon {
+  width: 1em;
+  height: 1em;
+  flex: none;
+  vertical-align: -0.125em;
+}
+
+.icon--lg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.btn--icon {
+  padding: 0.3rem 0.45rem;
+  line-height: 1;
+}
+
+.btn--icon .icon {
+  width: 1.1rem;
+  height: 1.1rem;
+}
+
+.app-nav a {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.app-nav a .icon {
+  opacity: 0.8;
+}
+
+/* Search fields carry a leading icon; the input keeps its own padding. */
+.search-field {
+  position: relative;
+  display: block;
+}
+
+.search-field > .icon {
+  position: absolute;
+  left: 0.55rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 1rem;
+  height: 1rem;
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.search-field input {
+  padding-left: 2rem;
+}
+
+/* Disclosure summary uses the chevron instead of the native triangle. */
+.details__chevron {
+  color: var(--muted);
+  transition: transform 0.15s ease;
+}
+
+.details[open] > summary .details__chevron {
+  transform: rotate(180deg);
+}
+
+.state--empty {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.state--empty .icon {
+  color: var(--muted);
+}
+
+/* ---- About page additions ---- */
+
+.about-page h1 {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.about-logo {
+  display: block;
+  height: 2.5rem;
+  width: auto;
+  margin-bottom: 0.8rem;
+}
+
+/* The logo asset is built for light surfaces; on the dark card it sits on a neutral
+   white chip rather than being recoloured or inverted. */
+html[data-theme="dark"] .about-logo {
+  height: 2rem;
+  padding: 0.3rem 0.55rem;
+  background: #fff;
+  border-radius: var(--radius-sm);
+  box-sizing: content-box;
+}
+
+.about-page h2 {
+  font-size: 1rem;
+  margin: 1.2rem 0 0.4rem;
+}
+
+.credits {
+  list-style: none;
+  margin: 0.4rem 0 1rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.credits li {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  border-bottom: 1px dashed var(--border);
+  padding-bottom: 0.3rem;
+  font-size: 0.9rem;
+}
+
+.credits__licence {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  text-align: right;
+}
+
+.about-links {
+  margin: 0.8rem 0 0;
+}
+
+/* ---- Help page ---- */
+
+.help-page {
+  flex: 1;
+  width: 100%;
+  max-width: 78rem;
+  margin: 0 auto;
+  padding: clamp(1rem, 2vw, 2rem) clamp(1rem, 2vw, 2rem) 3rem;
+  min-width: 0;
+}
+
+.help-header {
+  margin-bottom: 1.5rem;
+}
+
+.help-header h1 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 0.3rem;
+  font-size: 1.6rem;
+}
+
+.help-header p {
+  margin: 0;
+}
+
+.help-layout {
+  display: grid;
+  grid-template-columns: minmax(12rem, 15rem) minmax(0, 1fr);
+  gap: clamp(1.25rem, 3vw, 3rem);
+  align-items: start;
+  min-width: 0;
+}
+
+/* Sticky on wide screens; the 900 px breakpoint below stacks it above the content. */
+.help-index {
+  position: sticky;
+  top: 4.5rem;
+  align-self: start;
+  min-width: 0;
+}
+
+.help-search {
+  margin: 0 0 0.6rem;
+}
+
+.help-search label {
+  display: block;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--muted);
+  margin-bottom: 0.25rem;
+}
+
+.help-index__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.help-index__list a {
+  display: flex;
+  gap: 0.4rem;
+  align-items: baseline;
+  padding: 0.3rem 0.45rem;
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+
+.help-index__list a:hover,
+.help-index__list a:focus-visible {
+  background: var(--accent-weak);
+  color: var(--accent);
+}
+
+.help-index__num {
+  min-width: 1.1rem;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.help-index__empty {
+  margin: 0.5rem 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.help-content {
+  min-width: 0;
+}
+
+.help-section {
+  scroll-margin-top: 4.5rem;
+  padding-bottom: 0.6rem;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 1.5rem;
+  min-width: 0;
+}
+
+.help-section:last-child {
+  border-bottom: 0;
+  margin-bottom: 0;
+}
+
+.help-content h2 {
+  font-size: 1.25rem;
+  margin: 0 0 0.6rem;
+}
+
+.help-content h3 {
+  font-size: 1rem;
+  margin: 1rem 0 0.35rem;
+}
+
+.help-content p {
+  margin: 0.5rem 0;
+}
+
+.help-content ul,
+.help-content ol {
+  margin: 0.5rem 0;
+  padding-left: 1.3rem;
+}
+
+.help-content li {
+  margin: 0.25rem 0;
+}
+
+.help-content code {
+  padding: 0.05em 0.28em;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  overflow-wrap: anywhere;
+}
+
+.help-table {
+  margin: 0.5rem 0;
+}
+
+.help-table th {
+  white-space: nowrap;
+}
+
+.help-table td:first-child {
+  color: var(--heading);
+  font-weight: 600;
+}
+
+@media (max-width: 900px) {
+  .help-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .help-index {
+    position: static;
+    top: auto;
+  }
+
+  .help-index__list {
+    flex-flow: row wrap;
+    gap: 0.15rem 0.5rem;
+  }
+}
+
+@media (max-width: 900px) {
+  .app-header {
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 480px) {
+  .help-page {
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+  }
 }
