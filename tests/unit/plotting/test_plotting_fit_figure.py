@@ -2,11 +2,18 @@
 
 from typing import TYPE_CHECKING
 
+from matplotlib.colors import to_hex, to_rgba
 from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
 
 from curvestudio.workflow import FitBundle
 from curvestudio_plotting import fit_figure
+from curvestudio_plotting.palette import (
+    BAND_CONFIDENCE_FILL,
+    BAND_PREDICTION_FILL,
+    DATA_COLOR,
+    MODEL_COLORS,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -54,6 +61,20 @@ def test_band_toggles_control_what_is_drawn(poly_bundle: FitBundleFactory) -> No
     assert len(prediction.axes[0].collections) == 2
     both = fit_figure(bundle, show_prediction=True)
     assert len(both.axes[0].collections) == 3
+
+
+def test_figure_uses_the_shared_palette(poly_bundle: FitBundleFactory) -> None:
+    """The exported report matches the app: rank 1 curve, neutral data and bands."""
+    bundle = poly_bundle()
+    fig = fit_figure(bundle, show_prediction=True)
+    ax = fig.axes[0]
+    curve = next(line for line in ax.get_lines() if line.get_label() != "_nolegend_")
+    assert to_hex(curve.get_color()).upper() == MODEL_COLORS[0].upper()
+    # draw order: data scatter, then the confidence band, then the prediction band
+    data, confidence, prediction = ax.collections[:3]
+    assert to_hex(data.get_facecolor()[0]).upper() == DATA_COLOR["light"].upper()
+    assert to_rgba(confidence.get_facecolor()[0]) == to_rgba(BAND_CONFIDENCE_FILL["light"])
+    assert to_rgba(prediction.get_facecolor()[0]) == to_rgba(BAND_PREDICTION_FILL["light"])
 
 
 def test_title_goes_above_the_equation_subtitle(poly_bundle: FitBundleFactory) -> None:

@@ -126,6 +126,9 @@ class AutoFitView(QWidget):
     openRequested = Signal(str)
     """A row's full result was requested (double-click, Enter, button): its candidate id."""
 
+    top3Changed = Signal(bool)
+    """The "Show top 3" option changed (the shell persists it and redraws the plot)."""
+
     def __init__(self, analysis: AnalysisController, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._analysis = analysis
@@ -198,12 +201,17 @@ class AutoFitView(QWidget):
             )
         )
         self.rank_combo.currentIndexChanged.connect(self._rank_combo_changed)
+        self.top3_check = QCheckBox("Show top 3")
+        self.top3_check.setObjectName("showTop3Check")
+        self.top3_check.setToolTip("Overlay the three best-ranked models on the plot")
+        self.top3_check.toggled.connect(self.top3Changed)
         self.open_button = QPushButton("Open full results")
         self.open_button.setToolTip("Refit the selected row and open its details window")
         self.open_button.clicked.connect(self._open_selected)
         header.addWidget(self.order_label)
         header.addWidget(self.rank_combo)
         header.addStretch(1)
+        header.addWidget(self.top3_check)
         header.addWidget(self.open_button)
         layout.addLayout(header)
         self.table = RankingTableView()
@@ -352,6 +360,18 @@ class AutoFitView(QWidget):
                 }
             )
         )
+
+    # -- view options ------------------------------------------------------------------------
+
+    def show_top3(self) -> bool:
+        """Whether the plot overlays the three best-ranked models."""
+        return self.top3_check.isChecked()
+
+    def set_show_top3(self, enabled: bool) -> None:
+        """Set the option without re-emitting (restoring the persisted choice)."""
+        self.top3_check.blockSignals(True)
+        self.top3_check.setChecked(enabled)
+        self.top3_check.blockSignals(False)
 
     # -- run control -------------------------------------------------------------------------
 

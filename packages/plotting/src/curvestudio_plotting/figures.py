@@ -21,6 +21,11 @@ from curvestudio.diagnostics import ResidualSet
 from curvestudio.fitting import FitStatus
 from curvestudio.statistics import Band
 from curvestudio.workflow import FitBundle
+from curvestudio_plotting.palette import (
+    band_fill,
+    curve_style,
+    data_color,
+)
 
 FigureFormat = Literal["png", "svg", "pdf"]
 
@@ -28,10 +33,12 @@ FIT_FIGURE_SIZE: tuple[float, float] = (6.4, 4.2)
 FIT_FIGURE_DPI = 150.0
 RESIDUAL_FIGURE_SIZE: tuple[float, float] = (6.4, 6.2)
 
-_DATA_COLOR = "#1f77b4"
-_CURVE_COLOR = "#d62728"
-_CONFIDENCE_COLOR = "#1f77b4"
-_PREDICTION_COLOR = "#7f7f7f"
+# The publication figure is always light (white page): rank 1's curve, neutral data and
+# neutral bands, so an exported report matches the app without carrying a theme switch.
+_DATA_COLOR = data_color(dark=False)
+_CURVE_COLOR, _CURVE_WIDTH = curve_style(1)
+_CONFIDENCE_COLOR = band_fill("confidence", dark=False)
+_PREDICTION_COLOR = band_fill("prediction", dark=False)
 _BANNER_COLOR = "#b2182b"
 _NA_COLOR = "0.4"
 
@@ -103,7 +110,7 @@ def fit_figure(
             bundle.curve.x,
             bundle.curve.y,
             color=_CURVE_COLOR,
-            linewidth=1.6,
+            linewidth=_CURVE_WIDTH,
             label="fitted curve",
             zorder=3,
         )
@@ -121,7 +128,6 @@ def _draw_band(ax: Axes, band: Band, color: str) -> None:
         band.lower,
         band.upper,
         color=color,
-        alpha=0.2,
         linewidth=0,
         label=f"{band.level:.0%} {band.kind} band",
         zorder=1,

@@ -18,14 +18,32 @@ from curvestudio_plotting.figures import (
     residual_figure,
     save_figure,
 )
+from curvestudio_plotting.palette import (
+    BAND_CONFIDENCE_FILL,
+    BAND_PREDICTION_FILL,
+    DATA_COLOR,
+    MODEL_COLORS,
+    band_fill,
+    curve_style,
+    data_color,
+    model_color,
+)
 
 __all__ = [
+    "BAND_CONFIDENCE_FILL",
+    "BAND_PREDICTION_FILL",
+    "DATA_COLOR",
     "FIT_FIGURE_DPI",
     "FIT_FIGURE_SIZE",
+    "MODEL_COLORS",
     "RESIDUAL_FIGURE_SIZE",
     "Figure",
     "FigureFormat",
+    "band_fill",
+    "curve_style",
+    "data_color",
     "fit_figure",
+    "model_color",
     "residual_figure",
     "save_figure",
 ]

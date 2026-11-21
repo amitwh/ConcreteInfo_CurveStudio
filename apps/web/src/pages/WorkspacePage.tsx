@@ -393,7 +393,16 @@ export function WorkspacePage(): ReactElement {
               : undefined
           }
         />
-        <ChartPanel dataset={detail} bundle={chartBundle} dark={dark} />
+        {/* Rank colours and the top-3 overlay belong to the Auto-fit ranking; a manual
+            fit is not a ranked row, so it keeps the brand colour (rank 1). */}
+        <ChartPanel
+          dataset={detail}
+          bundle={chartBundle}
+          dark={dark}
+          rankingRows={mode === "auto" ? (autoState.stored?.result.ranked ?? null) : null}
+          storedCurves={mode === "auto" ? (autoState.stored?.result.curves ?? null) : null}
+          selectedRowId={mode === "auto" ? selectedRowId : null}
+        />
         {detailLoading && <Loading label="Loading dataset…" />}
         {detailError !== null && <ErrorBox error={detailError} />}
         {detail === null && !detailLoading && detailError === null && (

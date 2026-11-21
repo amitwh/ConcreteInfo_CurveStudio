@@ -7,21 +7,43 @@
 import { useMemo, useRef, useState, type ReactElement } from "react";
 import { Database, Download } from "lucide-react";
 import { PlotChart, downloadPlotPng } from "../components/PlotChart";
-import type { DatasetDetailOut, FitBundle } from "../api/client";
-import { buildTraces, isConverged, logAxesAllowed, mergeLayout, themeLayout, type ChartToggles } from "./traces";
+import type { DatasetDetailOut, FitBundle, RankedFit, RowCurve } from "../api/client";
+import {
+  buildTraces,
+  isConverged,
+  logAxesAllowed,
+  mergeLayout,
+  themeLayout,
+  type ChartToggles,
+  type OverlayCurve,
+} from "./traces";
 
 export interface ChartPanelProps {
   dataset: DatasetDetailOut | null;
   bundle: FitBundle | null;
   dark: boolean;
+  /** The stored ranking under the current ordering (for the "Show top 3" overlay). */
+  rankingRows?: readonly RankedFit[] | null;
+  /** The stored run's sampled curves, keyed by row id. */
+  storedCurves?: Readonly<Record<string, RowCurve>> | null;
+  /** The ranking row the chart follows; its rank colours the single curve. */
+  selectedRowId?: string | null;
 }
 
-export function ChartPanel({ dataset, bundle, dark }: ChartPanelProps): ReactElement {
+export function ChartPanel({
+  dataset,
+  bundle,
+  dark,
+  rankingRows = null,
+  storedCurves = null,
+  selectedRowId = null,
+}: ChartPanelProps): ReactElement {
   const [toggles, setToggles] = useState<ChartToggles>({
     confidence: true,
     prediction: false,
     logX: false,
     logY: false,
+    top3: false,
   });
   const chartRootRef = useRef<HTMLDivElement>(null);
 
@@ -31,13 +53,40 @@ export function ChartPanel({ dataset, bundle, dark }: ChartPanelProps): ReactEle
   const hasConfidence = converged && bundle?.confidence_band != null;
   const hasPrediction = converged && bundle?.prediction_band != null;
 
+  const rows = useMemo(() => rankingRows ?? [], [rankingRows]);
+  const curves = useMemo<Readonly<Record<string, RowCurve>>>(
+    () => storedCurves ?? {},
+    [storedCurves],
+  );
+  const selectedRank =
+    rows.find((row) => row.model_id === selectedRowId)?.rank ?? 1;
+  // The three best-ranked rows that actually have a stored curve; the toggle is only
+  // meaningful when at least two can be overlaid.
+  const overlay = useMemo<OverlayCurve[]>(() => {
+    const entries: OverlayCurve[] = [];
+    for (const row of rows.slice(0, 3)) {
+      const curve = curves[row.model_id];
+      if (curve !== undefined) {
+        entries.push({ name: row.name, rank: row.rank, curve: { x: curve.x, y: curve.y } });
+      }
+    }
+    return entries;
+  }, [rows, curves]);
+  const hasOverlay = overlay.length >= 2;
+
   const { traces, layout } = useMemo(
     () =>
-      buildTraces(points, bundle, toggles, {
-        x: dataset?.x_column ?? "x",
-        y: dataset?.y_column ?? "y",
-      }),
-    [points, bundle, toggles, dataset?.x_column, dataset?.y_column],
+      buildTraces(
+        points,
+        bundle,
+        toggles,
+        {
+          x: dataset?.x_column ?? "x",
+          y: dataset?.y_column ?? "y",
+        },
+        { dark, selectedRank, overlay },
+      ),
+    [points, bundle, toggles, dataset?.x_column, dataset?.y_column, dark, selectedRank, overlay],
   );
 
   const mergedLayout = useMemo(
@@ -82,6 +131,16 @@ export function ChartPanel({ dataset, bundle, dark }: ChartPanelProps): ReactEle
               aria-label="Show 95% prediction band"
             />
             Prediction band
+          </label>
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={toggles.top3}
+              disabled={!hasOverlay}
+              onChange={(e) => setToggles((t) => ({ ...t, top3: e.target.checked }))}
+              aria-label="Show the three best-ranked models"
+            />
+            Show top 3
           </label>
           <label className="check">
             <input

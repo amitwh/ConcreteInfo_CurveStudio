@@ -1,9 +1,14 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { components } from "../api/schema";
 import {
+  BAND_CONFIDENCE_FILL,
+  BAND_PREDICTION_FILL,
+  DATA_COLOR,
+  MODEL_COLORS,
   buildTraces,
   logAxesAllowed,
   mergeLayout,
+  modelColor,
   setWebglSupportedForTests,
   themeLayout,
 } from "./traces";
@@ -88,7 +93,13 @@ function bundle(status: string, overrides: Record<string, unknown> = {}): FitBun
   } as unknown as FitBundle;
 }
 
-const allOn = { confidence: true, prediction: true, logX: false, logY: false };
+const allOn = {
+  confidence: true,
+  prediction: true,
+  logX: false,
+  logY: false,
+  top3: false,
+};
 
 afterEach(() => {
   setWebglSupportedForTests(null);
@@ -180,6 +191,78 @@ describe("the no-curve invariant", () => {
     expect(merged.xaxis?.title?.text).toBe("t");
     expect(merged.yaxis?.gridcolor).toBe("#2A2E35");
     expect(merged.yaxis?.title?.text).toBe("y");
+  });
+
+  it("colours the single curve by the selected row's rank", () => {
+    const { traces } = buildTraces(points([0, 1], [2, 1.3]), bundle("converged"), allOn, {
+      x: "x",
+      y: "y",
+    }, { selectedRank: 3 });
+    const curve = traces.find((t) => t.name === "Fitted curve");
+    expect(curve?.line?.color).toBe(modelColor(3));
+  });
+
+  it("keeps the data points neutral in both themes", () => {
+    for (const dark of [false, true]) {
+      const { traces } = buildTraces(points([0, 1], [2, 1.3]), null, allOn, { x: "x", y: "y" }, { dark });
+      expect(traces[0]?.marker?.color).toBe(DATA_COLOR[dark ? "dark" : "light"]);
+    }
+  });
+
+  it("fills the bands neutrally — never a model colour or the curve colour", () => {
+    const { traces } = buildTraces(points([0, 1], [2, 1.3]), bundle("converged"), allOn, {
+      x: "x",
+      y: "y",
+    });
+    const confidence = traces.find((t) => t.name === "95% confidence band");
+    const prediction = traces.find((t) => t.name === "95% prediction band");
+    expect(confidence?.fillcolor).toBe(BAND_CONFIDENCE_FILL.light);
+    expect(prediction?.fillcolor).toBe(BAND_PREDICTION_FILL.light);
+    const palette = new Set<string>(MODEL_COLORS);
+    const curveColor = String(traces.find((t) => t.name === "Fitted curve")?.line?.color);
+    for (const fill of [String(confidence?.fillcolor), String(prediction?.fillcolor)]) {
+      expect(palette.has(fill)).toBe(false);
+      expect(fill).not.toBe(curveColor);
+    }
+  });
+
+  it("show top 3 adds exactly two more curves in ranks 2 and 3's colours", () => {
+    const overlay = [
+      { name: "Best", rank: 1, curve: { x: [0, 1], y: [2, 1.4] } },
+      { name: "Second", rank: 2, curve: { x: [0, 1], y: [2, 1.3] } },
+      { name: "Third", rank: 3, curve: { x: [0, 1], y: [2, 1.2] } },
+    ];
+    const off = buildTraces(points([0, 1], [2, 1.3]), bundle("converged"), allOn, {
+      x: "x",
+      y: "y",
+    }, { overlay }).traces;
+    const on = buildTraces(
+      points([0, 1], [2, 1.3]),
+      bundle("converged"),
+      { ...allOn, top3: true },
+      { x: "x", y: "y" },
+      { overlay },
+    ).traces;
+    const curveTraces = (list: typeof on) =>
+      list.filter((t) => t.mode === "lines" && t.fill === undefined);
+    expect(curveTraces(off)).toHaveLength(1);
+    const shown = curveTraces(on);
+    expect(shown).toHaveLength(3);
+    expect(shown.map((t) => t.line?.color)).toEqual([modelColor(1), modelColor(2), modelColor(3)]);
+    expect(shown.map((t) => t.name)).toEqual(["Best", "Second", "Third"]);
+  });
+
+  it("turning show top 3 off returns to one curve", () => {
+    const overlay = [
+      { name: "Best", rank: 1, curve: { x: [0, 1], y: [2, 1.4] } },
+      { name: "Second", rank: 2, curve: { x: [0, 1], y: [2, 1.3] } },
+    ];
+    const { traces } = buildTraces(points([0, 1], [2, 1.3]), bundle("converged"), allOn, {
+      x: "x",
+      y: "y",
+    }, { overlay });
+    expect(traces.filter((t) => t.mode === "lines" && t.fill === undefined)).toHaveLength(1);
+    expect(traces.map((t) => t.name)).not.toContain("Second");
   });
 
   it("never sends a non-positive-valued axis to log scale", () => {

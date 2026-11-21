@@ -10,6 +10,7 @@ import { useRef, type KeyboardEvent, type ReactElement } from "react";
 import { CopyButton } from "../../components/CopyButton";
 import { fmtEquation, fmtInt, fmtNumber } from "../../format";
 import type { RankedFit } from "../../api/client";
+import { modelColor } from "../traces";
 
 /** Human label + semantic badge for a candidate's fit status. */
 const STATUS_BADGE: Record<string, { label: string; tone: "ok" | "bad" }> = {
@@ -138,6 +139,11 @@ export function RankingTable({
                 onClick={() => onSelect(row.model_id)}
               >
                 <td>
+                  <span
+                    className="rank-swatch"
+                    style={{ backgroundColor: modelColor(row.rank) }}
+                    aria-hidden="true"
+                  />
                   <span className="num">{fmtInt(row.rank)}</span>
                   {(row.same_curve_as ?? []).length > 0 && (
                     <span className="hint ranking-row__same">

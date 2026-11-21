@@ -24,11 +24,12 @@ from PySide6.QtCore import (
     Qt,
     Signal,
 )
-from PySide6.QtGui import QGuiApplication, QKeyEvent
+from PySide6.QtGui import QColor, QGuiApplication, QKeyEvent
 from PySide6.QtWidgets import QAbstractItemView, QHeaderView, QMenu, QTableView, QWidget
 
 from curvestudio.discovery import RankedFit
 from curvestudio.workflow import format_equation
+from curvestudio_plotting.palette import model_color
 
 _NA = "n/a"
 COLUMNS = (
@@ -156,6 +157,10 @@ class RankingTableModel(QAbstractTableModel):
         column = index.column()
         if role == _ROLE.ToolTipRole:
             return row_tooltip(row)
+        if role == _ROLE.DecorationRole and column == 0:
+            # the rank's own colour swatch: the same colour the curve is drawn in, so a
+            # row and its line are matched at a glance. A decoration adds no column.
+            return QColor(model_color(row.rank))
         if role == _ROLE.TextAlignmentRole:
             if column in _CENTERED:
                 return int(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter)

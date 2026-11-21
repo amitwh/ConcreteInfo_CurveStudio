@@ -5,7 +5,7 @@ every display refresh is driven by controller signals. The plot controls (log
 axes, reset, export) delegate to PlotView. Nothing here computes anything.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
@@ -27,7 +27,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from curvestudio.discovery import AutoFitResult, RankedFit
+from curvestudio.discovery import AutoFitResult, RankedFit, RowCurve
 from curvestudio.workflow import FitBundle, FitSpec, ImportOutcome
 from curvestudio_desktop import APP_NAME, NO_NETWORK_NOTE
 from curvestudio_desktop.controllers import exports
@@ -50,7 +50,7 @@ from curvestudio_desktop.views.dock_shell import DockTitleBar
 from curvestudio_desktop.views.fit_summary import model_identity
 from curvestudio_desktop.views.icons import app_icon, icon
 from curvestudio_desktop.views.import_dialog import ClipboardImportDialog, ImportDialog
-from curvestudio_desktop.views.plot_view import PlotView
+from curvestudio_desktop.views.plot_view import OverlayCurve, PlotView
 from curvestudio_desktop.views.project_tree import ProjectDock, ProjectTree
 
 if TYPE_CHECKING:
@@ -65,6 +65,7 @@ _LAYOUT_STATE_KEY = "main_window/state"
 _LAYOUT_GEOMETRY_KEY = "main_window/geometry"
 _COLLAPSED_PREFIX = "main_window/collapsed/"
 _EXPANDED_PREFIX = "main_window/expanded/"
+_SHOW_TOP3_KEY = "view/showTop3"
 _COLLAPSED_EXTENT = 40
 _UNBOUNDED = 16777215  # QWIDGETSIZE_MAX
 _THEME_CHOICES: tuple[tuple[Preference, str], ...] = (
@@ -560,6 +561,7 @@ class MainWindow(QMainWindow):
         panel = self.analysis_panel
         panel.autofit_view.rowSelected.connect(self._plot_candidate)
         panel.autofit_view.openRequested.connect(self._open_candidate)
+        panel.autofit_view.top3Changed.connect(self._on_show_top3_changed)
         panel.summary.openDetailsRequested.connect(self.open_details)
         panel.summary.exportRequested.connect(self.export_results)
         self.details_dialog.exportRequested.connect(self.export_results)
@@ -755,20 +757,59 @@ class MainWindow(QMainWindow):
         self._refresh_export_actions()
 
     def _plot_candidate(self, candidate_id: str) -> None:
-        """A ranking row was selected: draw its stored curve and mirror it in the summary."""
+        """A ranking row was selected: draw its stored curve and mirror it in the summary.
+
+        With "Show top 3" on, the three best-ranked stored curves are overlaid in their
+        rank colours (the selected row's own curve stays visible even when it ranks below
+        them); the selected row's bands alone are drawn, and neutrally. Selecting another
+        row recolours and relabels the overlay without refitting anything.
+        """
         dataset_id = self.selection.active_id
         result = None if dataset_id is None else self.analysis.autofit_for_display(dataset_id)
         if result is None:
             return
         self._show_row_summary(dataset_id)
+        rows = self.analysis_panel.autofit_view.table.rows()
+        row = next((candidate for candidate in rows if candidate.model_id == candidate_id), None)
         curve = result.curves.get(candidate_id)
-        if curve is None:
+        show_top3 = self.analysis_panel.autofit_view.show_top3()
+        overlay = self._overlay_curves(result, rows, candidate_id) if show_top3 else []
+        if curve is None and not overlay:
             self.plot_view.clear_fit()
             self.plot_view.show_hint("curve not sampled — Open full results")
             self.statusBar().showMessage(
                 "no sampled curve for this row: use Open full results to refit it"
             )
             return
+        confidence, prediction = self._bands(curve)
+        if overlay:
+            self.plot_view.set_fit_overlay(
+                overlay,
+                band_x=curve.x if curve is not None else None,
+                confidence=confidence,
+                prediction=prediction,
+            )
+            return
+        assert curve is not None  # no overlay means the selected curve exists (checked above)
+        self.plot_view.set_fit(
+            curve.x,
+            curve.y,
+            confidence,
+            prediction,
+            rank=row.rank if row is not None else 1,
+            name=row.name if row is not None else "fitted curve",
+        )
+
+    @staticmethod
+    def _bands(
+        curve: RowCurve | None,
+    ) -> tuple[
+        tuple[Sequence[float], Sequence[float]] | None,
+        tuple[Sequence[float], Sequence[float]] | None,
+    ]:
+        """The (confidence, prediction) band pairs of a ``RowCurve``, ``None`` when absent."""
+        if curve is None:
+            return None, None
         confidence = (
             (curve.confidence_lower, curve.confidence_upper)
             if curve.confidence_lower is not None and curve.confidence_upper is not None
@@ -779,7 +820,37 @@ class MainWindow(QMainWindow):
             if curve.prediction_lower is not None and curve.prediction_upper is not None
             else None
         )
-        self.plot_view.set_fit(curve.x, curve.y, confidence, prediction)
+        return confidence, prediction
+
+    def _overlay_curves(
+        self, result: AutoFitResult, rows: Sequence[RankedFit], selected_id: str
+    ) -> list[OverlayCurve]:
+        """The top-three stored curves plus the selected row's, ordered by rank."""
+        chosen: list[tuple[int, str, OverlayCurve]] = []
+        seen: set[str] = set()
+        for row in rows[:3]:
+            curve = result.curves.get(row.model_id)
+            if curve is None or row.model_id in seen:
+                continue
+            seen.add(row.model_id)
+            chosen.append(
+                (row.rank, row.model_id, OverlayCurve(row.name, curve.x, curve.y, row.rank))
+            )
+        # A selected row outside the top three still shows its own curve, matching the
+        # summary and the bands (its rank colour is what the table swatch shows).
+        if selected_id not in seen:
+            selected_row = next((r for r in rows if r.model_id == selected_id), None)
+            curve = result.curves.get(selected_id)
+            if selected_row is not None and curve is not None:
+                chosen.append(
+                    (
+                        selected_row.rank,
+                        selected_row.model_id,
+                        OverlayCurve(selected_row.name, curve.x, curve.y, selected_row.rank),
+                    )
+                )
+        chosen.sort(key=lambda entry: entry[0])
+        return [entry[2] for entry in chosen]
 
     def _open_candidate(self, candidate_id: str) -> None:
         dataset_id = self.selection.active_id
@@ -993,6 +1064,7 @@ class MainWindow(QMainWindow):
         if isinstance(geometry, str) and geometry:
             self.restoreGeometry(QByteArray.fromBase64(bytes(geometry, encoding="ascii")))
         self.analysis_panel.restore_splitter(self._settings)  # the ranking/summary split
+        self.analysis_panel.autofit_view.set_show_top3(self._stored_show_top3())
         for name in self.docks:
             extended = self._settings.value(f"{_EXPANDED_PREFIX}{name}", None)
             try:
@@ -1007,6 +1079,22 @@ class MainWindow(QMainWindow):
         if isinstance(value, str):
             return value.strip().lower() in ("1", "true", "yes", "on")
         return bool(value)
+
+    def _stored_show_top3(self) -> bool:
+        value = self._settings.value(_SHOW_TOP3_KEY, False)
+        if isinstance(value, str):
+            return value.strip().lower() in ("1", "true", "yes", "on")
+        return bool(value)
+
+    def _on_show_top3_changed(self, enabled: bool) -> None:
+        """Persist the overlay choice and redraw the selected row without refitting."""
+        self._settings.setValue(_SHOW_TOP3_KEY, enabled)
+        self._settings.sync()
+        if self.analysis.mode != MODE_AUTOFIT:
+            return  # a manual fit is not part of the ranking: leave its curve alone
+        row = self._selected_row()
+        if row is not None:
+            self._plot_candidate(row.model_id)
 
     def _save_layout(self) -> None:
         self._settings.setValue(

@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { useState, type ReactElement } from "react";
 import type { components } from "../../api/schema";
+import { modelColor } from "../traces";
 import { RankingTable } from "./RankingTable";
 
 type RankedFit = components["schemas"]["RankedFit"];
@@ -55,7 +56,29 @@ function renderTable(
   return { onSelect, onOpen };
 }
 
+/** jsdom normalises an inline hex colour to `rgb(r, g, b)`; compare in one space. */
+function hexOf(cssColor: string): string {
+  const match = /rgb\((\d+),\s*(\d+),\s*(\d+)\)/.exec(cssColor);
+  if (match === null) return cssColor.toUpperCase();
+  return (
+    "#" +
+    match
+      .slice(1)
+      .map((part) => Number(part).toString(16).padStart(2, "0"))
+      .join("")
+      .toUpperCase()
+  );
+}
+
 describe("RankingTable", () => {
+  it("shows a rank-coloured swatch matching the curve colour for that rank", () => {
+    renderTable([row("a", { rank: 1 }), row("b", { rank: 3 })]);
+    const swatches = document.querySelectorAll<HTMLElement>(".rank-swatch");
+    expect(swatches).toHaveLength(2);
+    expect(hexOf(swatches[0]?.style.backgroundColor ?? "")).toBe(modelColor(1).toUpperCase());
+    expect(hexOf(swatches[1]?.style.backgroundColor ?? "")).toBe(modelColor(3).toUpperCase());
+  });
+
   it("renders the fitted equation, metrics and status for each row", () => {
     renderTable([row("exp_decay")]);
     expect(screen.getByText("y = 2.05 * exp(-0.32 * x)")).toBeTruthy();

@@ -12,6 +12,8 @@ export interface ChartToggles {
   prediction: boolean;
   logX: boolean;
   logY: boolean;
+  /** Overlay the three best-ranked models' stored curves. */
+  top3: boolean;
 }
 
 export interface AxisNames {
@@ -19,8 +21,66 @@ export interface AxisNames {
   y: string;
 }
 
+/**
+ * The categorical model palette. SOURCE OF TRUTH:
+ * `packages/plotting/src/curvestudio_plotting/palette.py` — the desktop app and the
+ * exported figures use the same eight colours, rank 1 first (the brand accent), so a
+ * model is recognisable everywhere. Keep the two lists in sync.
+ */
+export const MODEL_COLORS = [
+  "#E5461F",
+  "#3B82F6",
+  "#10B981",
+  "#F59E0B",
+  "#8B5CF6",
+  "#EC4899",
+  "#06B6D4",
+  "#84CC16",
+] as const;
+
+/** The colour of a 1-based rank; ranks beyond eight reuse the palette in order. */
+export function modelColor(rank: number): string {
+  if (rank < 1) throw new RangeError(`rank is 1-based; got ${rank}`);
+  return MODEL_COLORS[(rank - 1) % MODEL_COLORS.length] as string;
+}
+
+/** The best fit is slightly heavier so it still leads in a multi-curve overlay. */
+export function curveWidth(rank: number): number {
+  return rank === 1 ? 2.2 : 1.6;
+}
+
+/** Neutral band fills per theme (no hue, so a band is never read as a model curve). */
+export const BAND_CONFIDENCE_FILL = {
+  light: "rgba(86,86,86,0.20)",
+  dark: "rgba(200,200,200,0.24)",
+} as const;
+
+/** The prediction band is lighter than the confidence band in both themes. */
+export const BAND_PREDICTION_FILL = {
+  light: "rgba(140,140,140,0.12)",
+  dark: "rgba(200,200,200,0.12)",
+} as const;
+
+/** Neutral data-point colour per theme (never competes with a model colour). */
+export const DATA_COLOR = { light: "#4B4B4B", dark: "#B0B0B0" } as const;
+
 /** Fitted-curve/marker colour: the cams2 brand accent (matches --accent in styles.css). */
 export const ACCENT = "#E5461F";
+
+/** One model curve in a "show top 3" overlay. */
+export interface OverlayCurve {
+  name: string;
+  rank: number;
+  curve: { x: number[]; y: number[] };
+}
+
+export interface TraceOptions {
+  dark?: boolean;
+  /** The selected row's 1-based rank, used to colour the single curve. */
+  selectedRank?: number;
+  /** The three best-ranked rows' curves, drawn when `toggles.top3` is on. */
+  overlay?: readonly OverlayCurve[];
+}
 
 /** Above this many points the SVG `scatter` trace stops being fluid; below it there is
  *  no reason to spin up a WebGL context at all (headless and software-rendered browsers
@@ -154,8 +214,10 @@ export function buildTraces(
   bundle: FitBundle | null,
   toggles: ChartToggles,
   axisNames: AxisNames,
+  options: TraceOptions = {},
 ): { traces: PlotlyTrace[]; layout: Partial<PlotlyLayout> } {
   const traces: PlotlyTrace[] = [];
+  const theme = options.dark === true ? "dark" : "light";
   if (points !== null) {
     const data = scatterPoints(points.x, points.y);
     traces.push({
@@ -164,35 +226,44 @@ export function buildTraces(
       name: "Data",
       x: data.x,
       y: data.y,
-      marker: { color: "#3A3F47", size: 5, opacity: 0.85 },
+      marker: { color: DATA_COLOR[theme], size: 5, opacity: 0.85 },
     });
   }
   // The no-curve invariant: only a converged fit may draw a curve or bands.
   if (isConverged(bundle) && bundle !== null && bundle.curve !== null) {
-    traces.push({
-      type: "scatter",
-      mode: "lines",
-      name: "Fitted curve",
-      x: bundle.curve.x,
-      y: bundle.curve.y,
-      line: { color: ACCENT, width: 2 },
-    });
+    const overlay = options.overlay ?? [];
+    if (toggles.top3 && overlay.length > 0) {
+      // Each ranked model keeps its own colour and its own legend name; the selected
+      // row's bands below still belong to the selected model only.
+      for (const entry of overlay) {
+        traces.push({
+          type: "scatter",
+          mode: "lines",
+          name: entry.name,
+          x: entry.curve.x,
+          y: entry.curve.y,
+          line: { color: modelColor(entry.rank), width: curveWidth(entry.rank) },
+        });
+      }
+    } else {
+      const rank = options.selectedRank ?? 1;
+      traces.push({
+        type: "scatter",
+        mode: "lines",
+        name: "Fitted curve",
+        x: bundle.curve.x,
+        y: bundle.curve.y,
+        line: { color: modelColor(rank), width: curveWidth(rank) },
+      });
+    }
     if (toggles.confidence && bundle.confidence_band !== null) {
       traces.push(
-        ...bandTraces(
-          bundle.confidence_band,
-          "95% confidence band",
-          "rgba(15,108,189,0.15)",
-        ),
+        ...bandTraces(bundle.confidence_band, "95% confidence band", BAND_CONFIDENCE_FILL[theme]),
       );
     }
     if (toggles.prediction && bundle.prediction_band !== null) {
       traces.push(
-        ...bandTraces(
-          bundle.prediction_band,
-          "95% prediction band",
-          "rgba(15,108,189,0.07)",
-        ),
+        ...bandTraces(bundle.prediction_band, "95% prediction band", BAND_PREDICTION_FILL[theme]),
       );
     }
   }

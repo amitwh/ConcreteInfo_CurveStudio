@@ -8,6 +8,7 @@ Publication-quality Matplotlib export arrives with D3.
 """
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
@@ -18,9 +19,23 @@ from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QLabel, QStackedLayout, QVBoxLayout, QWidget
 
 from curvestudio_desktop.theme import current_scheme, mono_font
+from curvestudio_plotting.palette import band_fill, curve_style, data_color
 
 _DARK_PLOT_BACKGROUND = "#1e1e1e"
 _DARK_PLOT_FOREGROUND = "#d4d4d4"
+#: Bands sit below the curves so a fill never tints the line it belongs to.
+_BAND_Z = 0.5
+_CURVE_Z = 2.0
+
+
+@dataclass(frozen=True)
+class OverlayCurve:
+    """One model curve in a multi-curve overlay: its label, samples and 1-based rank."""
+
+    name: str
+    x: Sequence[float]
+    y: Sequence[float]
+    rank: int
 
 
 class PlotView(QWidget):
@@ -38,9 +53,16 @@ class PlotView(QWidget):
         self._plot = pg.PlotWidget(self)
         self._plot.setMouseEnabled(x=True, y=True)
         self._scatter: pg.PlotDataItem | None = None
-        self._fit_curve: pg.PlotDataItem | None = None
+        self._curves: list[pg.PlotDataItem] = []
+        self._curve_ranks: list[int] = []
+        self._curve_names: list[str] = []
+        self._legend: pg.LegendItem | None = None
+        self._legend_names: list[str] = []
         self._confidence: pg.FillBetweenItem | None = None
         self._prediction: pg.FillBetweenItem | None = None
+        self._band_x: Sequence[float] | None = None
+        self._band_confidence: tuple[Sequence[float], Sequence[float]] | None = None
+        self._band_prediction: tuple[Sequence[float], Sequence[float]] | None = None
         self._empty_label = QLabel("Import data to see it plotted")
         self._empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         # a non-modal inline notice over the plot (a ranking row with no sampled curve)
@@ -89,6 +111,12 @@ class PlotView(QWidget):
             axis.setTextPen(foreground)
             axis.label.setDefaultTextColor(QColor(foreground))
         self._scheme = resolved
+        # Data points stay neutral in either theme; bands pick the theme's neutral fill.
+        if self._scatter is not None:
+            neutral = data_color(dark=dark)
+            self._scatter.setSymbolBrush(pg.mkBrush(neutral))
+            self._scatter.setSymbolPen(pg.mkPen(neutral))
+        self._draw_bands()
 
     def plot_background(self) -> str:
         """The drawn plot background as ``#rrggbb`` (what the theme tests assert)."""
@@ -102,7 +130,16 @@ class PlotView(QWidget):
         self._x, self._y = x, y
         if self._scatter is not None:
             self._plot.removeItem(self._scatter)
-        self._scatter = pg.PlotDataItem(x, y, pen=None, symbol="o", symbolSize=5)
+        neutral = data_color(dark=self._scheme == "dark")
+        self._scatter = pg.PlotDataItem(
+            x,
+            y,
+            pen=None,
+            symbol="o",
+            symbolSize=5,
+            symbolBrush=pg.mkBrush(neutral),
+            symbolPen=pg.mkPen(neutral),
+        )
         # clip-to-view comes from the PlotItem config in __init__: configuring the
         # item before adding it breaks pyqtgraph 0.14's itemChange path
         self._plot.addItem(self._scatter)
@@ -137,37 +174,117 @@ class PlotView(QWidget):
         y: Sequence[float],
         confidence: tuple[Sequence[float], Sequence[float]] | None = None,
         prediction: tuple[Sequence[float], Sequence[float]] | None = None,
+        *,
+        rank: int = 1,
+        name: str = "fitted curve",
     ) -> None:
-        """Draw the fitted curve (with optional bands) over the scatter.
+        """Draw one fitted curve (with optional bands) over the scatter.
 
-        The curve is the only thing that claims to be a result, so it is drawn in a strong
-        colour that reads on both the light and the dark theme; the bands are translucent
-        fills. Callers never call this for a fit that did not converge — there is no curve
-        to draw then (see :meth:`clear_fit`).
+        The curve takes its rank's colour from the shared palette (rank 1 is the brand
+        accent); bands are neutral translucent fills, never a model colour, so a band can
+        never be read as another curve. Callers never call this for a fit that did not
+        converge — there is no curve to draw then (see :meth:`clear_fit`).
         """
         self.clear_fit()
-        if confidence is not None:
-            self._confidence = self._fill_between(x, confidence, (31, 119, 180), 70)
-            self._plot.addItem(self._confidence)
-        if prediction is not None:
-            self._prediction = self._fill_between(x, prediction, (127, 127, 127), 40)
-            self._plot.addItem(self._prediction)
-        self._fit_curve = pg.PlotDataItem(
+        self._band_x = list(x)
+        self._band_confidence = confidence
+        self._band_prediction = prediction
+        colour, width = curve_style(rank)
+        item = pg.PlotDataItem(
             np.asarray(x, dtype=np.float64),
             np.asarray(y, dtype=np.float64),
-            pen=pg.mkPen("#d62728", width=2),
+            pen=pg.mkPen(colour, width=width),
         )
-        self._plot.addItem(self._fit_curve)
+        item.setZValue(_CURVE_Z)
+        self._plot.addItem(item)
+        self._curves.append(item)
+        self._curve_ranks.append(rank)
+        self._curve_names.append(name)
+        self._draw_bands()
+        self._rebuild_legend()
+
+    def set_fit_overlay(
+        self,
+        curves: Sequence[OverlayCurve],
+        *,
+        band_x: Sequence[float] | None = None,
+        confidence: tuple[Sequence[float], Sequence[float]] | None = None,
+        prediction: tuple[Sequence[float], Sequence[float]] | None = None,
+    ) -> None:
+        """Draw several model curves, each in its rank colour, with a named legend.
+
+        Bands belong to the selected model only and stay neutral; ``band_x`` is that
+        model's curve x (it need not be the first curve in ``curves``).
+        """
+        self.clear_fit()
+        self._band_x = list(band_x) if band_x is not None else None
+        self._band_confidence = confidence
+        self._band_prediction = prediction
+        for entry in curves:
+            colour, width = curve_style(entry.rank)
+            item = pg.PlotDataItem(
+                np.asarray(entry.x, dtype=np.float64),
+                np.asarray(entry.y, dtype=np.float64),
+                pen=pg.mkPen(colour, width=width),
+            )
+            item.setZValue(_CURVE_Z)
+            self._plot.addItem(item)
+            self._curves.append(item)
+            self._curve_ranks.append(entry.rank)
+            self._curve_names.append(entry.name)
+        self._draw_bands()
+        self._rebuild_legend()
 
     def clear_fit(self) -> None:
-        """Remove the curve and bands (a dataset switch, or a fit without a curve)."""
-        for item in (self._fit_curve, self._confidence, self._prediction):
+        """Remove every curve, the bands and the legend (a dataset switch, or no curve)."""
+        for item in (*self._curves, self._confidence, self._prediction):
             if item is not None:
                 self._plot.removeItem(item)
-        self._fit_curve = None
+        self._curves.clear()
+        self._curve_ranks.clear()
+        self._curve_names.clear()
         self._confidence = None
         self._prediction = None
+        self._band_x = None
+        self._band_confidence = None
+        self._band_prediction = None
+        self._rebuild_legend()
         self._hint.hide()
+
+    # -- legend -------------------------------------------------------------------------------
+
+    def _rebuild_legend(self) -> None:
+        """Name the models when more than one curve is drawn; hide it otherwise."""
+        if len(self._curves) < 2:
+            self._legend_names = []
+            if self._legend is not None:
+                self._legend.clear()
+                self._legend.setVisible(False)
+            return
+        if self._legend is None:
+            self._legend = self._plot.getPlotItem().addLegend(offset=(10, 10))
+        self._legend.clear()
+        for item, name in zip(self._curves, self._curve_names, strict=True):
+            self._legend.addItem(item, name)
+        self._legend.setVisible(True)
+        self._legend_names = list(self._curve_names)
+
+    def legend_names(self) -> list[str]:
+        """The legend's model labels (empty when the legend is hidden)."""
+        return list(self._legend_names)
+
+    def drawn_curve_colors(self) -> list[str]:
+        """The drawn curves' pen colours as ``#rrggbb``, in draw order."""
+        colors: list[str] = []
+        for item in self._curves:
+            pen = item.opts.get("pen")
+            if pen is not None and pen.style() != Qt.PenStyle.NoPen:
+                colors.append(pen.color().name())
+        return colors
+
+    def drawn_curve_ranks(self) -> list[int]:
+        """The rank each drawn curve belongs to (1-based), in draw order."""
+        return list(self._curve_ranks)
 
     # -- inline hint -------------------------------------------------------------------------
 
@@ -201,20 +318,45 @@ class PlotView(QWidget):
         return super().eventFilter(watched, event)
 
     def fit_curve_data(self) -> tuple[np.ndarray, np.ndarray] | None:
-        """The drawn curve's arrays, or ``None`` when no curve is shown."""
-        if self._fit_curve is None:
+        """The first drawn curve's arrays, or ``None`` when no curve is shown."""
+        if not self._curves:
             return None
-        x, y = self._fit_curve.getData()
+        x, y = self._curves[0].getData()
         if x is None or y is None:
             return None
         return np.asarray(x), np.asarray(y)
+
+    def band_colors(self) -> list[str]:
+        """The neutral band fills as ``#rrggbb`` (alpha dropped), confidence then prediction."""
+        fills = (self._confidence, self._prediction)
+        return [item.brush().color().name() for item in fills if item is not None]
+
+    def _draw_bands(self) -> None:
+        """(Re)draw the neutral bands for the current theme; no-op without band data."""
+        for item in (self._confidence, self._prediction):
+            if item is not None:
+                self._plot.removeItem(item)
+        self._confidence = None
+        self._prediction = None
+        if self._band_x is None:
+            return
+        dark = self._scheme == "dark"
+        if self._band_confidence is not None:
+            self._confidence = self._fill_between(
+                self._band_x, self._band_confidence, band_fill("confidence", dark=dark)
+            )
+            self._plot.addItem(self._confidence)
+        if self._band_prediction is not None:
+            self._prediction = self._fill_between(
+                self._band_x, self._band_prediction, band_fill("prediction", dark=dark)
+            )
+            self._plot.addItem(self._prediction)
 
     def _fill_between(
         self,
         x: Sequence[float],
         band: tuple[Sequence[float], Sequence[float]],
-        color: tuple[int, int, int],
-        alpha: int,
+        fill: str,
     ) -> pg.FillBetweenItem:
         lower = pg.PlotDataItem(
             np.asarray(x, dtype=np.float64), np.asarray(band[0], dtype=np.float64)
@@ -222,7 +364,9 @@ class PlotView(QWidget):
         upper = pg.PlotDataItem(
             np.asarray(x, dtype=np.float64), np.asarray(band[1], dtype=np.float64)
         )
-        return pg.FillBetweenItem(lower, upper, brush=pg.mkBrush(*color, alpha))
+        band_item = pg.FillBetweenItem(lower, upper, brush=pg.mkBrush(fill))
+        band_item.setZValue(_BAND_Z)
+        return band_item
 
     # -- log axes ----------------------------------------------------------------------------
 
