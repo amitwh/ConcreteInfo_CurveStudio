@@ -316,4 +316,105 @@ describe("useAutofit — the auto-fit state machine", () => {
     });
     expect(result.current.stateFor("ds-1").phase).toBe("running");
   });
+
+  it("does not start a second run when ensure is called again while the first is starting", async () => {
+    let resolveStart: (value: unknown) => void = () => {};
+    request
+      .mockResolvedValueOnce([] as AutofitSummaryOut[])
+      .mockImplementationOnce(() => new Promise((resolve) => void (resolveStart = resolve)));
+    const { result } = renderHook(() => useAutofit());
+    act(() => result.current.ensure("ds-1"));
+    await act(async () => void 0);
+    expect(request).toHaveBeenCalledTimes(2); // the list, then the start POST
+
+    act(() => result.current.ensure("ds-1"));
+    await act(async () => void 0);
+    // The second ensure makes no request at all — the first flow owns the dataset.
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(result.current.stateFor("ds-1").phase).toBe("starting");
+    const posts = request.mock.calls.filter(
+      (call) => typeof call[0] === "string" && call[0] === "/datasets/ds-1/autofit",
+    );
+    expect(posts).toHaveLength(1);
+    await act(async () => {
+      resolveStart({ job_id: "job-1" });
+    });
+  });
+
+  it("a poll from a replaced run never overwrites the newer run's state", async () => {
+    let resolvePoll: (value: unknown) => void = () => {};
+    request
+      .mockResolvedValueOnce([] as AutofitSummaryOut[])
+      .mockResolvedValueOnce({ job_id: "job-1" })
+      .mockResolvedValueOnce(job("queued", { progress: null }))
+      .mockImplementationOnce(() => new Promise((resolve) => void (resolvePoll = resolve)))
+      .mockResolvedValueOnce({ job_id: "job-2" });
+    const { result } = renderHook(() => useAutofit());
+    act(() => result.current.ensure("ds-1"));
+    await act(async () => void 0); // list + POST → job-1 in flight
+    await act(async () => vi.advanceTimersByTimeAsync(300)); // poll 1 (queued)
+    await act(async () => vi.advanceTimersByTimeAsync(600)); // poll 2 is now in flight
+    expect(result.current.stateFor("ds-1").jobId).toBe("job-1");
+
+    act(() => result.current.run("ds-1"));
+    await act(async () => void 0); // POST job-2 resolves
+    expect(result.current.stateFor("ds-1").jobId).toBe("job-2");
+
+    // The old poll finally answers — it must not resurrect run 1.
+    await act(async () => {
+      resolvePoll(job("running", { progress: progress({ done: 4 }) }));
+    });
+    await act(async () => void 0);
+    const state = result.current.stateFor("ds-1");
+    expect(state.jobId).toBe("job-2");
+    expect(state.phase).toBe("running");
+    expect(state.progress).toBeNull();
+  });
+
+  it("does not cancel a job when a new run is still starting (no job id yet)", async () => {
+    let resolveStart: (value: unknown) => void = () => {};
+    request
+      .mockResolvedValueOnce([] as AutofitSummaryOut[])
+      .mockResolvedValueOnce({ job_id: "job-1" })
+      .mockResolvedValueOnce(job("succeeded", { result_id: "af-1", result_ref: "af-1" }))
+      .mockResolvedValueOnce(autofitOut())
+      // the new run's start POST is still pending when the user hits Cancel
+      .mockImplementationOnce(() => new Promise((resolve) => void (resolveStart = resolve)));
+    const { result } = renderHook(() => useAutofit());
+    act(() => result.current.ensure("ds-1"));
+    await act(async () => void 0);
+    await act(async () => vi.advanceTimersByTimeAsync(300)); // job-1 succeeded, stored loaded
+    expect(result.current.stateFor("ds-1").phase).toBe("ready");
+
+    act(() => result.current.run("ds-1"));
+    await act(async () => void 0);
+    expect(result.current.stateFor("ds-1").phase).toBe("starting");
+    const callsBefore = request.mock.calls.length;
+    await act(async () => result.current.cancel("ds-1"));
+    const cancels = request.mock.calls
+      .slice(callsBefore)
+      .filter((call) => typeof call[0] === "string" && call[0].endsWith("/cancel"));
+    expect(cancels).toHaveLength(0);
+    await act(async () => {
+      resolveStart({ job_id: "job-2" });
+    });
+  });
+
+  it("clearing a dataset while ensure is in flight makes the response harmless", async () => {
+    let resolveList: (value: unknown) => void = () => {};
+    request.mockImplementationOnce(() => new Promise((resolve) => void (resolveList = resolve)));
+    const { result } = renderHook(() => useAutofit());
+    act(() => result.current.ensure("ds-1"));
+    act(() => result.current.clear("ds-1"));
+    expect(result.current.stateFor("ds-1").phase).toBe("idle");
+
+    await act(async () => {
+      resolveList([]);
+    });
+    expect(result.current.stateFor("ds-1").phase).toBe("idle");
+    const posts = request.mock.calls.filter(
+      (call) => typeof call[0] === "string" && call[0] === "/datasets/ds-1/autofit",
+    );
+    expect(posts).toHaveLength(0);
+  });
 });

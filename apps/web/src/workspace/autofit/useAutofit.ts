@@ -102,6 +102,8 @@ export function buildAutofitRequest(
 interface Flight {
   datasetId: string;
   jobId: string;
+  /** The dataset token that started this flight; a newer token makes it stale. */
+  token: number;
   delay: number;
   failures: number;
 }
@@ -199,10 +201,18 @@ export function useAutofit(): {
       const flight = flights.current.get(jobId);
       if (flight === undefined) return;
       const { datasetId } = flight;
-      const token = tokens.current[datasetId] ?? 0;
+      // A newer flow for this dataset owns the state now; this flight must not patch it.
+      if (flight.token !== (tokens.current[datasetId] ?? 0)) {
+        stopFlight(jobId);
+        return;
+      }
       try {
         const job = await api.request<JobOut>(`/jobs/${jobId}`);
         if (flights.current.get(jobId) !== flight) return;
+        if (flight.token !== (tokens.current[datasetId] ?? 0)) {
+          stopFlight(jobId);
+          return;
+        }
         flight.failures = 0;
         if (job.progress !== null) patch(datasetId, { progress: job.progress });
         switch (job.status) {
@@ -223,7 +233,7 @@ export function useAutofit(): {
               return;
             }
             const rankBy = states[datasetId]?.rankBy ?? "best_overall";
-            await loadStored(datasetId, autofitId, rankBy, token);
+            await loadStored(datasetId, autofitId, rankBy, flight.token);
             return;
           }
           case "failed":
@@ -274,6 +284,8 @@ export function useAutofit(): {
       const body = buildAutofitRequest(options ?? DEFAULT_AUTOFIT_OPTIONS, rankBy);
       patch(datasetId, {
         phase: "starting",
+        // The previous run's job id is gone: cancel must never target it.
+        jobId: null,
         error: null,
         errorCode: null,
         cancelled: false,
@@ -289,6 +301,7 @@ export function useAutofit(): {
           flights.current.set(created.job_id, {
             datasetId,
             jobId: created.job_id,
+            token,
             delay: MIN_DELAY_MS,
             failures: 0,
           });
@@ -309,6 +322,18 @@ export function useAutofit(): {
 
   const ensure = useCallback(
     (datasetId: string): void => {
+      // Something is already in flight for this dataset (re-selection, a double click):
+      // leave it alone — starting again would fork a second run.
+      const phase = statesRef.current[datasetId]?.phase;
+      if (
+        phase === "checking" ||
+        phase === "starting" ||
+        phase === "running" ||
+        phase === "loading" ||
+        [...flights.current.values()].some((flight) => flight.datasetId === datasetId)
+      ) {
+        return;
+      }
       const token = (tokens.current[datasetId] ?? 0) + 1;
       tokens.current[datasetId] = token;
       patch(datasetId, { phase: "checking", error: null, errorCode: null });
@@ -349,7 +374,9 @@ export function useAutofit(): {
   const cancel = useCallback(
     async (datasetId: string): Promise<void> => {
       const state = statesRef.current[datasetId];
-      if (state?.jobId == null) return;
+      // Only a running job can be cancelled: while a run is still starting there is no
+      // job id yet, and a finished run's id must never be targeted.
+      if (state?.phase !== "running" || state.jobId == null) return;
       const jobId = state.jobId;
       try {
         const job = await api.request<JobOut>(`/jobs/${jobId}/cancel`, { method: "POST" });
@@ -391,6 +418,8 @@ export function useAutofit(): {
 
   const clear = useCallback(
     (datasetId: string): void => {
+      // Invalidate every flow for this dataset, so their late responses patch nothing.
+      tokens.current[datasetId] = (tokens.current[datasetId] ?? 0) + 1;
       for (const flight of [...flights.current.values()]) {
         if (flight.datasetId === datasetId) stopFlight(flight.jobId);
       }

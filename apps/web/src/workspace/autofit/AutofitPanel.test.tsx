@@ -289,4 +289,32 @@ describe("AutofitPanel — results", () => {
     await user.click(screen.getAllByRole("button", { name: /use this model manually/i })[0]!);
     expect(handlers.onUseManually).toHaveBeenCalled();
   });
+
+  it("offers no Open full results control for a cancelled run's partial rows", () => {
+    renderPanel({
+      phase: "ready",
+      stored: null,
+      cancelled: true,
+      partialRows: [row("exp_decay")],
+    });
+    // The rows are still shown…
+    expect(screen.getByText("Model exp_decay")).toBeTruthy();
+    // …but nothing can be opened from a run that stored nothing.
+    expect(screen.queryAllByRole("button", { name: /open full results/i })).toHaveLength(0);
+  });
+});
+
+describe("AutofitPanel — cancel availability", () => {
+  it("disables Cancel until the run has a job id", () => {
+    renderPanel({ phase: "starting", jobId: null });
+    const cancel = screen.getByRole("button", { name: "Cancel" }) as HTMLButtonElement;
+    expect(cancel.disabled).toBe(true);
+    expect(cancel.getAttribute("title")).toMatch(/once the run (has )?start/i);
+  });
+
+  it("enables Cancel once the run has a job id", () => {
+    renderPanel({ phase: "running", jobId: "job-1" });
+    const cancel = screen.getByRole("button", { name: "Cancel" }) as HTMLButtonElement;
+    expect(cancel.disabled).toBe(false);
+  });
 });

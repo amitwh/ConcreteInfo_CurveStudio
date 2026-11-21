@@ -55,6 +55,9 @@ export function WorkspacePage(): ReactElement {
   const [datasetsLoading, setDatasetsLoading] = useState(true);
   const [datasetsError, setDatasetsError] = useState<unknown>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  /** The selection a long request was started for; late responses compare against it. */
+  const selectedIdRef = useRef(selectedId);
+  selectedIdRef.current = selectedId;
   const [detail, setDetail] = useState<DatasetDetailOut | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<unknown>(null);
@@ -102,6 +105,15 @@ export function WorkspacePage(): ReactElement {
     void loadBundle(fitId, pendingSourceRef.current);
     if (selectedId !== null) void loadFits(selectedId);
   });
+
+  // An opened-row job that ends without a fit (failed, cancelled, lost contact) must
+  // unlock the ranking table again; the inline error (if any) stays visible.
+  useEffect(() => {
+    const phase = poller.state.phase;
+    if (phase === "failed" || phase === "error" || phase === "cancelled") {
+      setOpenRowBusy(null);
+    }
+  }, [poller.state.phase]);
 
   const loadDatasets = useCallback(async (): Promise<void> => {
     setDatasetsLoading(true);
@@ -260,6 +272,7 @@ export function WorkspacePage(): ReactElement {
     async (candidateId: string): Promise<void> => {
       const storedId = autoState.stored?.id;
       if (selectedId === null || storedId == null) return;
+      const requestedFor = selectedId;
       setOpenRowBusy(candidateId);
       setOpenRowError(null);
       try {
@@ -267,6 +280,12 @@ export function WorkspacePage(): ReactElement {
           `/autofits/${storedId}/rows/${candidateId}/open`,
           { method: "POST" },
         );
+        // The user selected another dataset while the POST was in flight: the result
+        // belongs to a selection that is no longer on screen.
+        if (selectedIdRef.current !== requestedFor) {
+          setOpenRowBusy(null);
+          return;
+        }
         if (created.fit_id != null) {
           // Opened before: the fit already exists.
           await loadBundle(created.fit_id, "opened-row");

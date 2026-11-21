@@ -214,6 +214,8 @@ export function AutofitPanel({
             curvesAvailable={curvesAvailable}
             onSelect={onSelectRow}
             onOpen={onOpenRow}
+            // A cancelled run stored nothing, so its partial rows cannot be opened.
+            actions={stored !== null}
             onUseManually={(row) => onUseManually({ modelId: row.model_id, name: row.name })}
             manuallySelectable={manuallySelectable}
             openRowBusy={openRowBusy}
@@ -278,7 +280,17 @@ function ProgressView({
           )}
           {progress === null && statusText}
         </span>
-        <button type="button" className="btn btn--small" onClick={onCancel}>
+        <button
+          type="button"
+          className="btn btn--small"
+          onClick={onCancel}
+          disabled={state.jobId === null}
+          title={
+            state.jobId === null
+              ? "Cancel becomes available once the run has started."
+              : undefined
+          }
+        >
           Cancel
         </button>
       </div>
