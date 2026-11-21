@@ -1,11 +1,13 @@
 """Widget-backed dialogs and the production implementations of the provider protocols."""
 
+import platform
 import traceback
 from importlib import resources
 from pathlib import Path
 from types import TracebackType
 
 from PySide6.QtCore import Qt, qVersion
+from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QDialog,
@@ -22,6 +24,17 @@ from curvestudio_desktop import APP_NAME, __version__
 from curvestudio_desktop.controllers.providers import UnsavedAnswer
 
 _CSTUDIO_FILTER = "CurveStudio project (*.cstudio);;All files (*)"
+WEBSITE_URL = "https://www.concreteinfo.in"
+SOURCE_URL = "https://github.com/amitwh/ConcreteInfo_CurveStudio"
+LICENCE_URL = "https://www.gnu.org/licenses/agpl-3.0.html"
+DESCRIPTION = "Fit a curve to paired x/y measurements and see, honestly, how well it fits."
+CREDITS: tuple[str, ...] = (
+    "Qt / PySide6 — LGPL-3.0",
+    "NumPy, SciPy, SymPy — BSD-3-Clause",
+    "pyqtgraph — MIT",
+    "Inter and JetBrains Mono typefaces — SIL Open Font License 1.1 (OFL-1.1)",
+    "Lucide icons — ISC",
+)
 
 
 def active_parent() -> QWidget | None:
@@ -39,33 +52,135 @@ def notice_text() -> str:
         return "Licensed AGPL-3.0-or-later. See the LICENSE file in the repository."
 
 
+def runtime_versions() -> dict[str, str]:
+    """The versions of the stack actually imported at runtime, never hardcoded."""
+    import numpy
+    import PySide6
+    import scipy
+
+    return {
+        "Python": platform.python_version(),
+        "Qt": qVersion(),
+        "PySide6": PySide6.__version__,
+        "NumPy": numpy.__version__,
+        "SciPy": scipy.__version__,
+    }
+
+
+def _logo_pixmap() -> QPixmap:
+    """The staged brand logo, loaded unchanged (it is built for light surfaces)."""
+    try:
+        asset = (
+            resources.files("curvestudio_desktop") / "resources" / "brand" / "concreteinfo-logo.png"
+        )
+        data = asset.read_bytes()
+    except OSError, ModuleNotFoundError:
+        return QPixmap()
+    pixmap = QPixmap()
+    if not pixmap.loadFromData(data, "PNG"):
+        return QPixmap()
+    return pixmap
+
+
 class AboutDialog(QDialog):
-    """Help → About: application name, version, licence notice, stack versions."""
+    """Help → About: the brand, version, links, runtime stack and credits."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self.setObjectName("aboutDialog")
         self.setWindowTitle("About CurveStudio")
-        self._label = QLabel(self.full_text())
-        self._label.setTextInteractionFlags(
-            Qt.TextInteractionFlag.TextSelectableByMouse
-            | Qt.TextInteractionFlag.TextBrowserInteraction
-        )
         layout = QVBoxLayout(self)
-        layout.addWidget(self._label)
+        layout.setContentsMargins(18, 18, 18, 14)
+        layout.setSpacing(8)
+
+        # the asset is designed for light surfaces: it sits on white and is never
+        # inverted or recoloured, so it stays legible in the dark theme too
+        self.logo_label = QLabel()
+        self.logo_label.setObjectName("aboutLogo")
+        self.logo_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.logo_label.setStyleSheet(
+            "QLabel#aboutLogo { background-color: #ffffff; border-radius: 8px; padding: 10px; }"
+        )
+        logo = _logo_pixmap()
+        if not logo.isNull():
+            self.logo_label.setPixmap(logo)
+        layout.addWidget(self.logo_label)
+
+        self.title_label = QLabel(APP_NAME)
+        self.title_label.setStyleSheet("font-size: 19px; font-weight: 600;")
+        self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.title_label)
+
+        self.version_label = QLabel(f"Version {__version__}")
+        self.version_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.version_label)
+
+        self.description_label = QLabel(DESCRIPTION)
+        self.description_label.setWordWrap(True)
+        self.description_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.description_label)
+
+        self.website_label = QLabel(
+            f'<a href="{WEBSITE_URL}">{WEBSITE_URL.removeprefix("https://")}</a>'
+            f' · <a href="{SOURCE_URL}">source code</a>'
+        )
+        self._make_link_label(self.website_label)
+        layout.addWidget(self.website_label)
+
+        self.licence_label = QLabel(
+            f'Licensed under <a href="{LICENCE_URL}">AGPL-3.0-or-later</a>.'
+        )
+        self._make_link_label(self.licence_label)
+        layout.addWidget(self.licence_label)
+
+        self.stack_label = QLabel(self.version_text())
+        self.stack_label.setWordWrap(True)
+        self.stack_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.stack_label)
+
+        self.credits_label = QLabel(self.credits_text())
+        self.credits_label.setObjectName("aboutCredits")
+        self.credits_label.setWordWrap(True)
+        self.credits_label.setTextFormat(Qt.TextFormat.PlainText)
+        layout.addWidget(self.credits_label)
+
         close = QPushButton("Close")
         close.setObjectName("closeButton")
         close.setDefault(True)
         close.clicked.connect(self.accept)
         layout.addWidget(close, 0, Qt.AlignmentFlag.AlignRight)
 
-    def full_text(self) -> str:
-        import PySide6
+    @staticmethod
+    def _make_link_label(label: QLabel) -> None:
+        label.setTextFormat(Qt.TextFormat.RichText)
+        label.setOpenExternalLinks(True)
+        label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextBrowserInteraction
+            | Qt.TextInteractionFlag.LinksAccessibleByMouse
+        )
+        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
+    def version_text(self) -> str:
+        versions = runtime_versions()
+        return " · ".join(
+            f"{name} {versions[name]}" for name in ("Python", "Qt", "PySide6", "NumPy", "SciPy")
+        )
+
+    def credits_text(self) -> str:
+        return "\n".join(CREDITS)
+
+    def full_text(self) -> str:
+        versions = runtime_versions()
         return (
             f"<h2>{APP_NAME}</h2>"
             f"<p>Version {__version__}</p>"
-            f"<p>PySide6 {PySide6.__version__} / Qt {qVersion()}</p>"
-            f"<pre style='white-space: pre-wrap'>{notice_text()}</pre>"
+            f"<p>{DESCRIPTION}</p>"
+            f"<p><a href='{WEBSITE_URL}'>{WEBSITE_URL}</a> · "
+            f"<a href='{SOURCE_URL}'>source code</a></p>"
+            f"<p>Licensed under <a href='{LICENCE_URL}'>AGPL-3.0-or-later</a>.</p>"
+            f"<p>Python {versions['Python']} / PySide6 {versions['PySide6']} / "
+            f"Qt {versions['Qt']} / NumPy {versions['NumPy']} / SciPy {versions['SciPy']}</p>"
+            f"<p>{'<br/>'.join(CREDITS)}</p>"
         )
 
 

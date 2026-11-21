@@ -463,6 +463,42 @@ def test_analysis_dock_fits_above_the_data_table(make_window, qtbot, write_file,
     assert view.table.minimumHeight() < 8 * row_height
 
 
+@pytest.mark.parametrize(("size", "minimum_rows"), [((1600, 920), 7), ((1280, 800), 5)])
+def test_fresh_window_shows_a_usable_number_of_ranking_rows(
+    make_window, qtbot, write_file, size, minimum_rows
+) -> None:
+    """A fresh window spends its dock height on the ranking, not on the summary.
+
+    The summary is still fully shown (its own minimum height) and the disclosure region
+    stays a scrollable strip, but the table's viewport shows at least seven rows at
+    1600x920 and five at 1280x800.
+    """
+    window = make_window()
+    qtbot.addWidget(window)
+    window.show()
+    window.analysis.set_mode("autofit")
+    window.analysis_panel.autofit_view.set_config(TINY)
+    assert window.import_file(write_file("quad.csv", NOISY_QUADRATIC))
+    dataset_id = window.controller.project.datasets[0].id
+    wait_stored(qtbot, window, dataset_id)
+    window.resize(*size)
+    QApplication.processEvents()
+
+    panel = window.analysis_panel
+    view = panel.autofit_view
+    assert view.table.rows()
+    row_height = view.table.rowHeight(0)
+    visible_rows = view.table.viewport().height() // row_height
+    assert visible_rows >= minimum_rows, (
+        f"{visible_rows} rows of {row_height}px at {size}; expected {minimum_rows}"
+    )
+
+    assert panel.summary.isVisible()
+    assert panel.summary.height() >= panel.summary.minimumHeight()
+    assert view.disclosure_scroll.isVisible()
+    assert view.disclosure_scroll.widget() is view.disclosure_body
+
+
 def test_ranking_table_scrollbar_is_visible_when_rows_overflow(make_window, qtbot) -> None:
     """245 rows scroll with a real vertical scrollbar, not a silently clipped last row."""
     window = make_window()

@@ -1,11 +1,15 @@
-"""Small inline-SVG icon set rendered to ``QIcon`` with the current theme colour.
+"""Vendored Lucide icons rendered to ``QIcon`` with the current theme colour.
 
-The SVGs are stroke drawings on a 24x24 grid. :func:`icon` substitutes the
-theme's text colour and caches the rendered result per ``(name, colour)``, so a
-theme switch simply asks for a new colour and the old icons stay cached. The
-application/window icon comes from the staged brand PNG.
+The SVGs are the canonical Lucide stroke drawings (ISC; see the licence beside them)
+on a 24x24 grid. :func:`icon` reads the vendored file through ``importlib.resources``,
+substitutes the theme's text colour for ``currentColor``, normalises the stroke weight
+to the toolbar's single value and caches the rendered result per ``(name, colour)``, so
+a theme switch simply asks for a new colour and the old icons stay cached. A name with
+no vendored file raises :class:`KeyError` — a missing icon fails in the tests, never in
+the window. The application/window icon comes from the staged brand PNG.
 """
 
+import re
 from functools import cache
 from importlib import resources
 from typing import cast
@@ -18,43 +22,34 @@ from PySide6.QtWidgets import QApplication
 from curvestudio_desktop.theme import current_tokens
 
 _RENDER_SIZE = 64
+#: One stroke weight for the whole toolbar. Lucide ships 2; the set has always looked
+#: lighter, so every file is normalised to this value as it is read.
+_STROKE_WIDTH = "1.8"
+_STROKE_WIDTH_PATTERN = re.compile(r'stroke-width="[^"]*"')
+_LUCIDE_DIR = ("resources", "icons", "lucide")
 
-_SVG = (
-    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" '
-    'stroke="{color}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'
-    "{body}</svg>"
-)
-
+#: Internal name -> vendored Lucide file. Only files that exist in the staged set.
 _ICONS: dict[str, str] = {
-    "new": '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/>'
-    '<path d="M14 3v5h5"/><path d="M12 12v6M9 15h6"/>',
-    "open": '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
-    "save": '<path d="M5 3h11l3 3v15H5z"/><path d="M8 3v6h8V3"/><path d="M8 14h8v7H8z"/>',
-    "import": '<path d="M12 3v10"/><path d="m8 9 4 4 4-4"/>'
-    '<path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/>',
-    "clipboard": '<rect x="6" y="5" width="12" height="16" rx="2"/>'
-    '<path d="M9 5V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1"/>',
-    "undo": '<path d="M9 7 4 12l5 5"/><path d="M4 12h10a5 5 0 0 1 5 5v1"/>',
-    "log-x": '<path d="M4 4v16h16"/><path d="M7 20v-3M11 20v-5M15 20v-2M19 20v-4"/>',
-    "log-y": '<path d="M4 20V4h16"/><path d="M4 8h3M4 12h5M4 16h3"/>',
-    "reset": '<path d="M4 10a8 8 0 1 1 1.7 8.7"/><path d="M4 4v6h6"/>',
-    "export": '<path d="M12 15V3"/><path d="m8 7 4-4 4 4"/>'
-    '<path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/>',
-    "details": '<circle cx="11" cy="11" r="6"/><path d="m20 20-4.5-4.5"/>',
-    "help": '<circle cx="12" cy="12" r="9"/>'
-    '<path d="M9.5 9a2.5 2.5 0 1 1 4 2c-.9.6-1.5 1.2-1.5 2.5"/>'
-    '<circle cx="12" cy="17" r="0.6" fill="{color}" stroke="none"/>',
-    "about": '<circle cx="12" cy="12" r="9"/><path d="M12 11v6"/>'
-    '<circle cx="12" cy="7.5" r="0.6" fill="{color}" stroke="none"/>',
-    "collapse": '<path d="m4 12 5-5M4 12l5 5M20 12l-5-5M20 12l-5 5"/>',
-    "expand": '<path d="m9 12-5-5M9 12 4 17M15 12l5-5M15 12l5 5"/>',
-    "float": '<rect x="4" y="7" width="12" height="12" rx="2"/>'
-    '<path d="M14 3h7v7"/><path d="m21 3-8 8"/>',
-    "close": '<path d="m6 6 12 12M18 6 6 18"/>',
-    "panel-project": '<rect x="3" y="4" width="7" height="16" rx="1"/>'
-    '<rect x="12" y="4" width="9" height="16" rx="1"/>',
-    "panel-analysis": '<rect x="3" y="4" width="18" height="16" rx="1"/><path d="M13 4v16"/>',
-    "panel-table": '<rect x="3" y="4" width="18" height="16" rx="1"/><path d="M3 12h18"/>',
+    "new": "file-plus.svg",
+    "open": "folder-open.svg",
+    "save": "save.svg",
+    "import": "download.svg",
+    "clipboard": "clipboard.svg",
+    "undo": "undo-2.svg",
+    "log-x": "bar-chart-3.svg",
+    "log-y": "chart-no-axes-column.svg",
+    "reset": "rotate-ccw.svg",
+    "export": "upload.svg",
+    "details": "book-open.svg",
+    "help": "help-circle.svg",
+    "about": "info.svg",
+    "collapse": "minimize-2.svg",
+    "expand": "maximize-2.svg",
+    "float": "external-link.svg",
+    "close": "x.svg",
+    "panel-project": "panel-left.svg",
+    "panel-analysis": "panel-right.svg",
+    "panel-table": "panel-bottom.svg",
 }
 
 _ICON_CACHE: dict[tuple[str, str], QIcon] = {}
@@ -70,8 +65,14 @@ def icon_color() -> str:
 
 
 def _svg_text(name: str, color: str) -> str:
-    body = _ICONS[name].replace("{color}", color)
-    return _SVG.format(color=color, body=body)
+    """The vendored SVG with the theme colour and the toolbar stroke weight applied."""
+    filename = _ICONS[name]  # KeyError for an unknown name: fail loudly, never blank
+    asset = resources.files("curvestudio_desktop")
+    for part in (*_LUCIDE_DIR, filename):
+        asset = asset / part
+    source = asset.read_text(encoding="utf-8")
+    source = source.replace("currentColor", color)
+    return _STROKE_WIDTH_PATTERN.sub(f'stroke-width="{_STROKE_WIDTH}"', source)
 
 
 def icon(name: str, color: str | None = None) -> QIcon:

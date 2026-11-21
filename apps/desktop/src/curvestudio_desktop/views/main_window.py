@@ -7,7 +7,7 @@ axes, reset, export) delegate to PlotView. Nothing here computes anything.
 
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from PySide6.QtCore import QByteArray, QPoint, QSettings, QSize, Qt
 from PySide6.QtGui import QAction, QActionGroup, QCloseEvent, QKeySequence
@@ -52,6 +52,9 @@ from curvestudio_desktop.views.icons import app_icon, icon
 from curvestudio_desktop.views.import_dialog import ClipboardImportDialog, ImportDialog
 from curvestudio_desktop.views.plot_view import PlotView
 from curvestudio_desktop.views.project_tree import ProjectDock, ProjectTree
+
+if TYPE_CHECKING:
+    from curvestudio_desktop.views.help_dialog import HelpDialog
 
 MINIMUM_SIZE = (980, 640)
 DEFAULT_WINDOW_SIZE = (1280, 820)
@@ -109,6 +112,8 @@ class MainWindow(QMainWindow):
         self.details_dialog = DetailsDialog(
             self, settings=self._settings, predict_fn=self.analysis.predict
         )
+        # one reusable, non-modal help window per main window
+        self.help_dialog: HelpDialog | None = None
 
         self.project_dock = ProjectDock(self)
         self.analysis_panel = AnalysisPanel(self.analysis, self.selection, self)
@@ -245,8 +250,20 @@ class MainWindow(QMainWindow):
         )
         self.action_export_publication.triggered.connect(self.export_publication_plot)
 
+        self.action_help_contents = self._action(
+            "&Help contents", QKeySequence("F1"), "Open the help browser"
+        )
+        self.action_help_contents.triggered.connect(lambda: self.open_help())
+        self.action_shortcuts = self._action(
+            "&Keyboard shortcuts", None, "Open the help browser at the shortcut list"
+        )
+        self.action_shortcuts.triggered.connect(lambda: self.open_help("Keyboard shortcuts"))
+
         self.action_about = self._action("&About", None, "Licence and version")
         self.action_about.triggered.connect(self.show_about)
+
+        self.action_about_qt = self._action("About &Qt", None, "Qt version and licence")
+        self.action_about_qt.triggered.connect(self.show_about_qt)
 
         self.action_reset_layout = self._action(
             "&Reset layout", None, "Restore the default panel arrangement"
@@ -281,7 +298,9 @@ class MainWindow(QMainWindow):
             (self.action_export_results, "export"),
             (self.action_export_ranking, "export"),
             (self.action_export_publication, "export"),
+            (self.action_help_contents, "help"),
             (self.action_about, "about"),
+            (self.action_about_qt, "about"),
             (self.action_reset_layout, "reset"),
         ]
 
@@ -353,8 +372,12 @@ class MainWindow(QMainWindow):
         for preference, _label in _THEME_CHOICES:
             theme_menu.addAction(self._theme_actions[preference])
 
-        help_menu = bar.addMenu("&Help")
-        help_menu.addAction(self.action_about)
+        self.help_menu = bar.addMenu("&Help")
+        self.help_menu.addAction(self.action_help_contents)
+        self.help_menu.addAction(self.action_shortcuts)
+        self.help_menu.addSeparator()
+        self.help_menu.addAction(self.action_about)
+        self.help_menu.addAction(self.action_about_qt)
 
     def _dock_toggle(self, dock: QDockWidget, label: str) -> QAction:
         action = QAction(label, self)
@@ -998,6 +1021,8 @@ class MainWindow(QMainWindow):
                 self._settings.setValue(f"{_EXPANDED_PREFIX}{name}", self._expanded_extent[name])
         self.analysis_panel.save_splitter(self._settings)
         self.details_dialog.save_geometry()
+        if self.help_dialog is not None:
+            self.help_dialog.save_geometry()
         self._settings.sync()
 
     def set_dock_collapsed(self, name: str, collapsed: bool, *, persist: bool = True) -> None:
@@ -1166,14 +1191,34 @@ class MainWindow(QMainWindow):
 
         AboutDialog(self).exec()
 
+    def show_about_qt(self) -> None:
+        """Help → About Qt: the framework's own licence dialog."""
+        app = QApplication.instance()
+        if app is not None:
+            cast("QApplication", app).aboutQt()
+
+    def open_help(self, section: str | None = None) -> None:
+        """Open (or reuse) the non-modal help browser, optionally at a named section."""
+        if self.help_dialog is None:
+            from curvestudio_desktop.views.help_dialog import HelpDialog
+
+            self.help_dialog = HelpDialog(self, settings=self._settings)
+        if section is not None:
+            self.help_dialog.select_section(section)
+        self.help_dialog.show()
+        self.help_dialog.raise_()
+        self.help_dialog.activateWindow()
+
     # -- Qt events ---------------------------------------------------------------------------
 
     def closeEvent(self, event: QCloseEvent) -> None:
         if self.controller.maybe_quit():
             self._save_layout()
-            # the details window is a top-level child: leaving it open would keep the
-            # application alive after the main window has gone
+            # top-level child windows: leaving them open would keep the application
+            # alive after the main window has gone
             self.details_dialog.close()
+            if self.help_dialog is not None:
+                self.help_dialog.close()
             event.accept()
         else:
             event.ignore()

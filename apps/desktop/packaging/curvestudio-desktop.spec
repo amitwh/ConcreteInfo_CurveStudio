@@ -56,7 +56,11 @@ for _distribution in (
     "curvestudio-desktop",
 ):
     datas += copy_metadata(_distribution)
-# the bundled example the selftest loads, and the licence notice
+# every non-Python file in the package, which is exactly what the app needs at run
+# time: the bundled example and licence notice, the brand PNGs and OFL fonts, the
+# vendored Lucide SVGs and their licence, and the help text under resources/help/
+# (the Help browser reads it through importlib.resources, so no module import can
+# pull it in). No separate datas entry is needed for any of them.
 datas += collect_data_files("curvestudio_desktop", include_py_files=False)
 # reportlab's font files are plain data — its PyInstaller hook collects only the
 # font-metric *modules*, so the Type1/TTF files (pdfbase's standard fonts) ship

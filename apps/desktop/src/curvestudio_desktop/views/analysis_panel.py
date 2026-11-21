@@ -30,9 +30,10 @@ from curvestudio_desktop.views.fit_summary import FitSummaryPanel
 from curvestudio_desktop.views.manual_fit_view import ManualFitView
 
 _SPLITTER_KEY = "analysis/splitterSizes"
-#: A fresh install shows the ranking and a fully visible summary at 1600x920 and
-#: 1280x800; the summary's own minimum height is the hard floor the splitter honours.
-_DEFAULT_SPLIT = (640, 240)
+#: A fresh install gives the ranking the dominant share: at least seven visible rows
+#: at 1600x920 and five at 1280x800. The summary keeps its own minimum height (a hard
+#: floor the splitter honours), so it stays fully visible; the disclosure strip scrolls.
+_DEFAULT_SPLIT = (700, 190)
 
 
 class AnalysisPanel(QDockWidget):
