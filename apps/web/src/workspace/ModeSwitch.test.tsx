@@ -8,15 +8,15 @@ describe("ModeSwitch", () => {
   it("defaults to Auto-fit on a first visit (no stored preference)", () => {
     expect(loadMode("user-1")).toBe("auto");
     render(<ModeSwitch mode="auto" onModeChange={() => {}} autofitStatus="idle" />);
-    const auto = screen.getByRole("radio", { name: "Auto-fit" });
-    expect(auto.getAttribute("aria-checked")).toBe("true");
+    const auto = screen.getByRole("button", { name: "Auto-fit" });
+    expect(auto.getAttribute("aria-pressed")).toBe("true");
   });
 
   it("switches to Manual fit and persists the choice per user", async () => {
     const onModeChange = vi.fn();
     render(<ModeSwitch mode="auto" onModeChange={onModeChange} autofitStatus="idle" />);
     const user = userEvent.setup();
-    await user.click(screen.getByRole("radio", { name: "Manual fit" }));
+    await user.click(screen.getByRole("button", { name: "Manual fit" }));
     expect(onModeChange).toHaveBeenCalledWith("manual");
   });
 

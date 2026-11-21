@@ -39,15 +39,20 @@ const BASE_CONFIG: Partial<PlotlyConfig> = {
  *  wrapper watches the container width and re-renders. */
 const NARROW_LEGEND_PX = 640;
 
+/** Below this viewport width the chart shortens so it does not crowd the page. */
+const SHORT_VIEWPORT_PX = 800;
+const SHORT_HEIGHT = 300;
+
 export function PlotChart({
   traces,
   layout,
   ariaLabel,
-  height = 420,
+  height = 360,
   outerRef,
 }: PlotChartProps): ReactElement {
   const rootRef = useRef<HTMLDivElement>(null);
   const [narrow, setNarrow] = useState(false);
+  const [shortViewport, setShortViewport] = useState(false);
 
   useEffect(() => {
     const root = rootRef.current;
@@ -59,15 +64,26 @@ export function PlotChart({
     return () => observer.disconnect();
   }, []);
 
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
+    const query = window.matchMedia(`(max-width: ${SHORT_VIEWPORT_PX}px)`);
+    const update = (): void => setShortViewport(query.matches);
+    update();
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
+
+  const chartHeight = shortViewport ? Math.min(height, SHORT_HEIGHT) : height;
+
   const fullLayout = useMemo<Partial<PlotlyLayout>>(() => {
-    if (!narrow) return { ...layout, height };
+    if (!narrow) return { ...layout, height: chartHeight };
     return {
       ...layout,
-      height,
+      height: chartHeight,
       legend: { orientation: "h", y: -0.18, ...layout.legend },
       margin: { b: 64, ...layout.margin },
     };
-  }, [layout, height, narrow]);
+  }, [layout, chartHeight, narrow]);
 
   useEffect(() => {
     const root = rootRef.current;
@@ -98,7 +114,7 @@ export function PlotChart({
     <figure
       className="plot-figure"
       aria-label={ariaLabel}
-      style={{ width: "100%", height: `${height}px` }}
+      style={{ width: "100%", height: `${chartHeight}px` }}
     >
       <div
         ref={(element) => {

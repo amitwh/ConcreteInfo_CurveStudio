@@ -73,6 +73,7 @@ export function WorkspacePage(): ReactElement {
   const [manualPreset, setManualPreset] = useState<ManualPreset | null>(null);
 
   const [fits, setFits] = useState<FitSummaryOut[]>([]);
+  const [fitsError, setFitsError] = useState<unknown>(null);
   const [activeFitId, setActiveFitId] = useState<string | null>(null);
   const [bundle, setBundle] = useState<FitBundle | null>(null);
   const [bundleSource, setBundleSource] = useState<BundleSource>("manual");
@@ -128,11 +129,14 @@ export function WorkspacePage(): ReactElement {
   }, []);
 
   const loadFits = useCallback(async (datasetId: string): Promise<void> => {
+    setFitsError(null);
     try {
       setFits(await api.request<FitSummaryOut[]>(`/datasets/${datasetId}/fits`));
-    } catch {
-      // The fits list is a sidebar of history; a failure here keeps the workspace usable.
+    } catch (error) {
+      // The fits list is a sidebar of history; a failure here keeps the workspace usable,
+      // but it must not look like an empty history.
       setFits([]);
+      setFitsError(error);
     }
   }, []);
 
@@ -153,6 +157,7 @@ export function WorkspacePage(): ReactElement {
       setActiveFitId(null);
       setBundleSource("manual");
       setFitError(null);
+      setFitsError(null);
       setSelectedRowId(null);
       setOpenRowBusy(null);
       setOpenRowError(null);
@@ -213,6 +218,7 @@ export function WorkspacePage(): ReactElement {
         setBundle(null);
         setActiveFitId(null);
         setFits([]);
+        setFitsError(null);
         setSelectedRowId(null);
         poller.reset();
       }
@@ -402,36 +408,6 @@ export function WorkspacePage(): ReactElement {
           </p>
         )}
         {bundleError !== null && <ErrorBox error={bundleError} />}
-
-        {mode === "auto" && (
-          <AutofitPanel
-            datasetId={selectedId}
-            datasetName={detail?.name ?? ""}
-            state={autoState}
-            models={models}
-            selectedRowId={selectedRowId}
-            onSelectRow={onSelectRow}
-            onOpenRow={(candidateId) => void onOpenRow(candidateId)}
-            onUseManually={onUseManually}
-            onRun={onRunAutofit}
-            onCancel={() => void autofit.cancel(selectedId ?? "")}
-            onRerank={(rankBy) => {
-              if (selectedId !== null) void autofit.rerank(selectedId, rankBy);
-            }}
-            openRowBusy={openRowBusy}
-            openRowError={openRowError}
-          />
-        )}
-
-        {bundle !== null && activeFitId !== null && (mode === "manual" || bundleSource === "opened-row") && (
-          <ResultsTabs
-            fitId={activeFitId}
-            bundle={bundle}
-            fits={fits}
-            onLoadFit={(id) => void loadBundle(id, "manual")}
-            onDeleteFit={(id) => void onDeleteFit(id)}
-          />
-        )}
       </div>
 
       <div className="workspace__side">
@@ -453,6 +429,48 @@ export function WorkspacePage(): ReactElement {
             onFit={(spec) => void onFit(spec)}
             fitError={fitError}
             preset={manualPreset}
+          />
+        )}
+      </div>
+
+      {/* The primary results get the full width: the ranking table needs ~64 rem. */}
+      <div className="workspace__results">
+        {mode === "auto" && (
+          <AutofitPanel
+            datasetId={selectedId}
+            datasetName={detail?.name ?? ""}
+            state={autoState}
+            models={models}
+            selectedRowId={selectedRowId}
+            onSelectRow={onSelectRow}
+            onOpenRow={(candidateId) => void onOpenRow(candidateId)}
+            onUseManually={onUseManually}
+            onRun={onRunAutofit}
+            onCancel={() => void autofit.cancel(selectedId ?? "")}
+            onRerank={(rankBy) => {
+              if (selectedId !== null) void autofit.rerank(selectedId, rankBy);
+            }}
+            openRowBusy={openRowBusy}
+            openRowError={openRowError}
+          />
+        )}
+
+        {/* In Auto-fit mode (which hosts the opened-row results) the manual FitPanel is
+            not on screen, so surface the fit error (e.g. a failed delete) here instead. */}
+        {fitError !== null && mode === "auto" && (
+          <p className="alert alert--error" role="alert">
+            {fitError}
+          </p>
+        )}
+
+        {bundle !== null && activeFitId !== null && (mode === "manual" || bundleSource === "opened-row") && (
+          <ResultsTabs
+            fitId={activeFitId}
+            bundle={bundle}
+            fits={fits}
+            fitsError={fitsError}
+            onLoadFit={(id) => void loadBundle(id, "manual")}
+            onDeleteFit={(id) => void onDeleteFit(id)}
           />
         )}
       </div>

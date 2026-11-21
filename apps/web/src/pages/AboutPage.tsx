@@ -3,7 +3,7 @@
 import type { ReactElement } from "react";
 import { Link } from "react-router-dom";
 
-const APP_VERSION = "0.1.0";
+const APP_VERSION = __APP_VERSION__; // from package.json at build time
 const SOURCE_URL = "https://github.com/amitwh/ConcreteInfo_CurveStudio";
 const AGPL_URL = "https://www.gnu.org/licenses/agpl-3.0.html";
 

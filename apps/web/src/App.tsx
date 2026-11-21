@@ -23,7 +23,14 @@ function Header(): ReactElement {
   return (
     <header className="app-header">
       <Link to="/" className="brand">
-        CurveStudio
+        <img
+          className="brand__logo"
+          src="/concreteinfo-logo.png"
+          alt="ConcreteInfo"
+          width={100}
+          height={28}
+        />
+        <span className="brand__product">CurveStudio</span>
       </Link>
       <nav aria-label="Main" className="app-nav">
         <Link to="/">Workspace</Link>

@@ -61,8 +61,47 @@ describe("RankingTable", () => {
     expect(screen.getByText("y = 2.05 * exp(-0.32 * x)")).toBeTruthy();
     expect(screen.getByText("Exponential")).toBeTruthy();
     expect(screen.getAllByText("0.9982").length).toBeGreaterThan(0);
-    expect(screen.getByText("converged")).toBeTruthy();
+    expect(screen.getByText("Converged")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Copy equation" })).toBeTruthy();
+  });
+
+  it("shows human status badges with a semantic tone", () => {
+    renderTable([
+      row("ok", { status: "converged" }),
+      row("bad", { status: "not_converged" }),
+      row("other", { status: "timed_out" }),
+    ]);
+    const converged = screen.getByText("Converged");
+    expect(converged.className).toContain("badge--ok");
+    const notConverged = screen.getByText("Not converged");
+    expect(notConverged.className).toContain("badge--bad");
+    const other = screen.getByText("timed_out");
+    expect(other.className).toContain("badge--muted");
+  });
+
+  it("right-aligns the numeric columns via the num header class", () => {
+    renderTable([row("a")]);
+    for (const name of ["R²", "adj. R²", "RMSE", "AICc", "BIC", "CV-RMSE", "k"]) {
+      expect(screen.getByRole("columnheader", { name }).className).toContain("num");
+    }
+    expect(screen.getByRole("columnheader", { name: "Model" }).className).not.toContain("num");
+  });
+
+  it("keeps the full action names for screen readers with short visible labels", () => {
+    renderTable([row("a")], {
+      onUseManually: vi.fn(),
+      manuallySelectable: new Set(["a"]),
+    });
+    const open = screen.getByRole("button", { name: "Open full results" });
+    expect(open.textContent).toBe("Open");
+    const manual = screen.getByRole("button", { name: "Use this model manually" });
+    expect(manual.textContent).toBe("Use manually");
+  });
+
+  it("renders the equation copy control compact with the full accessible name", () => {
+    renderTable([row("a")]);
+    const copy = screen.getByRole("button", { name: "Copy equation" });
+    expect(copy.textContent).toBe("Copy");
   });
 
   it("renders n/a for undefined metrics, never 0 or NaN", () => {
@@ -124,6 +163,16 @@ describe("RankingTable", () => {
     expect(onSelect).toHaveBeenLastCalledWith("c");
     await user.keyboard("{Enter}");
     expect(onOpen).toHaveBeenCalledWith("c");
+  });
+
+  it("exposes the actions cell class that anchors the sticky column", () => {
+    renderTable([row("a")]);
+    const header = screen.getByRole("columnheader", { name: "Actions" });
+    expect(header.className).toContain("ranking-row__actions");
+    const tableRow = screen.getByRole("row", { name: /Model a/ });
+    const cells = within(tableRow).getAllByRole("cell");
+    const actionsCell = cells[cells.length - 1];
+    expect(actionsCell?.className).toContain("ranking-row__actions");
   });
 
   it("marks the selected row and shows which rows have a stored curve", () => {

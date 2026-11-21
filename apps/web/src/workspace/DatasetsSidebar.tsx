@@ -67,6 +67,7 @@ export function DatasetsSidebar({
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadIssues, setUploadIssues] = useState<IssueOut[] | null>(null);
   const [columnChoice, setColumnChoice] = useState<ColumnChoice | null>(null);
+  const [columnError, setColumnError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<unknown>(null);
 
@@ -74,9 +75,10 @@ export function DatasetsSidebar({
     setUploadError(null);
     setUploadIssues(null);
     setColumnChoice(null);
+    setColumnError(null);
     if (file.size > MAX_UPLOAD_BYTES) {
       setUploadError(
-        `the file is ${fmtInt(file.size)} bytes; the limit is ${fmtInt(MAX_UPLOAD_BYTES)} bytes (${Math.floor(MAX_UPLOAD_BYTES / MB)} MB)`,
+        `the file is ${(file.size / MB).toFixed(1)} MB; the limit is ${(MAX_UPLOAD_BYTES / MB).toFixed(1)} MB`,
       );
       return;
     }
@@ -208,10 +210,20 @@ export function DatasetsSidebar({
           className="column-picker"
           onSubmit={(e) => {
             e.preventDefault();
+            if (columnChoice.x === columnChoice.y) {
+              setColumnError("Choose two different columns");
+              return;
+            }
+            setColumnError(null);
             void upload(columnChoice.file, columnChoice);
           }}
         >
           <h3>Choose columns</h3>
+          {columnError !== null && (
+            <p className="alert alert--error" role="alert">
+              {columnError}
+            </p>
+          )}
           <div className="field">
             <label htmlFor="col-x">X column</label>
             <select
@@ -280,6 +292,7 @@ export function DatasetsSidebar({
             <button
               type="button"
               className="dataset__select"
+              aria-current={dataset.id === selectedId ? "true" : undefined}
               onClick={() => onSelect(dataset.id)}
               title={dataset.name}
             >

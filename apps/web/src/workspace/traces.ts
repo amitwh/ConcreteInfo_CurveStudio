@@ -19,7 +19,8 @@ export interface AxisNames {
   y: string;
 }
 
-export const ACCENT = "#0F6CBD";
+/** Fitted-curve/marker colour: the cams2 brand accent (matches --accent in styles.css). */
+export const ACCENT = "#E5461F";
 
 /** Above this many points the SVG `scatter` trace stops being fluid; below it there is
  *  no reason to spin up a WebGL context at all (headless and software-rendered browsers
@@ -210,12 +211,17 @@ export function buildTraces(
   return { traces, layout };
 }
 
-/** Layout colours that follow the active theme (Plotly cannot read CSS variables). */
+/** Layout colours/typography that follow the active theme (Plotly cannot read CSS
+ *  variables): the UI font stack, transparent backgrounds, and gridline/axis text
+ *  colours matching the dark prop. */
 export function themeLayout(dark: boolean): Partial<PlotlyLayout> {
   return {
     paper_bgcolor: "rgba(0,0,0,0)",
     plot_bgcolor: "rgba(0,0,0,0)",
-    font: { color: dark ? "#C9CDD3" : "#1F2328" },
+    font: {
+      family: "Inter Variable, Inter, system-ui, sans-serif",
+      color: dark ? "#C9CDD3" : "#1F2328",
+    },
     xaxis: { gridcolor: dark ? "#2A2E35" : "#E4E7EB" },
     yaxis: { gridcolor: dark ? "#2A2E35" : "#E4E7EB" },
   };

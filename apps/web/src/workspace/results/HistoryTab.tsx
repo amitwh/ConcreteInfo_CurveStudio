@@ -2,6 +2,7 @@
 
 import { useState, type ReactElement } from "react";
 import type { FitSummaryOut } from "../../api/client";
+import { ErrorBox } from "../../components/States";
 import { fmtDate } from "../../format";
 
 function modelText(spec: Record<string, unknown>): string {
@@ -18,13 +19,20 @@ export function HistoryTab({
   activeFitId,
   onLoad,
   onDelete,
+  loadError = null,
 }: {
   fits: FitSummaryOut[];
   activeFitId: string;
   onLoad: (id: string) => void;
   onDelete: (id: string) => void;
+  /** Why the fit history could not be loaded (rendered instead of an empty list). */
+  loadError?: unknown;
 }): ReactElement {
   const [confirmId, setConfirmId] = useState<string | null>(null);
+
+  if (loadError !== null) {
+    return <ErrorBox error={loadError} />;
+  }
 
   if (fits.length === 0) {
     return <p className="state state--empty">No fits recorded for this dataset yet.</p>;
@@ -40,10 +48,18 @@ export function HistoryTab({
           <button
             type="button"
             className="history__load"
+            aria-current={fit.id === activeFitId ? "true" : undefined}
             onClick={() => onLoad(fit.id)}
             title={`${modelText(fit.spec)} · ${fmtDate(fit.created_at)}`}
           >
-            <span className="truncate">{modelText(fit.spec)}</span>
+            <span className="truncate">
+              {fit.id === activeFitId && (
+                <span className="history__current" aria-hidden="true">
+                  ✓{" "}
+                </span>
+              )}
+              {modelText(fit.spec)}
+            </span>
             <span className="history__meta">
               <span className={`badge badge--${fit.status === "converged" ? "ok" : "bad"}`}>
                 {fit.status}

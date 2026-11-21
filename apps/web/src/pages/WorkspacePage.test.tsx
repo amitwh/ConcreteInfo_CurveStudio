@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
 import { AuthProvider } from "../api/auth";
-import { api } from "../api/client";
+import { ApiError, api } from "../api/client";
 import type { components } from "../api/schema";
 import { ThemeProvider } from "../components/ThemeToggle";
 import { WorkspacePage } from "./WorkspacePage";
@@ -15,6 +15,7 @@ vi.mock("../components/PlotChart", () => ({
 type DatasetOut = components["schemas"]["DatasetOut"];
 type DatasetDetailOut = components["schemas"]["DatasetDetailOut"];
 type FitSummaryOut = components["schemas"]["FitSummaryOut"];
+type FitBundle = components["schemas"]["FitBundle"];
 type AutofitSummaryOut = components["schemas"]["AutofitSummaryOut"];
 type AutofitOut = components["schemas"]["AutofitOut"];
 type RankedFit = components["schemas"]["RankedFit"];
@@ -81,6 +82,22 @@ const STORED: AutofitOut = {
   },
 } as unknown as AutofitOut;
 
+const FIT_SUMMARY: FitSummaryOut = {
+  id: "fit-1",
+  dataset_id: "ds-1",
+  created_at: "2026-11-17T08:00:00Z",
+  status: "converged",
+  spec: { model: { kind: "registered", id: "exp_decay" } },
+};
+
+/** Only the fields the chart, default Parameters tab and History tab touch. */
+const FIT_BUNDLE = {
+  result: { status: "converged", termination_reason: "converged", parameters: [] },
+  curve: null,
+  confidence_band: null,
+  prediction_band: null,
+} as unknown as FitBundle;
+
 const FAILED_JOB: JobOut = {
   id: "job-1",
   kind: "fit",
@@ -95,16 +112,29 @@ const FAILED_JOB: JobOut = {
   finished_at: null,
 } as JobOut;
 
+/** When true the open-row call answers with an existing fit instead of a polled job. */
+let openAsExistingFit = false;
+
 /** Every route WorkspacePage hits on mount, on selection and while opening a row. */
-function route(path: string): Promise<unknown> {
+function route(path: string, options?: RequestInit): Promise<unknown> {
   if (path === "/datasets") return Promise.resolve([DATASET]);
   if (path === "/models") return Promise.resolve([]);
   if (path === "/datasets/ds-1?points=20000") return Promise.resolve(DETAIL);
   if (path === "/datasets/ds-1/autofits") return Promise.resolve([SUMMARY]);
   if (path === "/autofits/af-1") return Promise.resolve(STORED);
-  if (path === "/datasets/ds-1/fits") return Promise.resolve([] as FitSummaryOut[]);
+  if (path === "/datasets/ds-1/fits") return Promise.resolve([FIT_SUMMARY]);
+  if (path === "/fits/fit-1") {
+    // The GET loads an opened row's bundle; the DELETE fails to surface a fit error.
+    return options?.method === "DELETE"
+      ? Promise.reject(new ApiError(404, "NOT_FOUND", "the fit does not exist", null))
+      : Promise.resolve(FIT_BUNDLE);
+  }
   if (path === "/autofits/af-1/rows/exp_decay/open") {
-    return Promise.resolve({ fit_id: null, job_id: "job-1" });
+    return Promise.resolve(
+      openAsExistingFit
+        ? { fit_id: "fit-1", job_id: null }
+        : { fit_id: null, job_id: "job-1" },
+    );
   }
   if (path === "/jobs/job-1") return Promise.resolve(FAILED_JOB);
   return Promise.reject(new Error(`unexpected request: ${path}`));
@@ -113,8 +143,10 @@ function route(path: string): Promise<unknown> {
 let request: MockInstance;
 
 beforeEach(() => {
+  openAsExistingFit = false;
   request = vi.spyOn(api, "request").mockImplementation(
-    (async (path: string) => route(String(path))) as unknown as typeof api.request,
+    (async (path: string, options?: RequestInit) =>
+      route(String(path), options)) as unknown as typeof api.request,
   );
   vi.useFakeTimers();
 });
@@ -150,9 +182,9 @@ describe("WorkspacePage — opened Auto-fit rows", () => {
     expect(open.disabled).toBe(false);
     fireEvent.click(open);
     await flush();
-    expect((screen.getByRole("button", { name: "Opening…" }) as HTMLButtonElement).disabled).toBe(
-      true,
-    );
+    const busy = screen.getByRole("button", { name: "Open full results" }) as HTMLButtonElement;
+    expect(busy.disabled).toBe(true);
+    expect(busy.textContent).toBe("Opening…");
     expect(request).toHaveBeenCalledWith("/autofits/af-1/rows/exp_decay/open", {
       method: "POST",
     });
@@ -163,6 +195,52 @@ describe("WorkspacePage — opened Auto-fit rows", () => {
     });
     const reopened = screen.getByRole("button", { name: "Open full results" }) as HTMLButtonElement;
     expect(reopened.disabled).toBe(false);
-    expect(screen.queryByRole("button", { name: "Opening…" })).toBeNull();
+    expect(reopened.textContent).toBe("Open");
+  });
+});
+
+describe("WorkspacePage — layout and errors", () => {
+  async function selectDataset(): Promise<void> {
+    render(
+      <ThemeProvider>
+        <AuthProvider>
+          <WorkspacePage />
+        </AuthProvider>
+      </ThemeProvider>,
+    );
+    await flush();
+    await flush();
+    fireEvent.click(screen.getByTitle("growth.csv"));
+    await flush();
+    await flush();
+  }
+
+  it("renders the results in the full-width results row, not the middle column", async () => {
+    await selectDataset();
+    const results = document.querySelector(".workspace__results");
+    const main = document.querySelector(".workspace__main");
+    expect(results).not.toBeNull();
+    expect(results?.querySelector('[aria-label="Auto-fit"]')).not.toBeNull();
+    expect(main?.querySelector('[aria-label="Auto-fit"]')).toBeNull();
+  });
+
+  it("shows a fit error (e.g. a failed delete) above the results in opened-row mode", async () => {
+    openAsExistingFit = true;
+    await selectDataset();
+
+    // Open the row: the route answers with an existing fit, so no job is polled.
+    fireEvent.click(screen.getByRole("button", { name: "Open full results" }));
+    await flush();
+    await flush();
+
+    // Delete the opened fit from History; the route rejects.
+    fireEvent.click(screen.getByRole("tab", { name: "History" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete fit fit-1" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    await flush();
+
+    const results = document.querySelector(".workspace__results");
+    expect(results?.textContent).toContain("the fit does not exist");
+    expect(screen.getByRole("tab", { name: "History" })).toBeTruthy();
   });
 });

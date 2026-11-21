@@ -11,6 +11,22 @@ import { CopyButton } from "../../components/CopyButton";
 import { fmtInt, fmtNumber } from "../../format";
 import type { RankedFit } from "../../api/client";
 
+/** Human label + semantic badge for a candidate's fit status. */
+const STATUS_BADGE: Record<string, { label: string; tone: "ok" | "bad" }> = {
+  converged: { label: "Converged", tone: "ok" },
+  not_converged: { label: "Not converged", tone: "bad" },
+};
+
+function StatusBadge({ status }: { status: string }): ReactElement {
+  const known = STATUS_BADGE[status];
+  if (known !== undefined) {
+    return (
+      <span className={`badge badge--${known.tone}`}>{known.label}</span>
+    );
+  }
+  return <span className="badge badge--muted">{status}</span>;
+}
+
 export interface RankingTableProps {
   rows: RankedFit[];
   selectedId: string | null;
@@ -74,15 +90,33 @@ export function RankingTable({
             <th scope="col">Rank</th>
             <th scope="col">Model</th>
             <th scope="col">Equation (fitted)</th>
-            <th scope="col">R²</th>
-            <th scope="col">adj. R²</th>
-            <th scope="col">RMSE</th>
-            <th scope="col">AICc</th>
-            <th scope="col">BIC</th>
-            <th scope="col">CV-RMSE</th>
-            <th scope="col">k</th>
+            <th scope="col" className="num">
+              R²
+            </th>
+            <th scope="col" className="num">
+              adj. R²
+            </th>
+            <th scope="col" className="num">
+              RMSE
+            </th>
+            <th scope="col" className="num">
+              AICc
+            </th>
+            <th scope="col" className="num">
+              BIC
+            </th>
+            <th scope="col" className="num">
+              CV-RMSE
+            </th>
+            <th scope="col" className="num">
+              k
+            </th>
             <th scope="col">Status</th>
-            {actions && <th scope="col">Actions</th>}
+            {actions && (
+              <th scope="col" className="ranking-row__actions">
+                Actions
+              </th>
+            )}
           </tr>
         </thead>
         <tbody onKeyDown={onKeyDown}>
@@ -117,12 +151,12 @@ export function RankingTable({
                   {row.category !== "" && <span className="chip">{row.category}</span>}
                   {!hasCurve && <span className="hint ranking-row__nocurve">no stored curve</span>}
                 </td>
-                <td>
+                <td className="ranking-row__equation-cell">
                   {equation !== null && equation !== "" ? (
-                    <>
+                    <span className="ranking-row__equation-line">
                       <code className="equation ranking-row__equation">{equation}</code>
-                      <CopyButton text={equation} label="equation" />
-                    </>
+                      <CopyButton text={equation} label="equation" compact />
+                    </span>
                   ) : (
                     <span className="muted">n/a</span>
                   )}
@@ -134,32 +168,36 @@ export function RankingTable({
                 <td className="num">{fmtNumber(row.metrics.bic)}</td>
                 <td className="num">{fmtNumber(row.metrics.cv_rmse)}</td>
                 <td className="num">{fmtInt(row.metrics.k)}</td>
-                <td>{row.status}</td>
+                <td>
+                  <StatusBadge status={row.status} />
+                </td>
                 {actions && (
-                  <td>
+                  <td className="ranking-row__actions">
                     <div className="btn-row">
                       <button
                         type="button"
                         className="btn btn--small"
+                        aria-label="Open full results"
                         disabled={openRowBusy !== null}
                         onClick={(event) => {
                           event.stopPropagation();
                           onOpen(row.model_id);
                         }}
                       >
-                        {openRowBusy === row.model_id ? "Opening…" : "Open full results"}
+                        {openRowBusy === row.model_id ? "Opening…" : "Open"}
                       </button>
                       {onUseManually !== undefined &&
                         (manuallySelectable?.has(row.model_id) ?? false) && (
                           <button
                             type="button"
                             className="btn btn--small"
+                            aria-label="Use this model manually"
                             onClick={(event) => {
                               event.stopPropagation();
                               onUseManually(row);
                             }}
                           >
-                            Use this model manually
+                            Use manually
                           </button>
                         )}
                     </div>

@@ -18,6 +18,8 @@ export interface ResultsTabsProps {
   fitId: string;
   bundle: FitBundle;
   fits: FitSummaryOut[];
+  /** Why the fit history could not be loaded (HistoryTab shows this instead). */
+  fitsError?: unknown;
   onLoadFit: (id: string) => void;
   onDeleteFit: (id: string) => void;
 }
@@ -35,6 +37,7 @@ export function ResultsTabs({
   fitId,
   bundle,
   fits,
+  fitsError = null,
   onLoadFit,
   onDeleteFit,
 }: ResultsTabsProps): ReactElement {
@@ -77,7 +80,13 @@ export function ResultsTabs({
         {tab === "Equation" && <EquationTab bundle={bundle} />}
         {tab === "Predict" && <PredictTab fitId={fitId} bundle={bundle} />}
         {tab === "History" && (
-          <HistoryTab fits={fits} activeFitId={fitId} onLoad={onLoadFit} onDelete={onDeleteFit} />
+          <HistoryTab
+            fits={fits}
+            activeFitId={fitId}
+            onLoad={onLoadFit}
+            onDelete={onDeleteFit}
+            loadError={fitsError}
+          />
         )}
       </div>
     </section>

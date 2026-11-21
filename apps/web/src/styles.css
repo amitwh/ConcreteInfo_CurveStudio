@@ -1,40 +1,72 @@
 /*
  * CurveStudio web — one stylesheet, CSS variables, light + dark (prefers-color-scheme
  * with a persisted override on <html data-theme>), responsive down to 400 px with the
- * side panels stacking. Brand: a clean scientific tool — neutral greys, one accent
- * (#0F6CBD), no gradients, no emoji.
+ * side panels stacking. Theme: cams2 / ConcreteInfo — Inter for UI text, JetBrains Mono
+ * for equations and numbers, warm greys, one brand accent (#e5461f), no gradients,
+ * no emoji.
  */
 
 :root {
-  --accent: #0f6cbd;
-  --accent-weak: rgba(15, 108, 189, 0.12);
-  --bg: #f6f7f9;
+  /* Native selects, checkboxes and scrollbars follow the light theme. */
+  color-scheme: light;
+  /* Self-hosted variable fonts (imported in main.tsx); no CDN under the API's CSP. */
+  --font-ui: "Inter Variable", Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono:
+    "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas,
+    monospace;
+
+  --bg: #fafbfc;
   --surface: #ffffff;
-  --text: #1f2328;
-  --muted: #59626d;
-  --border: #d8dce2;
-  --danger: #b3261e;
-  --danger-weak: rgba(179, 38, 30, 0.08);
-  --warn-weak: rgba(154, 103, 0, 0.1);
-  --warn-text: #6c4a00;
-  --ok: #1c7c3c;
-  --focus: #0f6cbd;
-  --radius: 6px;
-  --shadow: 0 1px 2px rgba(31, 35, 40, 0.08);
-  --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  --text: #464646;
+  --heading: #0d0b09;
+  --muted: #6e6c6c;
+  --border: #e3e3e3;
+  --border-strong: #d1d1d1;
+
+  --accent: #e5461f;
+  --accent-dark: #c93a18;
+  --accent-weak: rgba(229, 70, 31, 0.1);
+  --accent-tint: #fdf3f1;
+
+  --success: #1a7a56;
+  --warning: hsl(45, 93%, 47%);
+  --warning-weak: rgba(154, 103, 0, 0.1);
+  --warning-text: #6c4a00;
+  --danger: #b42318;
+  --danger-weak: rgba(180, 35, 24, 0.08);
+  --info: hsl(199, 89%, 48%);
+  --focus: #e5461f;
+
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius: var(--radius-md);
+  --shadow: 0 1px 2px rgba(13, 11, 9, 0.06);
 }
 
 html[data-theme="dark"] {
-  --bg: #14171b;
-  --surface: #1d2126;
-  --text: #c9cdd3;
-  --muted: #8b949e;
-  --border: #333941;
+  color-scheme: dark;
+  --bg: #0d0b09;
+  --surface: #1c1917;
+  --text: #f1f1f1;
+  --heading: #ffffff;
+  --muted: #9a9696;
+  --border: #33302e;
+  --border-strong: #4a4643;
+
+  --accent: #e5461f;
+  --accent-dark: #ff6b47;
+  --accent-weak: rgba(229, 70, 31, 0.16);
+  --accent-tint: #2a1a15;
+
+  --success: #4ecb8d;
+  --warning: hsl(45, 93%, 58%);
+  --warning-weak: rgba(232, 197, 106, 0.12);
+  --warning-text: #e8c56a;
   --danger: #f2b8b5;
-  --danger-weak: rgba(242, 184, 181, 0.1);
-  --warn-weak: rgba(220, 180, 90, 0.12);
-  --warn-text: #d8b878;
-  --ok: #6cc184;
+  --danger-weak: rgba(242, 184, 181, 0.12);
+  --info: hsl(199, 89%, 60%);
   --shadow: none;
 }
 
@@ -42,8 +74,14 @@ html[data-theme="dark"] {
   box-sizing: border-box;
 }
 
+html {
+  /* cams2 base size: rem-based layout (table min-width, column widths) follows it. */
+  font-size: 15px;
+}
+
 html,
 body {
+  width: 100%;
   margin: 0;
   padding: 0;
 }
@@ -51,18 +89,22 @@ body {
 body {
   background: var(--bg);
   color: var(--text);
-  font-family:
-    system-ui,
-    -apple-system,
-    "Segoe UI",
-    Roboto,
-    "Helvetica Neue",
-    sans-serif;
+  font-family: var(--font-ui);
   font-size: 15px;
   line-height: 1.5;
 }
 
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  color: var(--heading);
+}
+
 #root {
+  width: 100%;
   min-height: 100vh;
 }
 
@@ -71,8 +113,12 @@ a {
 }
 
 code {
-  font-family: var(--mono);
+  font-family: var(--font-mono);
   font-size: 0.92em;
+}
+
+progress {
+  accent-color: var(--accent);
 }
 
 /* Focus visibility for keyboard users — never removed, only styled. */
@@ -105,7 +151,7 @@ code {
   display: flex;
   align-items: center;
   gap: 1rem;
-  padding: 0.5rem 1rem;
+  padding: 0.5rem clamp(1rem, 2vw, 2rem);
   background: var(--surface);
   border-bottom: 1px solid var(--border);
   position: sticky;
@@ -114,11 +160,37 @@ code {
 }
 
 .brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
   font-weight: 650;
   font-size: 1.05rem;
-  color: var(--text);
+  color: var(--heading);
   text-decoration: none;
   letter-spacing: 0.01em;
+}
+
+.brand__logo {
+  height: 1.75rem;
+  width: auto;
+  display: block;
+}
+
+/* The logo asset is built for light surfaces (dark wordmark on transparency): on the dark
+   header it sits on a neutral white chip rather than being recoloured. */
+html[data-theme="dark"] .brand__logo {
+  height: 1.35rem;
+  padding: 0.15rem 0.4rem;
+  background: #fff;
+  border-radius: var(--radius-sm);
+  box-sizing: content-box;
+}
+
+.brand__product {
+  padding-left: 0.6rem;
+  border-left: 1px solid var(--border);
+  font-weight: 650;
+  font-size: 1.05rem;
 }
 
 .app-nav {
@@ -152,6 +224,9 @@ code {
   border-radius: var(--radius);
   box-shadow: var(--shadow);
   padding: 0.9rem 1rem;
+  /* Grid/flex children default to min-width:auto; this would let a wide table
+     push the whole workspace past the viewport. */
+  min-width: 0;
 }
 
 .panel-title {
@@ -216,7 +291,7 @@ button:disabled {
 }
 
 textarea {
-  font-family: var(--mono);
+  font-family: var(--font-mono);
   resize: vertical;
 }
 
@@ -265,6 +340,10 @@ textarea {
   color: var(--accent);
 }
 
+.btn:disabled {
+  color: var(--muted);
+}
+
 .btn--primary {
   background: var(--accent);
   border-color: var(--accent);
@@ -272,8 +351,15 @@ textarea {
 }
 
 .btn--primary:hover:not(:disabled) {
+  background: var(--accent-dark);
+  border-color: var(--accent-dark);
   color: #fff;
-  filter: brightness(1.08);
+}
+
+.btn--primary:disabled {
+  background: var(--border-strong);
+  border-color: var(--border-strong);
+  color: var(--muted);
 }
 
 .btn--danger {
@@ -340,9 +426,9 @@ textarea {
 }
 
 .alert--warning {
-  background: var(--warn-weak);
-  border: 1px solid var(--warn-text);
-  color: var(--warn-text);
+  background: var(--warning-weak);
+  border: 1px solid var(--warning);
+  color: var(--warning-text);
 }
 
 /* ---- Auth / about pages ---- */
@@ -393,10 +479,17 @@ textarea {
 .workspace {
   flex: 1;
   display: grid;
-  grid-template-columns: 16rem minmax(0, 1fr) 21rem;
+  grid-template-columns: minmax(12rem, 14rem) minmax(0, 1fr) minmax(16rem, 18rem);
   gap: 0.8rem;
-  padding: 0.8rem;
+  padding: clamp(0.75rem, 1.2vw, 1.25rem);
   align-items: start;
+  min-width: 0;
+}
+
+@media (min-width: 1400px) {
+  .workspace {
+    grid-template-columns: minmax(13rem, 15rem) minmax(0, 1fr) minmax(17rem, 20rem);
+  }
 }
 
 .workspace__main {
@@ -406,8 +499,22 @@ textarea {
   min-width: 0;
 }
 
+.workspace__main > * {
+  min-width: 0;
+}
+
 .workspace__side {
   min-width: 0;
+}
+
+/* The primary results (Auto-fit ranking / fit results) span the whole workspace:
+   the ranking table is wide, so the middle column would always scroll it. */
+.workspace__results {
+  grid-column: 1 / -1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
 }
 
 @media (max-width: 1100px) {
@@ -537,8 +644,8 @@ textarea {
 }
 
 .issue--warning {
-  background: var(--warn-weak);
-  color: var(--warn-text);
+  background: var(--warning-weak);
+  color: var(--warning-text);
 }
 
 .column-picker {
@@ -616,7 +723,7 @@ textarea {
 }
 
 .job-status__dot--succeeded {
-  background: var(--ok);
+  background: var(--success);
 }
 
 .job-status__dot--failed,
@@ -640,7 +747,7 @@ textarea {
 }
 
 .equation {
-  font-family: var(--mono);
+  font-family: var(--font-mono);
   font-size: 0.86rem;
   margin: 0 0 0.35rem;
   overflow-wrap: anywhere;
@@ -664,6 +771,7 @@ textarea {
 
 .table-wrap {
   overflow-x: auto;
+  scrollbar-gutter: stable;
 }
 
 .table {
@@ -700,9 +808,15 @@ textarea {
 
 .num {
   font-variant-numeric: tabular-nums;
-  font-family: var(--mono);
+  font-family: var(--font-mono);
   font-size: 0.85rem;
   white-space: nowrap;
+}
+
+/* Numeric columns read right-aligned (header and cells). */
+.table th.num,
+.table td.num {
+  text-align: right;
 }
 
 /* ---- Results ---- */
@@ -807,6 +921,12 @@ textarea {
   margin-right: 0.3rem;
 }
 
+/* Non-colour cue for the active fit (aria-current carries the semantics). */
+.history__current {
+  color: var(--accent);
+  font-weight: 700;
+}
+
 .badge {
   display: inline-block;
   border-radius: 999px;
@@ -816,11 +936,15 @@ textarea {
 }
 
 .badge--ok {
-  color: var(--ok);
+  color: var(--success);
 }
 
 .badge--bad {
   color: var(--danger);
+}
+
+.badge--muted {
+  color: var(--muted);
 }
 
 .truncate {
@@ -874,6 +998,16 @@ textarea {
   font-size: 0.8rem;
 }
 
+/* Controls built with `all: unset` drop the global focus ring; re-add it for keyboard
+   users. (Higher specificity than the unset rules, so it applies on :focus-visible.) */
+.dataset__select:focus-visible,
+.history__load:focus-visible,
+.tab:focus-visible,
+.mode-switch__mode:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
 /* Progress: a determinate bar, the counts line and the live best-so-far table. */
 .autofit-progress progress {
   width: 100%;
@@ -915,6 +1049,37 @@ textarea {
   min-width: 14rem;
 }
 
+/* Pagination for the stored ranking table. */
+.pagination {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.4rem;
+  font-size: 0.85rem;
+}
+
+.pagination__summary {
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.pagination__size {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-left: auto;
+}
+
+.pagination__size label {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.pagination__size select {
+  width: auto;
+}
+
 /* Ranking rows: pointer + roving focus; the selected row is tinted. */
 .ranking-row {
   cursor: pointer;
@@ -942,9 +1107,86 @@ textarea {
   display: block;
 }
 
+/* The ranking table is wider than its analysis column: it scrolls inside the wrap,
+   the equation gets a real column instead of being crushed to one token per line,
+   and the Actions column stays pinned to the right edge. */
+.ranking-table {
+  width: 100%;
+  min-width: 64rem;
+}
+
+.ranking-table th,
+.ranking-table .num {
+  white-space: nowrap;
+}
+
+.ranking-table th:nth-child(1),
+.ranking-table td:nth-child(1) {
+  min-width: 3.5rem;
+}
+
+.ranking-table th:nth-child(2),
+.ranking-table td:nth-child(2) {
+  min-width: 13rem;
+}
+
+.ranking-table td.ranking-row__equation-cell {
+  min-width: 20rem;
+  max-width: 34rem;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* Equation and its copy control share one line; the control sits on the right. */
+.ranking-row__equation-line {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.4rem;
+}
+
+/* The compact copy control is a fixed-width sibling: without `flex: none` the equation
+   takes the whole line and the button shrinks to "Cop / y". */
+.ranking-row__equation-line .btn {
+  flex: none;
+  white-space: nowrap;
+}
+
 .ranking-row__equation {
   display: block;
-  margin-bottom: 0.2rem;
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.ranking-table th.ranking-row__actions,
+.ranking-table td.ranking-row__actions {
+  position: sticky;
+  right: 0;
+  min-width: 10rem;
+  background: var(--surface);
+  box-shadow: inset 1px 0 0 var(--border);
+  white-space: nowrap;
+}
+
+.ranking-table th.ranking-row__actions {
+  z-index: 1;
+}
+
+.ranking-table .ranking-row--selected .ranking-row__actions {
+  background: var(--accent-tint);
+}
+
+.ranking-row__actions .btn-row {
+  flex-direction: column;
+  align-items: stretch;
+  flex-wrap: nowrap;
+  gap: 0.3rem;
+}
+
+.ranking-row__actions .btn {
+  white-space: nowrap;
 }
 
 /* The category chip next to a candidate's name. */

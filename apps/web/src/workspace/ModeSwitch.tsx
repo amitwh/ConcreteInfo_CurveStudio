@@ -1,7 +1,7 @@
 /**
  * The one prominent switch at the top of the analysis area: Auto-fit (default) | Manual
- * fit. A radios-in-a-group pattern so screen readers announce the choice; a muted status
- * line says what Auto-fit is doing even while Manual fit is showing.
+ * fit. Two toggle buttons in a group, so screen readers announce the pressed state; a
+ * muted status line says what Auto-fit is doing even while Manual fit is showing.
  */
 
 import type { ReactElement } from "react";
@@ -22,13 +22,12 @@ const MODES: Array<{ value: WorkspaceMode; label: string; hint: string }> = [
 export function ModeSwitch({ mode, onModeChange, autofitStatus }: ModeSwitchProps): ReactElement {
   return (
     <div className="mode-switch">
-      <div className="mode-switch__group" role="radiogroup" aria-label="Analysis mode">
+      <div className="mode-switch__group" role="group" aria-label="Analysis mode">
         {MODES.map((entry) => (
           <button
             key={entry.value}
             type="button"
-            role="radio"
-            aria-checked={mode === entry.value}
+            aria-pressed={mode === entry.value}
             className={`mode-switch__mode${mode === entry.value ? " mode-switch__mode--active" : ""}`}
             onClick={() => onModeChange(entry.value)}
             title={entry.hint}

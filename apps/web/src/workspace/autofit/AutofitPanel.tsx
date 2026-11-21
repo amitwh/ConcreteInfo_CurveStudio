@@ -6,7 +6,7 @@
  * time-budget-stopped run shows what was ranked with a clear partial notice.
  */
 
-import { useState, type ReactElement } from "react";
+import { useEffect, useState, type ReactElement } from "react";
 import {
   api,
   saveBlob,
@@ -46,8 +46,9 @@ export const RANK_BY_OPTIONS: Array<{ value: RankBy; label: string }> = [
   { value: "cv_rmse", label: "CV-RMSE" },
 ];
 
-const rankByLabel = (value: RankBy): string =>
-  RANK_BY_OPTIONS.find((option) => option.value === value)?.label ?? value;
+/** Page sizes offered for the stored ranking table (the live table never paginates). */
+const PAGE_SIZES = [10, 25, 50, 100] as const;
+const DEFAULT_PAGE_SIZE = 10;
 
 /** Clear text for the codes a start can be refused with (the server message otherwise). */
 const CODE_MESSAGES: Record<string, string> = {
@@ -93,6 +94,15 @@ export function AutofitPanel({
   openRowError,
 }: AutofitPanelProps): ReactElement {
   const [exportError, setExportError] = useState<string | null>(null);
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState<number>(DEFAULT_PAGE_SIZE);
+
+  const storedId = state.stored?.id ?? null;
+  const storedPartial = state.stored?.partial ?? false;
+  // A different run, ordering, or partial/cancelled view starts again from page 1.
+  useEffect(() => {
+    setPage(0);
+  }, [storedId, state.rankBy, state.cancelled, storedPartial]);
 
   if (datasetId === null) {
     return (
@@ -109,6 +119,12 @@ export function AutofitPanel({
     state.phase === "running" || state.phase === "starting" || state.phase === "checking";
   const stored = state.stored;
   const rows = stored !== null ? stored.result.ranked : (state.partialRows ?? []);
+  const totalRows = rows.length;
+  const pageCount = Math.max(1, Math.ceil(totalRows / pageSize));
+  const currentPage = Math.min(page, pageCount - 1);
+  const pageRows = rows.slice(currentPage * pageSize, currentPage * pageSize + pageSize);
+  const rangeStart = totalRows === 0 ? 0 : currentPage * pageSize + 1;
+  const rangeEnd = Math.min(totalRows, (currentPage + 1) * pageSize);
   const curvesAvailable = new Set(Object.keys(stored?.result.curves ?? {}));
   // Rows that can prefill the manual panel: catalogue models and polynomials
   // (polyN / polyN_origin); custom-equation rows cannot be named by id there.
@@ -206,10 +222,14 @@ export function AutofitPanel({
                 </option>
               ))}
             </select>
-            <span className="muted">Ordered by: {rankByLabel(state.rankBy)}</span>
           </div>
+          {state.error !== null && (
+            <p className="alert alert--error" role="alert">
+              {state.error}
+            </p>
+          )}
           <RankingTable
-            rows={rows}
+            rows={pageRows}
             selectedId={selectedRowId}
             curvesAvailable={curvesAvailable}
             onSelect={onSelectRow}
@@ -219,6 +239,19 @@ export function AutofitPanel({
             onUseManually={(row) => onUseManually({ modelId: row.model_id, name: row.name })}
             manuallySelectable={manuallySelectable}
             openRowBusy={openRowBusy}
+          />
+          <Pagination
+            page={currentPage}
+            pageCount={pageCount}
+            pageSize={pageSize}
+            rangeStart={rangeStart}
+            rangeEnd={rangeEnd}
+            total={totalRows}
+            onPageChange={setPage}
+            onPageSizeChange={(size) => {
+              setPageSize(size);
+              setPage(0);
+            }}
           />
           {stored !== null && (
             <OutcomeSections outcomes={stored.result.outcomes} result={stored.result} />
@@ -237,6 +270,65 @@ export function AutofitPanel({
         </p>
       )}
     </section>
+  );
+}
+
+/** Page controls for the stored ranking table: range summary, Previous/Next, page size. */
+function Pagination({
+  page,
+  pageCount,
+  pageSize,
+  rangeStart,
+  rangeEnd,
+  total,
+  onPageChange,
+  onPageSizeChange,
+}: {
+  page: number;
+  pageCount: number;
+  pageSize: number;
+  rangeStart: number;
+  rangeEnd: number;
+  total: number;
+  onPageChange: (page: number) => void;
+  onPageSizeChange: (size: number) => void;
+}): ReactElement {
+  return (
+    <div className="pagination" role="group" aria-label="Ranking pages">
+      <span className="pagination__summary">
+        {fmtInt(rangeStart)}–{fmtInt(rangeEnd)} of {fmtInt(total)}
+      </span>
+      <button
+        type="button"
+        className="btn btn--small"
+        onClick={() => onPageChange(page - 1)}
+        disabled={page <= 0}
+      >
+        Previous
+      </button>
+      <button
+        type="button"
+        className="btn btn--small"
+        onClick={() => onPageChange(page + 1)}
+        disabled={page >= pageCount - 1}
+      >
+        Next
+      </button>
+      <span className="pagination__size">
+        <label htmlFor="ranking-page-size">Rows per page</label>
+        <select
+          id="ranking-page-size"
+          value={pageSize}
+          onChange={(e) => onPageSizeChange(Number(e.target.value))}
+        >
+          {PAGE_SIZES.map((size) => (
+            <option key={size} value={size}>
+              {size}
+            </option>
+          ))}
+        </select>
+      </span>
+    </div>
   );
 }
 

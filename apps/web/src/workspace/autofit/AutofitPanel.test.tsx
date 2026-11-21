@@ -190,10 +190,11 @@ describe("AutofitPanel — errors and edge states", () => {
 });
 
 describe("AutofitPanel — results", () => {
-  it("renders the ranking table with the active ordering labelled", () => {
+  it("renders the ranking table with the active ordering selected", () => {
     renderPanel({ phase: "ready", stored: stored() });
     expect(screen.getByText("Model exp_decay")).toBeTruthy();
-    expect(screen.getByText(/ordered by/i).textContent).toContain("Best overall");
+    const order = screen.getByLabelText(/order by/i) as HTMLSelectElement;
+    expect(order.value).toBe("best_overall");
   });
 
   it("re-ranks through the API when the ordering changes (no refit)", async () => {
@@ -301,6 +302,49 @@ describe("AutofitPanel — results", () => {
     expect(screen.getByText("Model exp_decay")).toBeTruthy();
     // …but nothing can be opened from a run that stored nothing.
     expect(screen.queryAllByRole("button", { name: /open full results/i })).toHaveLength(0);
+  });
+});
+
+describe("AutofitPanel — pagination", () => {
+  function manyRows(count: number): RankedFit[] {
+    return Array.from({ length: count }, (_, index) =>
+      row(`model_${index + 1}`, { rank: index + 1 }),
+    );
+  }
+
+  function manyStored(count: number): AutofitOut {
+    const result = stored();
+    (result.result as { ranked: RankedFit[] }).ranked = manyRows(count);
+    result.n_candidates = count;
+    return result;
+  }
+
+  it("shows the first page and the range for a 116-row run", () => {
+    renderPanel({ phase: "ready", stored: manyStored(116) });
+    expect(screen.getByText("1–10 of 116")).toBeTruthy();
+    // header row + ten body rows
+    expect(screen.getAllByRole("row")).toHaveLength(11);
+    expect(screen.queryByText("Model model_11")).toBeNull();
+    expect((screen.getByRole("button", { name: "Previous" }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+  });
+
+  it("moves to the next page", async () => {
+    renderPanel({ phase: "ready", stored: manyStored(116) });
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    expect(screen.getByText("11–20 of 116")).toBeTruthy();
+    expect(screen.getByText("Model model_11")).toBeTruthy();
+    expect(screen.queryByText("Model model_1")).toBeNull();
+  });
+
+  it("changes the page size from the footer select", async () => {
+    renderPanel({ phase: "ready", stored: manyStored(116) });
+    const user = userEvent.setup();
+    await user.selectOptions(screen.getByLabelText(/rows per page/i), "25");
+    expect(screen.getByText("1–25 of 116")).toBeTruthy();
+    expect(screen.getAllByRole("row")).toHaveLength(26);
   });
 });
 

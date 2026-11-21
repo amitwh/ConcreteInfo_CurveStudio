@@ -406,7 +406,8 @@ export function useAutofit(): {
       try {
         const stored = await api.request<AutofitOut>(`/autofits/${storedId}?rank_by=${rankBy}`);
         if (statesRef.current[datasetId]?.stored?.id !== stored.id) return; // the run changed meanwhile
-        patch(datasetId, { stored, rankBy: stored.rank_by });
+        // A successful re-rank clears a previous re-rank failure.
+        patch(datasetId, { stored, rankBy: stored.rank_by, error: null, errorCode: null });
       } catch (error) {
         if (error instanceof ApiError) {
           patch(datasetId, { error: error.message, errorCode: error.code });

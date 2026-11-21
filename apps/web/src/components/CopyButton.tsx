@@ -2,7 +2,17 @@
 
 import { useRef, useState, type ReactElement } from "react";
 
-export function CopyButton({ text, label }: { text: string; label: string }): ReactElement {
+export function CopyButton({
+  text,
+  label,
+  compact = false,
+}: {
+  text: string;
+  label: string;
+  /** Compact renders just "Copy" (e.g. inline with an equation); the full label stays
+   *  the accessible name. */
+  compact?: boolean;
+}): ReactElement {
   const [copied, setCopied] = useState(false);
   const timerRef = useRef<number | null>(null);
 
@@ -20,8 +30,13 @@ export function CopyButton({ text, label }: { text: string; label: string }): Re
   };
 
   return (
-    <button type="button" className="btn btn--small" onClick={() => void onClick()}>
-      {copied ? "Copied" : `Copy ${label}`}
+    <button
+      type="button"
+      className="btn btn--small"
+      onClick={() => void onClick()}
+      {...(compact ? { "aria-label": `Copy ${label}` } : {})}
+    >
+      {copied ? "Copied" : compact ? "Copy" : `Copy ${label}`}
     </button>
   );
 }
