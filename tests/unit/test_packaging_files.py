@@ -8,9 +8,15 @@ whose actions are pinned by full commit SHA, and the pieces the frozen app depen
 """
 
 import ast
+import importlib.util
+import os
 import re
+import stat
+from dataclasses import dataclass
 from pathlib import Path
+from types import ModuleType
 
+import pytest
 import yaml
 
 REPO = Path(__file__).resolve().parents[2]
@@ -98,3 +104,149 @@ def test_build_outputs_are_git_ignored() -> None:
     text = (REPO / ".gitignore").read_text(encoding="utf-8")
     for pattern in ("dist/", "build/"):
         assert pattern in text, f".gitignore must ignore {pattern}"
+
+
+def _load_build() -> ModuleType:
+    """Import apps/desktop/packaging/build.py, which is not an installed package."""
+    spec = importlib.util.spec_from_file_location("curvestudio_packaging_build", BUILD)
+    assert spec is not None and spec.loader is not None, f"cannot load {BUILD}"
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+build = _load_build()
+
+APP = "curvestudio-desktop"
+
+
+@dataclass
+class FakeRepo:
+    """A throwaway repository layout wired into the build driver's module globals."""
+
+    work: Path
+    dist: Path
+    release: Path
+    icons: Path
+
+
+@pytest.fixture
+def fake_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> FakeRepo:
+    work = tmp_path / "build"
+    dist = tmp_path / "dist"
+    release = dist / "release"
+    icons = work / "icons"
+    icons.mkdir(parents=True)
+
+    # a minimal stand-in for the PyInstaller one-folder bundle
+    bundle = dist / APP
+    (bundle / "_internal").mkdir(parents=True)
+    (bundle / "_internal" / "data.txt").write_text("payload", encoding="utf-8")
+    executable = bundle / APP
+    executable.write_text("#!/bin/sh\n", encoding="utf-8")
+    executable.chmod(0o755)
+
+    (icons / "icon-16.png").write_bytes(b"png16")
+    (icons / "icon-32.png").write_bytes(b"png32")
+    (icons / "icon-256.png").write_bytes(b"png256")
+    (icons / f"{APP}.png").write_bytes(b"png256")
+
+    monkeypatch.setattr(build, "WORK", work)
+    monkeypatch.setattr(build, "DIST", dist)
+    monkeypatch.setattr(build, "RELEASE", release)
+    monkeypatch.setattr(build, "app_version", lambda: "1.2.3")
+    monkeypatch.setattr(build, "cpu_arch", lambda: "x86_64")
+    return FakeRepo(work=work, dist=dist, release=release, icons=icons)
+
+
+def test_deb_control_text() -> None:
+    text = build.deb_control("1.2.3", "amd64", 1234)
+    lines = text.splitlines()
+    assert "Package: curvestudio-desktop" in lines
+    assert "Version: 1.2.3" in lines
+    assert "Architecture: amd64" in lines
+    assert "Maintainer: Amit Haridas <amit.wh@gmail.com>" in lines
+    assert "Installed-Size: 1234" in lines
+    assert "Section: science" in lines
+    assert "Priority: optional" in lines
+    assert "Homepage: https://github.com/amitwh/ConcreteInfo_CurveStudio" in lines
+    depends = next(line for line in lines if line.startswith("Depends:"))
+    for library in ("libc6", "libxcb-cursor0", "libxcb-xkb1", "libfontconfig1"):
+        assert library in depends
+
+    description = lines[lines.index("Description: ConcreteInfo CurveStudio desktop") :]
+    assert len(description) >= 3, "the description must have a short line plus detail"
+    assert all(line.startswith(" ") for line in description[1:]), (
+        "every description continuation line starts with a space"
+    )
+    assert " ." in description, "the blank detail line is the Debian ' .' convention"
+
+
+def test_deb_tree_layout(fake_repo: FakeRepo) -> None:
+    staging = build.make_deb_tree()
+    assert staging == fake_repo.work / "deb" / "curvestudio-desktop_1.2.3_amd64"
+
+    library = staging / "usr" / "lib" / APP
+    assert (library / "_internal" / "data.txt").read_text(encoding="utf-8") == "payload"
+    assert stat.S_IMODE(library.stat().st_mode) == 0o755
+    assert stat.S_IMODE((library / APP).stat().st_mode) & 0o111, "the main binary stays executable"
+
+    launcher = staging / "usr" / "bin" / APP
+    assert launcher.is_symlink()
+    assert os.readlink(launcher) == f"/usr/lib/{APP}/{APP}"
+
+    assert (staging / "usr" / "share" / "applications" / f"{APP}.desktop").is_file()
+    assert (
+        staging / "usr" / "share" / "icons" / "hicolor" / "256x256" / "apps" / f"{APP}.png"
+    ).is_file()
+    assert (staging / "usr" / "share" / "doc" / APP / "copyright").is_file()
+
+    control = staging / "DEBIAN" / "control"
+    assert stat.S_IMODE(control.stat().st_mode) == 0o644
+    control_text = control.read_text(encoding="utf-8")
+    assert "Package: curvestudio-desktop" in control_text
+    assert "Version: 1.2.3" in control_text
+    assert "Architecture: amd64" in control_text
+
+
+def test_appdir_layout(fake_repo: FakeRepo) -> None:
+    appdir = build.make_appdir()
+    assert appdir == fake_repo.work / "appimage" / "CurveStudio.AppDir"
+
+    app_run = appdir / "AppRun"
+    assert app_run.read_text(encoding="utf-8") == (
+        '#!/bin/sh\nexec "$APPDIR/usr/lib/curvestudio-desktop/curvestudio-desktop" "$@"\n'
+    )
+    assert stat.S_IMODE(app_run.stat().st_mode) == 0o755
+
+    dir_icon = appdir / ".DirIcon"
+    assert dir_icon.is_symlink()
+    assert os.readlink(dir_icon) == f"{APP}.png"
+    assert (appdir / f"{APP}.png").is_file()
+    assert (appdir / f"{APP}.desktop").is_file()
+    assert (appdir / "usr" / "lib" / APP / "_internal" / "data.txt").is_file()
+    assert (appdir / "usr" / "share" / "applications" / f"{APP}.desktop").is_file()
+    assert (
+        appdir / "usr" / "share" / "icons" / "hicolor" / "256x256" / "apps" / f"{APP}.png"
+    ).is_file()
+
+
+@pytest.mark.parametrize(("arch", "expected"), [("x86_64", "amd64"), ("arm64", "arm64")])
+def test_deb_arch_mapping(arch: str, expected: str) -> None:
+    assert build.deb_arch(arch) == expected
+
+
+@pytest.mark.parametrize(("arch", "expected"), [("x86_64", "x86_64"), ("arm64", "aarch64")])
+def test_appimage_arch_mapping(arch: str, expected: str) -> None:
+    assert build.appimage_arch(arch) == expected
+
+
+def test_appimage_requires_the_appimagetool_host_tool(
+    fake_repo: FakeRepo, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(build, "_find_appimagetool", lambda: None)
+    with pytest.raises(SystemExit) as excinfo:
+        build.appimage()
+    message = str(excinfo.value)
+    assert "appimagetool" in message
+    assert "host tool" in message

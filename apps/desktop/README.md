@@ -75,6 +75,32 @@ The frozen build is a console application on purpose (also on Windows): the
 sits next to the GUI on Windows; a windowed build is a possible future change
 once the selftest output is captured some other way.
 
+### Linux packages
+
+On a Linux host the same driver also builds native packages from a finished
+bundle:
+
+```bash
+uv run python apps/desktop/packaging/build.py deb       # .deb
+uv run python apps/desktop/packaging/build.py appimage  # AppImage
+uv run python apps/desktop/packaging/build.py release   # build + deb + appimage + checksums
+```
+
+`deb` and `appimage` expect the bundle from a previous `build`; `release` runs
+the whole chain (`build`, then both packages, then the checksums). They write to
+`dist/release/` alongside the tarball:
+
+- `curvestudio-desktop_<version>_amd64.deb` (or `_arm64.deb`)
+- `curvestudio-desktop-<version>-linux-x86_64.AppImage` (or `...-arm64.AppImage`)
+- `SHA256SUMS-linux-x86_64`, rewritten to include everything in the directory
+
+Both need a host tool that `uv sync` does not install:
+
+- **deb** — `dpkg-deb` (Debian/Ubuntu `dpkg` package).
+- **appimage** — `appimagetool` from the AppImageKit continuous build. It may
+  sit on `PATH` or be named by the `APPIMAGETOOL` environment variable. The
+  driver runs it with `APPIMAGE_EXTRACT_AND_RUN=1`, so FUSE is not required.
+
 ## Tests
 
 ```bash
