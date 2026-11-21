@@ -18,7 +18,7 @@ from openpyxl.styles import Font
 from openpyxl.worksheet.worksheet import Worksheet
 
 from curvestudio.fitting import FitStatus
-from curvestudio.workflow import FitBundle
+from curvestudio.workflow import FitBundle, format_equation
 from curvestudio_plotting import fit_figure, save_figure
 from curvestudio_reporting.csv_report import (
     StatValue,
@@ -94,8 +94,8 @@ def _write_summary(sheet: Worksheet, bundle: FitBundle) -> None:
     _label(sheet, "model id", result.model_id)
     _label(sheet, "method", result.method)
     _label(sheet, "loss", result.loss)
-    _label(sheet, "equation (model)", result.equation)
-    _label(sheet, "equation (fitted)", bundle.equation_text)
+    _label(sheet, "equation (model)", format_equation(result.equation))
+    _label(sheet, "equation (fitted)", format_equation(bundle.equation_text))
     converged = result.status is FitStatus.CONVERGED
     _label(sheet, "status", result.status.value, bold=not converged)
     _label(sheet, "termination reason", result.termination_reason)

@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 import pytest
 from openpyxl import load_workbook
 
-from curvestudio.workflow import FitBundle
+from curvestudio.workflow import FitBundle, format_equation
 from curvestudio_reporting import fit_to_xlsx
 
 if TYPE_CHECKING:
@@ -88,8 +88,10 @@ def test_summary_sheet_identifies_the_fit(poly_bundle: FitBundleFactory, tmp_pat
     assert flat["status"] == "converged"
     assert flat["dataset fingerprint"] == bundle.result.provenance.dataset_fingerprint
     assert flat["seed"] == bundle.result.provenance.seed
-    assert bundle.equation_text in str(flat["equation (fitted)"])
-    assert flat["equation (fitted)"] == bundle.equation_text
+    shown = format_equation(bundle.equation_text)
+    assert shown in str(flat["equation (fitted)"])
+    assert flat["equation (fitted)"] == shown
+    assert "**" not in str(flat["equation (fitted)"])
     assert str(flat["generated_at"]).endswith("+05:30") or "+05:30" in str(flat["generated_at"])
 
 

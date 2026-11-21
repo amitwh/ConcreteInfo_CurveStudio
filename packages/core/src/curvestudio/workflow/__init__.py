@@ -8,6 +8,7 @@ code.
 
 from curvestudio.discovery import AutoFitConfig
 from curvestudio.discovery.engine import autofit as run_autofit
+from curvestudio.models.spec import format_equation
 from curvestudio.workflow.autofit import bundle_for_candidate
 from curvestudio.workflow.bundle import (
     MAX_PREDICT_POINTS,
@@ -47,6 +48,7 @@ __all__ = [
     "WorkflowError",
     "bundle_for_candidate",
     "fit_dataset",
+    "format_equation",
     "get_model",
     "import_dataset",
     "list_models",

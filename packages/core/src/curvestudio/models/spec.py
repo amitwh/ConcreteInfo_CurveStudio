@@ -33,6 +33,19 @@ _TOKEN = re.compile(rf"{_NUMBER}|[A-Za-z_][A-Za-z0-9_]*")
 """Numeric literals come first so the ``e`` of ``1e-3`` is never read as a name."""
 
 
+def format_equation(text: str | None) -> str:
+    """An equation as the reader should see it: a power is ``^``, not Python's ``**``.
+
+    The engine keeps expressions in Python operator syntax, so a fitted polynomial reads
+    ``x**2`` in storage. Display and copy use ``^`` — what a scientist writes and what a
+    spreadsheet evaluates — while scientific notation (``1e-05``) and a single ``*``
+    product are left untouched. ``None`` or an empty string renders as ``""``.
+    """
+    if not text:
+        return ""
+    return text.replace("**", "^")
+
+
 @dataclass(frozen=True)
 class Parameter:
     """A fitted parameter: its name in the expression, documentation and bounds."""

@@ -46,7 +46,7 @@ from reportlab.platypus import (
 )
 
 from curvestudio.fitting import FitStatus
-from curvestudio.workflow import FitBundle
+from curvestudio.workflow import FitBundle, format_equation
 from curvestudio_plotting import (
     FIT_FIGURE_SIZE,
     RESIDUAL_FIGURE_SIZE,
@@ -163,7 +163,7 @@ def _flowables(bundle: FitBundle) -> list[Flowable]:
         Spacer(1, 14),
         Paragraph("Model equation", styles["Heading2"]),
         Spacer(1, 4),
-        Paragraph(escape(sanitise(bundle.equation_text)), styles["BodyText"]),
+        Paragraph(escape(sanitise(format_equation(bundle.equation_text))), styles["BodyText"]),
         Spacer(1, 14),
     ]
     for warning in bundle.warnings:

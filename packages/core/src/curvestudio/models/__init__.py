@@ -19,7 +19,7 @@ from curvestudio.models.registry import (
     register,
     register_family,
 )
-from curvestudio.models.spec import ModelExample, ModelSpec, Parameter
+from curvestudio.models.spec import ModelExample, ModelSpec, Parameter, format_equation
 
 __all__ = [
     "CustomModelDefinition",
@@ -32,6 +32,7 @@ __all__ = [
     "PluginFailure",
     "build_custom_model",
     "family_errors",
+    "format_equation",
     "get_model",
     "guess_from_rules",
     "list_model_ids",

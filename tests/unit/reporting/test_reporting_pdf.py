@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING
 import pytest
 from reportlab.platypus import Table
 
-from curvestudio.workflow import FitBundle
+from curvestudio.workflow import FitBundle, format_equation
 from curvestudio_reporting import fit_to_pdf
 from curvestudio_reporting.pdf_report import _WIDTH, _flowables
 
@@ -163,7 +163,8 @@ def test_pdf_contains_the_equation_and_identification(
 ) -> None:
     bundle = poly_bundle()
     text = norm(pdf_text(make_pdf(bundle, tmp_path)))
-    assert bundle.equation_text in text
+    assert format_equation(bundle.equation_text) in text
+    assert "**" not in text
     assert bundle.result.provenance.dataset_fingerprint in text
     assert "+05:30" in text, "the generated-at timestamp must be IST"
 

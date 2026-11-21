@@ -6,7 +6,7 @@ from dataclasses import dataclass
 import numpy as np
 import pytest
 
-from curvestudio.models import ModelExample, ModelSpec, Parameter
+from curvestudio.models import ModelExample, ModelSpec, Parameter, format_equation
 from curvestudio.models.starter import STARTER_MODELS, register_starter_models
 from curvestudio.testing.model_contract import check_model_contract
 
@@ -101,6 +101,29 @@ def test_equation_text_keeps_literals_without_an_e_parameter() -> None:
 def test_equation_text_requires_every_parameter() -> None:
     with pytest.raises(ValueError, match="b"):
         make_spec().equation_text({"a": 1.0})
+
+
+def test_format_equation_uses_caret_powers_and_keeps_numbers() -> None:
+    """The user's exact fitted polynomial: every ``**`` shows as ``^``."""
+    text = (
+        "y = 0.680918 + 2.37953*x + 0.0900383*x**2 + 0.0127839*x**3 "
+        "+ (-0.000548964)*x**4 + 1.07529e-05*x**5"
+    )
+    formatted = format_equation(text)
+    for power in ("x^2", "x^3", "x^4", "x^5"):
+        assert power in formatted
+    assert "1.07529e-05" in formatted  # scientific notation is untouched
+    assert "*x" in formatted  # single products survive
+    assert "**" not in formatted
+
+
+def test_format_equation_leaves_single_stars_alone() -> None:
+    assert format_equation("y = 1e-05*x + 2*exp(-0.5*x)") == "y = 1e-05*x + 2*exp(-0.5*x)"
+
+
+def test_format_equation_empty_or_none_renders_empty() -> None:
+    assert format_equation(None) == ""
+    assert format_equation("") == ""
 
 
 def test_latex_is_non_empty() -> None:
