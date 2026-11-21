@@ -14,8 +14,8 @@ from curvestudio_api.errors import ApiError, envelope
 from curvestudio_api.logging_setup import get_logger, log_fields, request_id_var
 
 CSP = (
-    "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; "
-    "script-src 'self'"
+    "default-src 'self'; img-src 'self' data: blob:; font-src 'self' data:; "
+    "style-src 'self' 'unsafe-inline'; script-src 'self'"
 )
 SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
