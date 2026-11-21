@@ -1,4 +1,4 @@
-"""The shared chart palette: model ranks, neutral bands and neutral data points."""
+"""The shared chart palette: model display positions, neutral bands and neutral data."""
 
 from __future__ import annotations
 
@@ -35,7 +35,7 @@ def _neutral(value: str) -> bool:
 def test_the_palette_is_eight_distinct_colours_with_the_brand_first() -> None:
     assert len(MODEL_COLORS) == 8
     assert len(set(MODEL_COLORS)) == 8
-    assert MODEL_COLORS[0] == "#E5461F"  # the brand accent leads the ranking
+    assert MODEL_COLORS[0] == "#E5461F"  # the brand accent leads the displayed ranking
 
 
 def test_the_colours_stay_apart_from_each_other_and_both_plot_backgrounds() -> None:
@@ -51,18 +51,18 @@ def test_the_colours_stay_apart_from_each_other_and_both_plot_backgrounds() -> N
             assert distance(first, background) > 60, f"{first} disappears on {background}"
 
 
-def test_model_color_maps_a_1_based_rank() -> None:
-    for rank, expected in enumerate(MODEL_COLORS, start=1):
-        assert model_color(rank) == expected
+def test_model_color_maps_a_1_based_display_position() -> None:
+    for position, expected in enumerate(MODEL_COLORS, start=1):
+        assert model_color(position) == expected
 
 
-def test_model_color_wraps_every_eight_ranks() -> None:
+def test_model_color_wraps_every_eight_positions() -> None:
     assert model_color(9) == MODEL_COLORS[0]
     assert model_color(16) == MODEL_COLORS[7]
     assert model_color(17) == MODEL_COLORS[0]
 
 
-def test_model_color_rejects_a_rank_below_one() -> None:
+def test_model_color_rejects_a_position_below_one() -> None:
     with pytest.raises(ValueError):
         model_color(0)
     with pytest.raises(ValueError):
@@ -95,7 +95,7 @@ def test_the_prediction_band_is_lighter_than_the_confidence_band() -> None:
             assert sum(_rgb(prediction)) > sum(_rgb(confidence))
 
 
-def test_data_colour_is_neutral_and_belongs_to_no_model_rank() -> None:
+def test_data_colour_is_neutral_and_belongs_to_no_model_position() -> None:
     for dark in (False, True):
         colour = data_color(dark=dark)
         assert _neutral(colour)

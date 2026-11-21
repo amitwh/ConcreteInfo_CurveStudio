@@ -58,18 +58,24 @@ export function ChartPanel({
     () => storedCurves ?? {},
     [storedCurves],
   );
-  const selectedRank =
-    rows.find((row) => row.model_id === selectedRowId)?.rank ?? 1;
+  // Colour by 1-based display position, not the tied rank value: ties are common and
+  // must stay distinguishable.
+  const selectedIndex = rows.findIndex((row) => row.model_id === selectedRowId);
+  const selectedPosition = selectedIndex >= 0 ? selectedIndex + 1 : 1;
   // The three best-ranked rows that actually have a stored curve; the toggle is only
   // meaningful when at least two can be overlaid.
   const overlay = useMemo<OverlayCurve[]>(() => {
     const entries: OverlayCurve[] = [];
-    for (const row of rows.slice(0, 3)) {
+    rows.slice(0, 3).forEach((row, index) => {
       const curve = curves[row.model_id];
       if (curve !== undefined) {
-        entries.push({ name: row.name, rank: row.rank, curve: { x: curve.x, y: curve.y } });
+        entries.push({
+          name: row.name,
+          position: index + 1,
+          curve: { x: curve.x, y: curve.y },
+        });
       }
-    }
+    });
     return entries;
   }, [rows, curves]);
   const hasOverlay = overlay.length >= 2;
@@ -84,9 +90,9 @@ export function ChartPanel({
           x: dataset?.x_column ?? "x",
           y: dataset?.y_column ?? "y",
         },
-        { dark, selectedRank, overlay },
+        { dark, selectedPosition, overlay },
       ),
-    [points, bundle, toggles, dataset?.x_column, dataset?.y_column, dark, selectedRank, overlay],
+    [points, bundle, toggles, dataset?.x_column, dataset?.y_column, dark, selectedPosition, overlay],
   );
 
   const mergedLayout = useMemo(

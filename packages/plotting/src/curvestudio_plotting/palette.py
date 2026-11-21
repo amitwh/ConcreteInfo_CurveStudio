@@ -1,10 +1,14 @@
 """The one categorical chart palette: model curves, neutral bands and data points.
 
 The desktop app, the web app (mirrored in ``apps/web/src/workspace/traces.ts``) and the
-exported Matplotlib figures all draw the same ranks in the same colours, so a model is
-recognisable wherever it appears. Rank 1 is the ConcreteInfo brand accent; ranks 2-8 are
-the design-system categorical set, chosen to stay distinguishable on both the light and
-the dark plot backgrounds.
+exported Matplotlib figures all draw the same display positions in the same colours, so a
+model is recognisable wherever it appears. Position 1 is the ConcreteInfo brand accent;
+positions 2-8 are the design-system categorical set, chosen to stay distinguishable on
+both the light and the dark plot backgrounds.
+
+A colour comes from the row's **1-based ordinal position in the displayed ranking**, never
+from ``RankedFit.rank``: ranks tie (rows that draw the same curve share a rank), and two
+tied rows must still be told apart on the chart and in the swatch.
 
 Bands and data points are deliberately *neutral* (equal red, green and blue channels) so a
 grey band can never be mistaken for another model's curve. The prediction band is lighter
@@ -19,19 +23,20 @@ from typing import Final, Literal
 
 Theme = Literal["light", "dark"]
 
-#: Categorical model colours by rank, best first. Exactly eight, all pairwise distinct.
+#: Categorical model colours by 1-based display position, best first. Exactly eight, all
+#: pairwise distinct.
 MODEL_COLORS: Final[tuple[str, ...]] = (
-    "#E5461F",  # 1 — brand accent
-    "#3B82F6",  # 2 — blue
-    "#10B981",  # 3 — emerald
-    "#F59E0B",  # 4 — amber
-    "#8B5CF6",  # 5 — violet
-    "#EC4899",  # 6 — pink
-    "#06B6D4",  # 7 — cyan
-    "#84CC16",  # 8 — lime
+    "#E5461F",  # position 1 — brand accent
+    "#3B82F6",  # position 2 — blue
+    "#10B981",  # position 3 — emerald
+    "#F59E0B",  # position 4 — amber
+    "#8B5CF6",  # position 5 — violet
+    "#EC4899",  # position 6 — pink
+    "#06B6D4",  # position 7 — cyan
+    "#84CC16",  # position 8 — lime
 )
 
-#: The best fit is drawn slightly heavier so it still leads in a multi-curve overlay.
+#: The top row is drawn slightly heavier so it still leads in a multi-curve overlay.
 CURVE_WIDTH_LEAD: Final = 2.2
 CURVE_WIDTH_OTHER: Final = 1.6
 
@@ -58,24 +63,25 @@ def _theme(dark: bool) -> Theme:
     return "dark" if dark else "light"
 
 
-def model_color(rank: int) -> str:
-    """The categorical colour of a 1-based rank, wrapping every eight ranks.
+def model_color(position: int) -> str:
+    """The categorical colour of a 1-based **display position**, wrapping every eight.
 
-    Ranks beyond eight reuse the palette in order, so an overlay of ten rows still draws
-    every curve in a defined colour.
+    ``position`` is the row's ordinal in the displayed ranking, not its (possibly tied)
+    ``RankedFit.rank``. Positions beyond eight reuse the palette in order, so an overlay
+    of ten rows still draws every curve in a defined colour.
 
     Raises:
-        ValueError: ``rank`` is below 1 (ranks are 1-based).
+        ValueError: ``position`` is below 1 (positions are 1-based).
     """
-    if rank < 1:
-        raise ValueError(f"rank is 1-based; got {rank}")
-    return MODEL_COLORS[(rank - 1) % len(MODEL_COLORS)]
+    if position < 1:
+        raise ValueError(f"position is 1-based; got {position}")
+    return MODEL_COLORS[(position - 1) % len(MODEL_COLORS)]
 
 
-def curve_style(rank: int) -> tuple[str, float]:
-    """The ``(colour, width)`` a fitted curve of ``rank`` is drawn with."""
-    width = CURVE_WIDTH_LEAD if rank == 1 else CURVE_WIDTH_OTHER
-    return model_color(rank), width
+def curve_style(position: int) -> tuple[str, float]:
+    """The ``(colour, width)`` a fitted curve at 1-based display ``position`` is drawn with."""
+    width = CURVE_WIDTH_LEAD if position == 1 else CURVE_WIDTH_OTHER
+    return model_color(position), width
 
 
 def band_fill(kind: Literal["confidence", "prediction"], *, dark: bool) -> str:

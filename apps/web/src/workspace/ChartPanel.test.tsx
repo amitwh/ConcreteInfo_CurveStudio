@@ -3,14 +3,21 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { components } from "../api/schema";
 import { ChartPanel } from "./ChartPanel";
+import { modelColor } from "./traces";
 
 type FitBundle = components["schemas"]["FitBundle"];
 type RankedFit = components["schemas"]["RankedFit"];
 type RowCurve = components["schemas"]["RowCurve"];
+type Trace = { mode?: string; fill?: string; name?: string; line?: { color?: string } };
 
-// jsdom cannot host a real Plotly graph; the unit under test is the banner logic.
+const captured = vi.hoisted(() => ({ traces: [] as Trace[] }));
+
+// jsdom cannot host a real Plotly graph; capture the traces the panel builds.
 vi.mock("../components/PlotChart", () => ({
-  PlotChart: () => <div data-testid="plot" />,
+  PlotChart: ({ traces }: { traces: Trace[] }) => {
+    captured.traces = traces;
+    return <div data-testid="plot" />;
+  },
   downloadPlotPng: () => {},
 }));
 
@@ -74,6 +81,66 @@ describe("ChartPanel show top 3", () => {
     expect(
       (screen.getByRole("checkbox", { name: /three best-ranked/i }) as HTMLInputElement).disabled,
     ).toBe(false);
+  });
+
+  it("gives tied ranks (1, 2, 2) three distinct overlay colours by position", async () => {
+    const tied = [
+      { rank: 1, model_id: "a", name: "Model a", status: "converged", metrics: { k: 2, n: 10 } },
+      { rank: 2, model_id: "b", name: "Model b", status: "converged", metrics: { k: 2, n: 10 } },
+      { rank: 2, model_id: "c", name: "Model c", status: "converged", metrics: { k: 2, n: 10 } },
+    ] as unknown as RankedFit[];
+    const curves: Record<string, RowCurve> = {};
+    for (const row of tied) {
+      curves[row.model_id] = { x: [0, 1], y: [2, 1] } as unknown as RowCurve;
+    }
+    const bundle = {
+      result: { status: "converged" },
+      curve: { x: [0, 1], y: [2, 1] },
+      confidence_band: null,
+      prediction_band: null,
+    } as unknown as FitBundle;
+    render(
+      <ChartPanel
+        dataset={dataset}
+        bundle={bundle}
+        dark={false}
+        rankingRows={tied}
+        storedCurves={curves}
+        selectedRowId="a"
+      />,
+    );
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("checkbox", { name: /three best-ranked/i }));
+    const curvesShown = captured.traces.filter(
+      (trace) => trace.mode === "lines" && trace.fill === undefined,
+    );
+    expect(curvesShown).toHaveLength(3);
+    expect(curvesShown.map((trace) => trace.line?.color)).toEqual([
+      modelColor(1),
+      modelColor(2),
+      modelColor(3),
+    ]);
+    expect(new Set(curvesShown.map((trace) => trace.line?.color)).size).toBe(3);
+    expect(curvesShown.map((trace) => trace.name)).toEqual(["Model a", "Model b", "Model c"]);
+  });
+
+  it("colours the single curve by the selected row's position, not its tied rank", () => {
+    const tied = [
+      { rank: 1, model_id: "a", name: "Model a", status: "converged", metrics: { k: 2, n: 10 } },
+      { rank: 2, model_id: "b", name: "Model b", status: "converged", metrics: { k: 2, n: 10 } },
+      { rank: 2, model_id: "c", name: "Model c", status: "converged", metrics: { k: 2, n: 10 } },
+    ] as unknown as RankedFit[];
+    const bundle = {
+      result: { status: "converged" },
+      curve: { x: [0, 1], y: [2, 1] },
+      confidence_band: null,
+      prediction_band: null,
+    } as unknown as FitBundle;
+    render(
+      <ChartPanel dataset={dataset} bundle={bundle} dark={false} rankingRows={tied} selectedRowId="c" />,
+    );
+    const curve = captured.traces.find((trace) => trace.name === "Fitted curve");
+    expect(curve?.line?.color).toBe(modelColor(3)); // position 3, though its rank is 2
   });
 
   it("toggles on and off without losing the chart", async () => {

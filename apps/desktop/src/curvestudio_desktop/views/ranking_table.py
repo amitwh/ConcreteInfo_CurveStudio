@@ -158,9 +158,10 @@ class RankingTableModel(QAbstractTableModel):
         if role == _ROLE.ToolTipRole:
             return row_tooltip(row)
         if role == _ROLE.DecorationRole and column == 0:
-            # the rank's own colour swatch: the same colour the curve is drawn in, so a
-            # row and its line are matched at a glance. A decoration adds no column.
-            return QColor(model_color(row.rank))
+            # The row's own colour swatch: the same colour its curve is drawn in, matched
+            # by the 1-based display position (row index), not the tied rank value, so
+            # tied rows are still distinguishable. A decoration adds no column.
+            return QColor(model_color(index.row() + 1))
         if role == _ROLE.TextAlignmentRole:
             if column in _CENTERED:
                 return int(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter)

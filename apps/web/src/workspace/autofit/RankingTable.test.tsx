@@ -71,12 +71,20 @@ function hexOf(cssColor: string): string {
 }
 
 describe("RankingTable", () => {
-  it("shows a rank-coloured swatch matching the curve colour for that rank", () => {
-    renderTable([row("a", { rank: 1 }), row("b", { rank: 3 })]);
+  it("colours the swatch by display position, so tied ranks stay distinct", () => {
+    renderTable([row("a", { rank: 1 }), row("b", { rank: 2 }), row("c", { rank: 2 })]);
     const swatches = document.querySelectorAll<HTMLElement>(".rank-swatch");
-    expect(swatches).toHaveLength(2);
+    expect(swatches).toHaveLength(3);
     expect(hexOf(swatches[0]?.style.backgroundColor ?? "")).toBe(modelColor(1).toUpperCase());
-    expect(hexOf(swatches[1]?.style.backgroundColor ?? "")).toBe(modelColor(3).toUpperCase());
+    expect(hexOf(swatches[1]?.style.backgroundColor ?? "")).toBe(modelColor(2).toUpperCase());
+    expect(hexOf(swatches[2]?.style.backgroundColor ?? "")).toBe(modelColor(3).toUpperCase());
+  });
+
+  it("offsets the swatch position on a later page of the ranking", () => {
+    renderTable([row("a", { rank: 2 }), row("b", { rank: 2 })], { positionOffset: 10 });
+    const swatches = document.querySelectorAll<HTMLElement>(".rank-swatch");
+    expect(hexOf(swatches[0]?.style.backgroundColor ?? "")).toBe(modelColor(11).toUpperCase());
+    expect(hexOf(swatches[1]?.style.backgroundColor ?? "")).toBe(modelColor(12).toUpperCase());
   });
 
   it("renders the fitted equation, metrics and status for each row", () => {

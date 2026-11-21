@@ -771,6 +771,15 @@ class MainWindow(QMainWindow):
         self._show_row_summary(dataset_id)
         rows = self.analysis_panel.autofit_view.table.rows()
         row = next((candidate for candidate in rows if candidate.model_id == candidate_id), None)
+        # Colour by the 1-based display position, not the tied rank value.
+        position = next(
+            (
+                index + 1
+                for index, candidate in enumerate(rows)
+                if candidate.model_id == candidate_id
+            ),
+            1,
+        )
         curve = result.curves.get(candidate_id)
         show_top3 = self.analysis_panel.autofit_view.show_top3()
         overlay = self._overlay_curves(result, rows, candidate_id) if show_top3 else []
@@ -796,7 +805,7 @@ class MainWindow(QMainWindow):
             curve.y,
             confidence,
             prediction,
-            rank=row.rank if row is not None else 1,
+            position=position,
             name=row.name if row is not None else "fitted curve",
         )
 
@@ -822,35 +831,44 @@ class MainWindow(QMainWindow):
         )
         return confidence, prediction
 
+    @staticmethod
     def _overlay_curves(
-        self, result: AutoFitResult, rows: Sequence[RankedFit], selected_id: str
+        result: AutoFitResult, rows: Sequence[RankedFit], selected_id: str
     ) -> list[OverlayCurve]:
-        """The top-three stored curves plus the selected row's, ordered by rank."""
-        chosen: list[tuple[int, str, OverlayCurve]] = []
+        """The top-three stored curves plus the selected row's, ordered by display position.
+
+        Colours come from each row's 1-based ordinal in ``rows``, never ``RankedFit.rank``:
+        ties are common (rows drawing the same curve share a rank) and must stay visibly
+        distinct.
+        """
+        chosen: list[tuple[int, OverlayCurve]] = []
         seen: set[str] = set()
-        for row in rows[:3]:
+        for position, row in enumerate(rows[:3], start=1):
             curve = result.curves.get(row.model_id)
             if curve is None or row.model_id in seen:
                 continue
             seen.add(row.model_id)
-            chosen.append(
-                (row.rank, row.model_id, OverlayCurve(row.name, curve.x, curve.y, row.rank))
-            )
+            chosen.append((position, OverlayCurve(row.name, curve.x, curve.y, position)))
         # A selected row outside the top three still shows its own curve, matching the
-        # summary and the bands (its rank colour is what the table swatch shows).
+        # summary and the bands (its swatch and this curve use the same display position).
         if selected_id not in seen:
-            selected_row = next((r for r in rows if r.model_id == selected_id), None)
+            selected_index = next(
+                (
+                    index
+                    for index, candidate in enumerate(rows)
+                    if candidate.model_id == selected_id
+                ),
+                None,
+            )
             curve = result.curves.get(selected_id)
-            if selected_row is not None and curve is not None:
+            if selected_index is not None and curve is not None:
+                selected_row = rows[selected_index]
+                position = selected_index + 1
                 chosen.append(
-                    (
-                        selected_row.rank,
-                        selected_row.model_id,
-                        OverlayCurve(selected_row.name, curve.x, curve.y, selected_row.rank),
-                    )
+                    (position, OverlayCurve(selected_row.name, curve.x, curve.y, position))
                 )
         chosen.sort(key=lambda entry: entry[0])
-        return [entry[2] for entry in chosen]
+        return [entry[1] for entry in chosen]
 
     def _open_candidate(self, candidate_id: str) -> None:
         dataset_id = self.selection.active_id

@@ -24,7 +24,7 @@ export interface AxisNames {
 /**
  * The categorical model palette. SOURCE OF TRUTH:
  * `packages/plotting/src/curvestudio_plotting/palette.py` — the desktop app and the
- * exported figures use the same eight colours, rank 1 first (the brand accent), so a
+ * exported figures use the same eight colours, position 1 first (the brand accent), so a
  * model is recognisable everywhere. Keep the two lists in sync.
  */
 export const MODEL_COLORS = [
@@ -38,15 +38,18 @@ export const MODEL_COLORS = [
   "#84CC16",
 ] as const;
 
-/** The colour of a 1-based rank; ranks beyond eight reuse the palette in order. */
-export function modelColor(rank: number): string {
-  if (rank < 1) throw new RangeError(`rank is 1-based; got ${rank}`);
-  return MODEL_COLORS[(rank - 1) % MODEL_COLORS.length] as string;
+/**
+ * The colour of a 1-based **display position** in the ranking, never a `RankedFit.rank`
+ * (ranks tie, and tied rows must stay distinct). Positions beyond eight wrap in order.
+ */
+export function modelColor(position: number): string {
+  if (position < 1) throw new RangeError(`position is 1-based; got ${position}`);
+  return MODEL_COLORS[(position - 1) % MODEL_COLORS.length] as string;
 }
 
-/** The best fit is slightly heavier so it still leads in a multi-curve overlay. */
-export function curveWidth(rank: number): number {
-  return rank === 1 ? 2.2 : 1.6;
+/** The top row is slightly heavier so it still leads in a multi-curve overlay. */
+export function curveWidth(position: number): number {
+  return position === 1 ? 2.2 : 1.6;
 }
 
 /** Neutral band fills per theme (no hue, so a band is never read as a model curve). */
@@ -70,14 +73,15 @@ export const ACCENT = "#E5461F";
 /** One model curve in a "show top 3" overlay. */
 export interface OverlayCurve {
   name: string;
-  rank: number;
+  /** 1-based position in the displayed ranking (not a tied rank value). */
+  position: number;
   curve: { x: number[]; y: number[] };
 }
 
 export interface TraceOptions {
   dark?: boolean;
-  /** The selected row's 1-based rank, used to colour the single curve. */
-  selectedRank?: number;
+  /** The selected row's 1-based display position, used to colour the single curve. */
+  selectedPosition?: number;
   /** The three best-ranked rows' curves, drawn when `toggles.top3` is on. */
   overlay?: readonly OverlayCurve[];
 }
@@ -242,18 +246,18 @@ export function buildTraces(
           name: entry.name,
           x: entry.curve.x,
           y: entry.curve.y,
-          line: { color: modelColor(entry.rank), width: curveWidth(entry.rank) },
+          line: { color: modelColor(entry.position), width: curveWidth(entry.position) },
         });
       }
     } else {
-      const rank = options.selectedRank ?? 1;
+      const position = options.selectedPosition ?? 1;
       traces.push({
         type: "scatter",
         mode: "lines",
         name: "Fitted curve",
         x: bundle.curve.x,
         y: bundle.curve.y,
-        line: { color: modelColor(rank), width: curveWidth(rank) },
+        line: { color: modelColor(position), width: curveWidth(position) },
       });
     }
     if (toggles.confidence && bundle.confidence_band !== null) {

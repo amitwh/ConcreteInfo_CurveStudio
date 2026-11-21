@@ -41,6 +41,8 @@ export interface RankingTableProps {
   /** Model ids that can prefill the manual panel (registered models, polynomials). */
   manuallySelectable?: ReadonlySet<string>;
   openRowBusy?: string | null;
+  /** Display position of the first row (the page's offset in the full ranking). */
+  positionOffset?: number;
 }
 
 export function RankingTable({
@@ -53,6 +55,7 @@ export function RankingTable({
   onUseManually,
   manuallySelectable,
   openRowBusy = null,
+  positionOffset = 0,
 }: RankingTableProps): ReactElement {
   const rowRefs = useRef(new Map<string, HTMLTableRowElement>());
 
@@ -121,8 +124,11 @@ export function RankingTable({
           </tr>
         </thead>
         <tbody onKeyDown={onKeyDown}>
-          {rows.map((row) => {
+          {rows.map((row, index) => {
             const selected = row.model_id === selectedId;
+            // The swatch follows the row's ordinal in the full ranking, not its tied
+            // rank value, so it always matches the curve drawn for that row.
+            const swatchColor = modelColor(positionOffset + index + 1);
             const hasCurve = curvesAvailable.has(row.model_id);
             const equation =
               row.equation_fitted === null ? null : fmtEquation(row.equation_fitted);
@@ -141,7 +147,7 @@ export function RankingTable({
                 <td>
                   <span
                     className="rank-swatch"
-                    style={{ backgroundColor: modelColor(row.rank) }}
+                    style={{ backgroundColor: swatchColor }}
                     aria-hidden="true"
                   />
                   <span className="num">{fmtInt(row.rank)}</span>

@@ -242,6 +242,7 @@ export function AutofitPanel({
             onUseManually={(row) => onUseManually({ modelId: row.model_id, name: row.name })}
             manuallySelectable={manuallySelectable}
             openRowBusy={openRowBusy}
+            positionOffset={currentPage * pageSize}
           />
           <Pagination
             page={currentPage}

@@ -197,7 +197,7 @@ describe("the no-curve invariant", () => {
     const { traces } = buildTraces(points([0, 1], [2, 1.3]), bundle("converged"), allOn, {
       x: "x",
       y: "y",
-    }, { selectedRank: 3 });
+    }, { selectedPosition: 3 });
     const curve = traces.find((t) => t.name === "Fitted curve");
     expect(curve?.line?.color).toBe(modelColor(3));
   });
@@ -228,9 +228,9 @@ describe("the no-curve invariant", () => {
 
   it("show top 3 adds exactly two more curves in ranks 2 and 3's colours", () => {
     const overlay = [
-      { name: "Best", rank: 1, curve: { x: [0, 1], y: [2, 1.4] } },
-      { name: "Second", rank: 2, curve: { x: [0, 1], y: [2, 1.3] } },
-      { name: "Third", rank: 3, curve: { x: [0, 1], y: [2, 1.2] } },
+      { name: "Best", position: 1, curve: { x: [0, 1], y: [2, 1.4] } },
+      { name: "Second", position: 2, curve: { x: [0, 1], y: [2, 1.3] } },
+      { name: "Third", position: 3, curve: { x: [0, 1], y: [2, 1.2] } },
     ];
     const off = buildTraces(points([0, 1], [2, 1.3]), bundle("converged"), allOn, {
       x: "x",
@@ -254,8 +254,8 @@ describe("the no-curve invariant", () => {
 
   it("turning show top 3 off returns to one curve", () => {
     const overlay = [
-      { name: "Best", rank: 1, curve: { x: [0, 1], y: [2, 1.4] } },
-      { name: "Second", rank: 2, curve: { x: [0, 1], y: [2, 1.3] } },
+      { name: "Best", position: 1, curve: { x: [0, 1], y: [2, 1.4] } },
+      { name: "Second", position: 2, curve: { x: [0, 1], y: [2, 1.3] } },
     ];
     const { traces } = buildTraces(points([0, 1], [2, 1.3]), bundle("converged"), allOn, {
       x: "x",

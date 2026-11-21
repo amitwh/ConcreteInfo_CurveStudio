@@ -30,12 +30,16 @@ _CURVE_Z = 2.0
 
 @dataclass(frozen=True)
 class OverlayCurve:
-    """One model curve in a multi-curve overlay: its label, samples and 1-based rank."""
+    """One model curve in a multi-curve overlay: label, samples and 1-based display position.
+
+    ``position`` is the row's ordinal in the displayed ranking — never its tied
+    ``RankedFit.rank`` — so two rows sharing a rank still get different colours.
+    """
 
     name: str
     x: Sequence[float]
     y: Sequence[float]
-    rank: int
+    position: int
 
 
 class PlotView(QWidget):
@@ -54,7 +58,7 @@ class PlotView(QWidget):
         self._plot.setMouseEnabled(x=True, y=True)
         self._scatter: pg.PlotDataItem | None = None
         self._curves: list[pg.PlotDataItem] = []
-        self._curve_ranks: list[int] = []
+        self._curve_positions: list[int] = []
         self._curve_names: list[str] = []
         self._legend: pg.LegendItem | None = None
         self._legend_names: list[str] = []
@@ -175,21 +179,22 @@ class PlotView(QWidget):
         confidence: tuple[Sequence[float], Sequence[float]] | None = None,
         prediction: tuple[Sequence[float], Sequence[float]] | None = None,
         *,
-        rank: int = 1,
+        position: int = 1,
         name: str = "fitted curve",
     ) -> None:
         """Draw one fitted curve (with optional bands) over the scatter.
 
-        The curve takes its rank's colour from the shared palette (rank 1 is the brand
-        accent); bands are neutral translucent fills, never a model colour, so a band can
-        never be read as another curve. Callers never call this for a fit that did not
-        converge — there is no curve to draw then (see :meth:`clear_fit`).
+        The curve takes the colour of its 1-based **display position** in the ranking
+        (position 1 is the brand accent); bands are neutral translucent fills, never a
+        model colour, so a band can never be read as another curve. Callers never call
+        this for a fit that did not converge — there is no curve to draw then (see
+        :meth:`clear_fit`).
         """
         self.clear_fit()
         self._band_x = list(x)
         self._band_confidence = confidence
         self._band_prediction = prediction
-        colour, width = curve_style(rank)
+        colour, width = curve_style(position)
         item = pg.PlotDataItem(
             np.asarray(x, dtype=np.float64),
             np.asarray(y, dtype=np.float64),
@@ -198,7 +203,7 @@ class PlotView(QWidget):
         item.setZValue(_CURVE_Z)
         self._plot.addItem(item)
         self._curves.append(item)
-        self._curve_ranks.append(rank)
+        self._curve_positions.append(position)
         self._curve_names.append(name)
         self._draw_bands()
         self._rebuild_legend()
@@ -211,7 +216,7 @@ class PlotView(QWidget):
         confidence: tuple[Sequence[float], Sequence[float]] | None = None,
         prediction: tuple[Sequence[float], Sequence[float]] | None = None,
     ) -> None:
-        """Draw several model curves, each in its rank colour, with a named legend.
+        """Draw several model curves, each in its display-position colour, with a legend.
 
         Bands belong to the selected model only and stay neutral; ``band_x`` is that
         model's curve x (it need not be the first curve in ``curves``).
@@ -221,7 +226,7 @@ class PlotView(QWidget):
         self._band_confidence = confidence
         self._band_prediction = prediction
         for entry in curves:
-            colour, width = curve_style(entry.rank)
+            colour, width = curve_style(entry.position)
             item = pg.PlotDataItem(
                 np.asarray(entry.x, dtype=np.float64),
                 np.asarray(entry.y, dtype=np.float64),
@@ -230,7 +235,7 @@ class PlotView(QWidget):
             item.setZValue(_CURVE_Z)
             self._plot.addItem(item)
             self._curves.append(item)
-            self._curve_ranks.append(entry.rank)
+            self._curve_positions.append(entry.position)
             self._curve_names.append(entry.name)
         self._draw_bands()
         self._rebuild_legend()
@@ -241,7 +246,7 @@ class PlotView(QWidget):
             if item is not None:
                 self._plot.removeItem(item)
         self._curves.clear()
-        self._curve_ranks.clear()
+        self._curve_positions.clear()
         self._curve_names.clear()
         self._confidence = None
         self._prediction = None
@@ -282,9 +287,9 @@ class PlotView(QWidget):
                 colors.append(pen.color().name())
         return colors
 
-    def drawn_curve_ranks(self) -> list[int]:
-        """The rank each drawn curve belongs to (1-based), in draw order."""
-        return list(self._curve_ranks)
+    def drawn_curve_positions(self) -> list[int]:
+        """The 1-based display position of each drawn curve, in draw order."""
+        return list(self._curve_positions)
 
     # -- inline hint -------------------------------------------------------------------------
 
