@@ -7,6 +7,7 @@
 
 import { useEffect, useMemo, useState, type ReactElement } from "react";
 import type { DatasetDetailOut, ModelInfo } from "../api/client";
+import { fmtEquation } from "../format";
 import {
   LOSSES,
   MAX_POLYNOMIAL_DEGREE,
@@ -255,8 +256,8 @@ export function FitPanel({ dataset, models, busy, onFit, fitError, preset }: Fit
 
       {activeModel !== null && (
         <div className="model-card">
-          <p className="equation" title={activeModel.equation}>
-            {activeModel.equation}
+          <p className="equation" title={fmtEquation(activeModel.equation)}>
+            {fmtEquation(activeModel.equation)}
           </p>
           <ul className="param-list">
             {activeModel.parameters.map((parameter) => (

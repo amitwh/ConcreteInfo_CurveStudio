@@ -53,6 +53,16 @@ export function fmtCI(
   return `[${fmtNumber(low)}, ${fmtNumber(high)}]`;
 }
 
+/**
+ * An equation as the reader should see it: the engine stores expressions in Python's
+ * operator syntax, where a power is `x**2`. Display and copy both use `^` — it is what a
+ * scientist writes, what Excel evaluates, and never reads as a stray pair of asterisks.
+ */
+export function fmtEquation(text: string | null | undefined): string {
+  if (!text) return "";
+  return text.replaceAll("**", "^");
+}
+
 /** ISO-8601 timestamp → DD/MM/YYYY displayed in IST (Asia/Kolkata), "n/a" when absent. */
 export function fmtDate(iso: string | null | undefined): string {
   if (!iso) return NA;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fmtCI, fmtDate, fmtInt, fmtNumber, fmtPValue } from "./format";
+import { fmtCI, fmtDate, fmtEquation, fmtInt, fmtNumber, fmtPValue } from "./format";
 
 describe("fmtNumber — 'not defined' is n/a, never 0 or NaN", () => {
   it("renders null and undefined as n/a", () => {
@@ -53,6 +53,29 @@ describe("fmtCI", () => {
     expect(fmtCI(null, 3.4)).toBe("n/a");
     expect(fmtCI(1.2, null)).toBe("n/a");
     expect(fmtCI(null, null)).toBe("n/a");
+  });
+});
+
+describe("fmtEquation — the engine's ** is shown and copied as ^", () => {
+  it("turns every power operator into a caret", () => {
+    expect(fmtEquation("y = 0.680918 + 2.37953*x + 0.0900383*x**2 + 1.07529e-05*x**5")).toBe(
+      "y = 0.680918 + 2.37953*x + 0.0900383*x^2 + 1.07529e-05*x^5",
+    );
+  });
+
+  it("leaves a parenthesised exponent and a plain product alone", () => {
+    expect(fmtEquation("y = a*(1 + b*x)**(c/d)")).toBe("y = a*(1 + b*x)^(c/d)");
+    expect(fmtEquation("y = a*b*x")).toBe("y = a*b*x");
+  });
+
+  it("never touches scientific notation", () => {
+    expect(fmtEquation("y = 1.07529e-05*x")).toBe("y = 1.07529e-05*x");
+  });
+
+  it("renders an empty string for a missing equation", () => {
+    expect(fmtEquation(null)).toBe("");
+    expect(fmtEquation(undefined)).toBe("");
+    expect(fmtEquation("")).toBe("");
   });
 });
 

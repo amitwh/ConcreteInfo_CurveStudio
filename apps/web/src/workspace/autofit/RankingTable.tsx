@@ -8,7 +8,7 @@
 
 import { useRef, type KeyboardEvent, type ReactElement } from "react";
 import { CopyButton } from "../../components/CopyButton";
-import { fmtInt, fmtNumber } from "../../format";
+import { fmtEquation, fmtInt, fmtNumber } from "../../format";
 import type { RankedFit } from "../../api/client";
 
 /** Human label + semantic badge for a candidate's fit status. */
@@ -123,7 +123,8 @@ export function RankingTable({
           {rows.map((row) => {
             const selected = row.model_id === selectedId;
             const hasCurve = curvesAvailable.has(row.model_id);
-            const equation = row.equation_fitted ?? null;
+            const equation =
+              row.equation_fitted === null ? null : fmtEquation(row.equation_fitted);
             return (
               <tr
                 key={row.model_id}

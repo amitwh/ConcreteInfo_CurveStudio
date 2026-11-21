@@ -3,14 +3,14 @@
 import { useState, type ReactElement } from "react";
 import type { FitSummaryOut } from "../../api/client";
 import { ErrorBox } from "../../components/States";
-import { fmtDate } from "../../format";
+import { fmtDate, fmtEquation } from "../../format";
 
 function modelText(spec: Record<string, unknown>): string {
   const model = spec.model as Record<string, unknown> | undefined;
   if (model === undefined) return "fit";
   if (model.kind === "polynomial") return `Polynomial (degree ${String(model.degree ?? "?")})`;
   if (model.kind === "registered") return String(model.id ?? "model");
-  if (model.kind === "custom") return `Custom: ${String(model.equation ?? "")}`;
+  if (model.kind === "custom") return `Custom: ${fmtEquation(String(model.equation ?? ""))}`;
   return "fit";
 }
 

@@ -3,21 +3,24 @@
 import type { ReactElement } from "react";
 import { CopyButton } from "../../components/CopyButton";
 import type { FitBundle } from "../../api/client";
+import { fmtEquation } from "../../format";
 
 export function EquationTab({ bundle }: { bundle: FitBundle }): ReactElement {
+  const equation = fmtEquation(bundle.result.equation);
+  const fitted = fmtEquation(bundle.result.equation_fitted);
   return (
     <div>
       <h3>Model equation</h3>
-      <p className="equation equation--large">{bundle.result.equation}</p>
+      <p className="equation equation--large">{equation}</p>
       <p>
-        <CopyButton text={bundle.result.equation} label="equation" />
+        <CopyButton text={equation} label="equation" />
       </p>
       <h3>With fitted numbers</h3>
       {bundle.result.equation_fitted !== null ? (
         <>
-          <p className="equation equation--large">{bundle.result.equation_fitted}</p>
+          <p className="equation equation--large">{fitted}</p>
           <p>
-            <CopyButton text={bundle.result.equation_fitted} label="fitted equation" />
+            <CopyButton text={fitted} label="fitted equation" />
           </p>
         </>
       ) : (
@@ -26,7 +29,7 @@ export function EquationTab({ bundle }: { bundle: FitBundle }): ReactElement {
         </p>
       )}
       {bundle.equation_text !== bundle.result.equation && (
-        <p className="hint">{bundle.equation_text}</p>
+        <p className="hint">{fmtEquation(bundle.equation_text)}</p>
       )}
       <p className="hint">
         Optimiser: {bundle.result.method} · loss {bundle.result.loss} · starts{" "}
