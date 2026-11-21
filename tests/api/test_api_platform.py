@@ -466,6 +466,11 @@ def test_the_built_web_app_is_served_with_spa_fallback(
     assert client.get("/favicon.svg").text == "<svg/>"
     for attempt in ("/%2e%2e/secret.txt", "/..%2fsecret.txt", "/assets/%2e%2e/%2e%2e/secret.txt"):
         assert "top secret" not in client.get(attempt).text
+    # a stale bundle name is a 404, never the SPA shell (an HTML answer would be parsed as JS)
+    for missing in ("/assets/gone-abc123.js", "/assets", "/assets/"):
+        response = client.get(missing)
+        assert response.status_code == 404, (missing, response.status_code, response.text[:40])
+        assert response.json()["error"] == "NOT_FOUND"
     # the API is untouched and unknown API paths stay JSON
     assert client.get(f"{API}/health").json()["status"] == "ok"
     missing = client.get(f"{API}/nope")

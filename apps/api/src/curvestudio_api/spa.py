@@ -8,6 +8,7 @@ from fastapi.responses import FileResponse, Response
 from curvestudio_api.errors import ApiError
 
 API_PREFIX = "api"
+ASSETS_DIR = "assets"  # Vite's output directory for content-addressed bundles
 _IMMUTABLE = "public, max-age=31536000, immutable"
 _REVALIDATE = "no-cache"
 
@@ -34,4 +35,8 @@ def mount_spa(app: FastAPI, dist: Path) -> None:
         if is_file:
             cache = _IMMUTABLE if "assets" in candidate.relative_to(root).parts else _REVALIDATE
             return FileResponse(candidate, headers={"Cache-Control": cache})
+        if path == ASSETS_DIR or path.startswith(f"{ASSETS_DIR}/"):
+            # A bundle asset is content-addressed: if it is gone, the page is stale. Answering
+            # with index.html would turn a stale-chunk error into a script that is not JS.
+            raise ApiError(404, "NOT_FOUND", "not found")
         return FileResponse(index, headers={"Cache-Control": _REVALIDATE})
