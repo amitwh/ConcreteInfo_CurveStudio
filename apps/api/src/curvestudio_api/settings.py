@@ -50,6 +50,25 @@ class Settings(BaseSettings):
     registration_enabled: bool = True
     billing_enabled: bool = False
     web_dist: Path | None = None
+    # Public address of the web app, used in the links of transactional email.
+    app_url: str = "http://localhost:5173"
+    require_email_verification: bool = True
+    smtp_host: str = ""
+    smtp_port: int = Field(default=587, ge=1, le=65535)
+    smtp_user: str = ""
+    smtp_password: SecretStr | None = None
+    smtp_from: str = ""
+    email_from_name: str = "CurveStudio"
+    verification_ttl_hours: int = Field(default=24, ge=1)
+    reset_ttl_minutes: int = Field(default=60, ge=5)
+    # Social sign-in. A provider is enabled only when both its id and secret are set.
+    oauth_google_client_id: str = ""
+    oauth_google_client_secret: SecretStr | None = None
+    oauth_microsoft_client_id: str = ""
+    oauth_microsoft_client_secret: SecretStr | None = None
+    oauth_microsoft_tenant: str = "common"
+    oauth_linkedin_client_id: str = ""
+    oauth_linkedin_client_secret: SecretStr | None = None
 
     @field_validator("cors_origins", mode="before")
     @classmethod
@@ -100,6 +119,22 @@ class Settings(BaseSettings):
     @classmethod
     def _empty_dist_is_off(cls, value: object) -> object:
         return None if value == "" else value
+
+    @field_validator("smtp_password", mode="before")
+    @classmethod
+    def _empty_smtp_password_is_unset(cls, value: object) -> object:
+        return None if isinstance(value, str) and not value.strip() else value
+
+    @field_validator(
+        "oauth_google_client_secret",
+        "oauth_microsoft_client_secret",
+        "oauth_linkedin_client_secret",
+        mode="before",
+    )
+    @classmethod
+    def _empty_oauth_secret_is_unset(cls, value: object) -> object:
+        """``CURVESTUDIO_OAUTH_..._CLIENT_SECRET=`` (as in ``.env.example``) means not set."""
+        return None if isinstance(value, str) and not value.strip() else value
 
     @model_validator(mode="after")
     def _autofit_budget_within_timeout(self) -> Self:

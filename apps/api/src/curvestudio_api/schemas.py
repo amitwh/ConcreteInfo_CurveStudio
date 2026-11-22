@@ -52,6 +52,12 @@ def _secret_utf8(value: SecretStr) -> SecretStr:
     return value
 
 
+def password_problem(password: SecretStr, email: str) -> str | None:
+    """The shared password policy (registration and reset must never drift apart)."""
+    _secret_utf8(password)
+    return weakness(password.get_secret_value(), email)
+
+
 class RegisterIn(_Body):
     email: RegisterEmail
     password: SecretStr = Field(min_length=10, max_length=128)
@@ -64,7 +70,7 @@ class RegisterIn(_Body):
 
     @model_validator(mode="after")
     def _password_policy(self) -> RegisterIn:
-        problem = weakness(self.password.get_secret_value(), self.email)
+        problem = password_problem(self.password, self.email)
         if problem is not None:
             raise ValueError(problem)
         return self
@@ -84,6 +90,14 @@ class RefreshIn(_Body):
     refresh_token: str = Field(min_length=1, max_length=512)
 
 
+class OAuthProvidersOut(BaseModel):
+    providers: list[str]
+
+
+class OAuthExchangeIn(_Body):
+    code: str = Field(min_length=1, max_length=512)
+
+
 class TokenOut(BaseModel):
     access_token: str
     refresh_token: str
@@ -91,11 +105,46 @@ class TokenOut(BaseModel):
     expires_in: int
 
 
+class VerifyEmailIn(_Body):
+    token: str = Field(min_length=1, max_length=512)
+
+
+class ResendVerificationIn(_Body):
+    email: Email
+
+
+class ForgotPasswordIn(_Body):
+    email: Email
+
+
+class ResetPasswordIn(_Body):
+    """The token names the account, so the weakness check runs in the handler, where the
+    address is known; the length floor is enforced here."""
+
+    token: str = Field(min_length=1, max_length=512)
+    new_password: SecretStr = Field(min_length=10, max_length=128)
+
+    @field_validator("new_password")
+    @classmethod
+    def _password_text(cls, value: SecretStr) -> SecretStr:
+        return _secret_utf8(value)
+
+
+class EmailVerificationOut(BaseModel):
+    email: str
+    verified: bool
+
+
+class MessageOut(BaseModel):
+    message: str
+
+
 class UserOut(BaseModel):
     id: uuid.UUID
     email: str
     name: str
     created_at: IstDatetime
+    email_verified: bool
 
 
 class PlanOut(BaseModel):

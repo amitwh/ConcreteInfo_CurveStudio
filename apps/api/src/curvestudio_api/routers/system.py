@@ -60,6 +60,7 @@ def me(user: CurrentUser, ctx: Ctx, db: Db) -> MeOut:
         email=user.email,
         name=user.name,
         created_at=user.created_at,
+        email_verified=user.email_verified_at is not None,
         plan=PlanOut(name=quotas.PLAN_NAME, **asdict(limits)),
         usage=UsageOut(**asdict(used)),
     )

@@ -54,10 +54,26 @@ class User(_Timestamps, Base):
     password_hash: Mapped[str] = mapped_column(String(255))
     name: Mapped[str] = mapped_column(String(100), default="")
     is_active: Mapped[bool] = mapped_column(default=True)
+    email_verified_at: Mapped[datetime | None] = mapped_column(UtcDateTime, default=None)
 
 
 Index("uq_users_email_lower", func.lower(User.email), unique=True)
 """Addresses are unique ignoring case, whatever path inserted them."""
+
+
+class EmailToken(_Timestamps, Base):
+    """A single-use e-mail verification or password-reset token; only its digest is stored."""
+
+    __tablename__ = "email_tokens"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=_uuid)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    purpose: Mapped[str] = mapped_column(String(16))
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    expires_at: Mapped[datetime] = mapped_column(UtcDateTime)
+    used_at: Mapped[datetime | None] = mapped_column(UtcDateTime, default=None)
 
 
 class RefreshToken(_Timestamps, Base):
@@ -71,6 +87,22 @@ class RefreshToken(_Timestamps, Base):
     expires_at: Mapped[datetime] = mapped_column(UtcDateTime)
     revoked_at: Mapped[datetime | None] = mapped_column(UtcDateTime, default=None)
     replaced_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, default=None)
+
+
+class OAuthCode(_Timestamps, Base):
+    """A single-use code handed to the browser after a provider callback; only its digest is
+    stored. It is exchanged out-of-band for an access/refresh pair by ``POST /auth/oauth/exchange``.
+    """
+
+    __tablename__ = "oauth_codes"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=_uuid)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    code_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    expires_at: Mapped[datetime] = mapped_column(UtcDateTime)
+    used_at: Mapped[datetime | None] = mapped_column(UtcDateTime, default=None)
 
 
 class Dataset(_Timestamps, Base):

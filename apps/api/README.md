@@ -11,7 +11,7 @@ cp apps/api/.env.example .env      # edit; see the comments in the file
 uv run curvestudio-api             # one uvicorn process on CURVESTUDIO_HOST:CURVESTUDIO_PORT
 ```
 
-The schema is migrated (Alembic, up to `0003`) at start-up. With `CURVESTUDIO_WEB_DIST` pointing at
+The schema is migrated (Alembic, up to `0005`) at start-up. With `CURVESTUDIO_WEB_DIST` pointing at
 the built web app the same process serves it, with a fallback to `index.html` for non-`/api`
 paths. The OpenAPI document is `apps/api/openapi.json`; regenerate it with
 `uv run python -m curvestudio_api.export_openapi` (a test fails when it is stale).
@@ -38,6 +38,70 @@ paths. The OpenAPI document is `apps/api/openapi.json`; regenerate it with
 * A stored fit holds per-row arrays, so its size grows with the dataset (about 130 MB of JSON
   at 500 000 rows). Results above `CURVESTUDIO_JOB_MAX_RESULT_BYTES` fail the job
   (`RESULT_TOO_LARGE`); lower `CURVESTUDIO_MAX_ROWS` for hosted deployments.
+
+## Email verification and password reset
+
+Registration sends a branded verification e-mail and sign-in is refused until the address is
+confirmed. Forgot-password sends a single-use reset link. Tokens are random
+(`secrets.token_urlsafe(32)`); only their SHA-256 digest is stored, in `email_tokens`, with a
+purpose (`verify` 24 h, `reset` 60 min) and a one-shot `used_at`. Issuing a new token of a
+purpose invalidates the previous unused one. Links use `CURVESTUDIO_APP_URL`:
+`/verify-email?token=…` and `/reset-password?token=…`.
+
+| Endpoint | Behaviour |
+|---|---|
+| `POST /auth/register` | 201 with `email_verified: false`; queues the verification e-mail |
+| `POST /auth/login` | correct password for an unverified address -> 403 `detail.code = EMAIL_NOT_VERIFIED`, no tokens |
+| `POST /auth/verify-email` `{token}` | marks the address verified (single use) -> `{email, verified: true}` |
+| `POST /auth/verify-email/resend` `{email}` | always 202; sends only when the account exists and is unverified |
+| `POST /auth/password/forgot` `{email}` | always 202; sends a reset link when the account exists |
+| `POST /auth/password/reset` `{token, new_password}` | re-hashes, verifies the address and revokes every refresh token |
+
+Both "always 202" endpoints return the same generic message whatever the address, so they
+never reveal whether an account exists. Reset enforces the same password policy as
+registration. All six are rate-limited with the existing limiter.
+
+Mail goes out from the background of the request (a failing send never delays or fails the
+response; it is logged). With no `CURVESTUDIO_SMTP_HOST` the send is skipped and logged. In
+`CURVESTUDIO_ENV=prod` the API refuses to start when verification is required and no SMTP host
+is set. Configuration: `CURVESTUDIO_APP_URL`, `CURVESTUDIO_REQUIRE_EMAIL_VERIFICATION`,
+`CURVESTUDIO_SMTP_HOST/PORT/USER/PASSWORD/FROM`, `CURVESTUDIO_EMAIL_FROM_NAME`,
+`CURVESTUDIO_VERIFICATION_TTL_HOURS`, `CURVESTUDIO_RESET_TTL_MINUTES`.
+
+## Social sign-in (Google, Microsoft, LinkedIn)
+
+OAuth 2.0 authorization code + PKCE, implemented with the standard library (no dependency).
+A provider is enabled only when both its client id and secret are set; the providers endpoint
+lists the enabled ones and nothing is exposed otherwise. The flow keeps
+the provider token server-side: the callback mints a single-use exchange code (120 s, only its
+SHA-256 digest is stored in `oauth_codes`) and the web app redeems it once for an access/refresh
+pair.
+
+| Endpoint | Behaviour |
+|---|---|
+| `GET /auth/oauth/providers` | `{"providers": ["google", …]}` for configured providers only |
+| `GET /auth/oauth/{provider}/start` | 404 unless enabled; 302 to the provider with `state` + S256 PKCE, sets the HttpOnly `oauth_flow` cookie (10 min) |
+| `GET /auth/oauth/{provider}/callback` | validates state/provider, exchanges the code, reads the profile, verifies the address, signs the user in and 302s to `CURVESTUDIO_APP_URL/oauth/callback?code=…`; on failure 302s to `/login` with `oauth_error=state` or `oauth_error=provider` (never a 500) |
+| `POST /auth/oauth/exchange` `{code}` | claims the code atomically (single use, unexpired) -> `TokenOut`; an invalid/used code is 400 `INVALID_TOKEN` |
+
+A new account is created with a random, unusable password hash (so password sign-in is not a
+way in) and `email_verified_at` set; an existing unverified account is marked verified instead
+of duplicated. All endpoints are rate-limited. Provider accounts are matched by address
+(case-insensitive) — there is no separate identity table.
+
+Register the exact callback URI at each provider:
+
+```
+https://<app host>/api/v1/auth/oauth/{provider}/callback
+```
+
+Setup: create an OAuth client per provider and set `CURVESTUDIO_OAUTH_GOOGLE_CLIENT_ID/SECRET`,
+`CURVESTUDIO_OAUTH_MICROSOFT_CLIENT_ID/SECRET` (+ `CURVESTUDIO_OAUTH_MICROSOFT_TENANT`, default
+`common`), `CURVESTUDIO_OAUTH_LINKEDIN_CLIENT_ID/SECRET`. The scopes are fixed: Google
+`openid email profile`, Microsoft `openid email profile User.Read`, LinkedIn `openid profile
+email` (the app needs the "Sign In with LinkedIn using OpenID Connect" product). The redirect URI is derived
+from `CURVESTUDIO_APP_URL`; the provider compares it byte for byte, so the web app and the API
+must share an origin.
 
 ## Auto-fit
 

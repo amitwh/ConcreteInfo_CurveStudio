@@ -9,7 +9,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { api, type UserOut } from "./client";
+import { api, type TokenOut, type UserOut } from "./client";
 
 export type AuthStatus = "loading" | "authed" | "anon";
 
@@ -18,6 +18,8 @@ interface AuthContextValue {
   user: UserOut | null;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, name: string) => Promise<void>;
+  /** Adopt a token pair issued elsewhere (the OAuth exchange) and load the profile. */
+  adoptSession: (tokens: TokenOut) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -70,11 +72,24 @@ export function AuthProvider({ children }: { children: ReactNode }): ReactNode {
   }, []);
 
   const register = useCallback(async (email: string, password: string, name: string) => {
+    // Registration is not a login: the address must be verified from the inbox first,
+    // so the page shows "check your inbox" and the session stays anonymous.
     await api.register(email, password, name);
-    // Registration is not a login: sign in right after so the user lands in the workspace.
-    await api.login(email, password);
-    setUser(await api.me());
-    setStatus("authed");
+  }, []);
+
+  const adoptSession = useCallback(async (tokens: TokenOut) => {
+    // Same path the restore effect takes: store the pair, then confirm it against /me.
+    api.adoptTokens(tokens);
+    try {
+      const me = await api.me();
+      setUser(me);
+      setStatus("authed");
+    } catch (error) {
+      api.clearTokens();
+      setUser(null);
+      setStatus("anon");
+      throw error;
+    }
   }, []);
 
   const logout = useCallback(async () => {
@@ -84,8 +99,8 @@ export function AuthProvider({ children }: { children: ReactNode }): ReactNode {
   }, []);
 
   const value = useMemo(
-    () => ({ status, user, login, register, logout }),
-    [status, user, login, register, logout],
+    () => ({ status, user, login, register, adoptSession, logout }),
+    [status, user, login, register, adoptSession, logout],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

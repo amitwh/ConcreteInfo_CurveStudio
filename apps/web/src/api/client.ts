@@ -28,6 +28,8 @@ const REFRESH_KEY = "curvestudio.refresh";
 export type Schemas = components["schemas"];
 export type TokenOut = Schemas["TokenOut"];
 export type UserOut = Schemas["UserOut"];
+export type EmailVerificationOut = Schemas["EmailVerificationOut"];
+export type MessageOut = Schemas["MessageOut"];
 export type ModelInfo = Schemas["ModelInfo"];
 export type DatasetOut = Schemas["DatasetOut"];
 export type DatasetDetailOut = Schemas["DatasetDetailOut"];
@@ -150,6 +152,11 @@ class ApiClient {
     localStorage.setItem(REFRESH_KEY, refresh);
   }
 
+  /** Adopt a token pair issued by any auth flow (password sign-in, OAuth exchange). */
+  adoptTokens(tokens: TokenOut): void {
+    this.setTokens(tokens.access_token, tokens.refresh_token);
+  }
+
   clearTokens(): void {
     this.accessToken = null;
     localStorage.removeItem(REFRESH_KEY);
@@ -236,6 +243,64 @@ class ApiClient {
     return this.request<UserOut>(
       "/auth/register",
       { method: "POST", body: JSON.stringify({ email, password, name }) },
+      { auth: false },
+    );
+  }
+
+  /** The social providers this deployment has configured; empty when none are. */
+  async oauthProviders(): Promise<string[]> {
+    const out = await this.request<{ providers: string[] }>(
+      "/auth/oauth/providers",
+      undefined,
+      { auth: false },
+    );
+    return out.providers;
+  }
+
+  /**
+   * Claim a single-use OAuth exchange code for a token pair. The caller adopts the pair
+   * through the auth context, which also loads the profile (/me).
+   */
+  async oauthExchange(code: string): Promise<TokenOut> {
+    return this.request<TokenOut>(
+      "/auth/oauth/exchange",
+      { method: "POST", body: JSON.stringify({ code }) },
+      { auth: false },
+    );
+  }
+
+  /** Consume a verification token (anonymous: auth links arrive from an email). */
+  async verifyEmail(token: string): Promise<EmailVerificationOut> {
+    return this.request<EmailVerificationOut>(
+      "/auth/verify-email",
+      { method: "POST", body: JSON.stringify({ token }) },
+      { auth: false },
+    );
+  }
+
+  /** Ask for a fresh verification link. Always 202, so the address is never revealed. */
+  async resendVerification(email: string): Promise<MessageOut> {
+    return this.request<MessageOut>(
+      "/auth/verify-email/resend",
+      { method: "POST", body: JSON.stringify({ email }) },
+      { auth: false },
+    );
+  }
+
+  /** Ask for a password-reset link. Always 202, so the address is never revealed. */
+  async forgotPassword(email: string): Promise<MessageOut> {
+    return this.request<MessageOut>(
+      "/auth/password/forgot",
+      { method: "POST", body: JSON.stringify({ email }) },
+      { auth: false },
+    );
+  }
+
+  /** Set a new password from a reset token. */
+  async resetPassword(token: string, newPassword: string): Promise<MessageOut> {
+    return this.request<MessageOut>(
+      "/auth/password/reset",
+      { method: "POST", body: JSON.stringify({ token, new_password: newPassword }) },
       { auth: false },
     );
   }

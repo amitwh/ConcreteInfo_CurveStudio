@@ -2,23 +2,30 @@
  * /register — mirrors the server's RegisterIn contract: an email address and a password
  * of 10–128 characters; the optional display name is capped at 100 characters. Server
  * rejections (duplicate email, registration disabled) are shown inline.
+ *
+ * Registration does not sign the user in: the address is verified from an email link
+ * first, so a successful submit swaps the form for a "check your inbox" panel.
  */
 
 import { useState, type ReactElement, type SubmitEvent } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { useAuth } from "../api/auth";
-import { ApiError } from "../api/client";
+import { api, ApiError } from "../api/client";
 import { errorText } from "../components/States";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+const RESEND_NOTE = "if an unverified account exists, a new verification email has been sent.";
+
 export function RegisterPage(): ReactElement {
   const { register } = useAuth();
-  const navigate = useNavigate();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [sentTo, setSentTo] = useState<string | null>(null);
+  const [resendNote, setResendNote] = useState<string | null>(null);
+  const [resendError, setResendError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const onSubmit = async (event: SubmitEvent<HTMLFormElement>): Promise<void> => {
@@ -39,15 +46,64 @@ export function RegisterPage(): ReactElement {
     setBusy(true);
     try {
       await register(email, password, name);
-      navigate("/", { replace: true });
+      setSentTo(email);
     } catch (err) {
-      setError(
-        err instanceof ApiError ? err.message : errorText(err, "registration failed; try again"),
-      );
+      if (err instanceof ApiError && err.status === 409) {
+        setError("an account with this email already exists — sign in instead");
+      } else {
+        setError(
+          err instanceof ApiError ? err.message : errorText(err, "registration failed; try again"),
+        );
+      }
     } finally {
       setBusy(false);
     }
   };
+
+  const onResend = async (): Promise<void> => {
+    if (sentTo === null) return;
+    setResendNote(null);
+    setResendError(null);
+    setBusy(true);
+    try {
+      await api.resendVerification(sentTo);
+      setResendNote(RESEND_NOTE);
+    } catch (err) {
+      setResendError(errorText(err, "could not resend the verification email; try again"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (sentTo !== null) {
+    return (
+      <main className="auth-page">
+        <section className="card auth-card" role="status">
+          <h1>Check your inbox</h1>
+          <p>
+            Check your inbox — we sent a verification link to {sentTo}. Open it, then sign in.
+          </p>
+          <button
+            type="button"
+            className="btn btn--small"
+            disabled={busy}
+            onClick={() => void onResend()}
+          >
+            Resend verification email
+          </button>
+          {resendNote !== null && <p className="muted">{resendNote}</p>}
+          {resendError !== null && (
+            <p className="alert alert--error" role="alert">
+              {resendError}
+            </p>
+          )}
+          <p className="muted">
+            <Link to="/login">Go to sign in</Link>
+          </p>
+        </section>
+      </main>
+    );
+  }
 
   return (
     <main className="auth-page">

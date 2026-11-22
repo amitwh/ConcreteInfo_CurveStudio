@@ -35,6 +35,7 @@ def make_settings(directory: Path, **overrides: Any) -> Settings:
         "data_dir": directory,
         "job_workers": 1,
         "job_grace_s": 0.5,
+        "require_email_verification": False,
     }
     values.update(overrides)
     return Settings(**values)

@@ -11,17 +11,21 @@
  */
 
 import { useCallback, useEffect, useState, type ReactElement } from "react";
-import { BookOpen, Info, Moon, Sun } from "lucide-react";
 import { Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "./api/auth";
 import { AppNav } from "./components/AppNav";
 import { Modal } from "./components/Modal";
 import { Loading } from "./components/States";
-import { ThemeProvider, useTheme } from "./components/ThemeToggle";
+import { ThemeProvider } from "./components/ThemeToggle";
 import { AboutPage } from "./pages/AboutPage";
 import { HelpPage } from "./pages/HelpPage";
+import { ForgotPasswordPage } from "./pages/ForgotPasswordPage";
+import { HomePage } from "./pages/HomePage";
 import { LoginPage } from "./pages/LoginPage";
+import { OAuthCallbackPage } from "./pages/OAuthCallbackPage";
 import { RegisterPage } from "./pages/RegisterPage";
+import { ResetPasswordPage } from "./pages/ResetPasswordPage";
+import { VerifyEmailPage } from "./pages/VerifyEmailPage";
 import { WorkspacePage } from "./pages/WorkspacePage";
 import {
   activateWorkspace,
@@ -41,9 +45,8 @@ export function overlayFor(pathname: string): "help" | "about" | null {
   return null;
 }
 
-/** The brand-only header the sign-in and public pages wear. */
+/** The slim white header every public page wears. */
 function PublicHeader(): ReactElement {
-  const { theme, toggle } = useTheme();
   return (
     <header className="app-header app-header--public">
       <div className="app-header__bar">
@@ -56,29 +59,20 @@ function PublicHeader(): ReactElement {
             height={44}
           />
         </Link>
-        <nav aria-label="Main" className="app-nav">
-          <Link to="/help">
-            <BookOpen className="icon" aria-hidden="true" focusable="false" />
-            <span className="nav__label">Help</span>
-          </Link>
-          <Link to="/about">
-            <Info className="icon" aria-hidden="true" focusable="false" />
-            <span className="nav__label">About</span>
-          </Link>
+        <nav aria-label="Main" className="public-nav">
+          <Link to="/#features">Features</Link>
+          <Link to="/#how-it-works">How it works</Link>
+          <Link to="/#models">Models</Link>
+          <Link to="/#use-cases">Use cases</Link>
+          <Link to="/#faq">FAQ</Link>
         </nav>
         <div className="app-header__right">
-          <button
-            type="button"
-            className="btn btn--small btn--icon"
-            onClick={toggle}
-            aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
-          >
-            {theme === "dark" ? (
-              <Sun className="icon" aria-hidden="true" focusable="false" />
-            ) : (
-              <Moon className="icon" aria-hidden="true" focusable="false" />
-            )}
-          </button>
+          <Link to="/login" className="btn btn--accent-outline btn--pill">
+            Sign in
+          </Link>
+          <Link to="/register" className="btn btn--primary btn--pill">
+            Create account
+          </Link>
         </div>
       </div>
     </header>
@@ -152,11 +146,16 @@ export default function App(): ReactElement {
           <>
             <PublicHeader />
             <Routes>
+              <Route path="/" element={<HomePage />} />
               <Route path="/login" element={<LoginPage />} />
               <Route path="/register" element={<RegisterPage />} />
+              <Route path="/verify-email" element={<VerifyEmailPage />} />
+              <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+              <Route path="/reset-password" element={<ResetPasswordPage />} />
+              <Route path="/oauth/callback" element={<OAuthCallbackPage />} />
               <Route path="/help" element={<HelpPage />} />
               <Route path="/about" element={<AboutPage />} />
-              <Route path="*" element={<Navigate to="/login" replace />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </>
         )}

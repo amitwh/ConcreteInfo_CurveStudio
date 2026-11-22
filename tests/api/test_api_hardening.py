@@ -200,6 +200,8 @@ def test_rsa_keys_below_2048_bits_are_refused(tmp_path: Path) -> None:
             data_dir=tmp_path,
             jwt_private_key_pem=good_private,
             jwt_public_key_pem=good_public,  # type: ignore[arg-type]
+            # prod + verification required needs an SMTP host to start
+            smtp_host="smtp.example.org",
         )
     )
 
