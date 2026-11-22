@@ -1163,6 +1163,38 @@ class MainWindow(QMainWindow):
             except ValueError:
                 pass
             self.set_dock_collapsed(name, self._stored_collapsed(name), persist=False)
+        self._dock_floating_panels()
+
+    def _dock_floating_panels(self) -> int:
+        """Bring every floating panel back into the layout, and say so in the status bar.
+
+        Floating is a *session* state, not part of the stored arrangement: a saved
+        floating panel reopens as a window stranded over the middle of the workspace
+        (often at a position from a different screen size), which reads as "the app
+        opened broken". Restoring docks it back to the area it belongs to, at the size
+        Qt kept for it; the user can float it again, and it will not be persisted.
+        """
+        rehomed = 0
+        for name, dock in self.docks.items():
+            if not dock.isFloating():
+                continue
+            dock.setFloating(False)
+            home = _DOCK_HOME[name]
+            if self.dockWidgetArea(dock) != home:
+                self.addDockWidget(home, dock)
+            if self._collapsed.get(name, False):
+                # re-docking must not silently undo a collapsed strip
+                if name == "table":
+                    strip = max(28, self._title_bars[name].sizeHint().height())
+                    dock.setMinimumHeight(strip)
+                    dock.setMaximumHeight(strip)
+                else:
+                    dock.setMinimumWidth(_COLLAPSED_EXTENT)
+                    dock.setMaximumWidth(_COLLAPSED_EXTENT)
+            rehomed += 1
+        if rehomed:
+            self.statusBar().showMessage("Panels docked — floating is not kept between sessions")
+        return rehomed
 
     def _stored_collapsed(self, name: str) -> bool:
         value = self._settings.value(f"{_COLLAPSED_PREFIX}{name}", False)

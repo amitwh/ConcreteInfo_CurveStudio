@@ -443,3 +443,55 @@ def test_the_editable_model_picker_shows_its_whole_line(make_window, qtbot) -> N
     assert editor.height() >= editor.fontMetrics().height() + 2, (
         f"the editor is {editor.height()} px for {editor.fontMetrics().height()} px of text"
     )
+
+
+def test_a_saved_floating_panel_reopens_docked(make_window, qtbot, settings, controller) -> None:
+    """Floating is a session state: a panel saved floating must not reopen as a stray window."""
+    first = make_window()
+    qtbot.addWidget(first)
+    first.resize(1280, 820)
+    first.show()
+    QApplication.processEvents()
+    first.analysis_panel.setFloating(True)
+    QApplication.processEvents()
+    assert first.analysis_panel.isFloating()
+    first._save_layout()
+    settings.sync()
+
+    second = MainWindow(controller, settings=settings)
+    qtbot.addWidget(second)
+    second.resize(1280, 820)
+    second.show()
+    QApplication.processEvents()
+    dock = second.analysis_panel
+    assert second.layout_restored is True
+    assert not dock.isFloating(), "the panel reopened as a floating window"
+    assert second.dockWidgetArea(dock) is Qt.DockWidgetArea.RightDockWidgetArea
+    assert dock.isVisible()
+    # a real dock inside the window, right of the plot — not a card over the middle
+    assert dock.geometry().left() > second.centralWidget().geometry().left()
+    assert dock.geometry().right() <= second.width()
+
+
+def test_a_saved_layout_with_no_floating_panel_restores_untouched(
+    make_window, qtbot, settings, controller
+) -> None:
+    """The normal case is untouched: a docked, narrowed layout survives a restart."""
+    first = make_window()
+    qtbot.addWidget(first)
+    first.resize(1280, 820)
+    first.show()
+    QApplication.processEvents()
+    first.resizeDocks([first.analysis_panel], [360], Qt.Orientation.Horizontal)
+    first.table_dock.hide()
+    first._save_layout()
+    settings.sync()
+
+    second = MainWindow(controller, settings=settings)
+    qtbot.addWidget(second)
+    second.resize(1280, 820)
+    second.show()
+    QApplication.processEvents()
+    assert not second.analysis_panel.isFloating()
+    assert not second.table_dock.isVisible()  # a deliberate close stays closed
+    assert second.analysis_panel.width() <= 420

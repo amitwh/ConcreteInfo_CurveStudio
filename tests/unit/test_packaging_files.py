@@ -78,8 +78,9 @@ def test_release_workflow_is_valid_yaml_with_sha_pinned_actions() -> None:
     assert isinstance(on, dict)
     assert "workflow_dispatch" in on
     assert on.get("push") == {"tags": ["v*"]}
-    matrix = workflow["jobs"]["release"]["strategy"]["matrix"]["os"]
-    assert {"ubuntu-latest", "windows-latest"} <= set(matrix)
+    jobs = workflow["jobs"]
+    runners = {job["runs-on"] for job in jobs.values()}
+    assert {"ubuntu-latest", "windows-latest"} <= runners
     # every action use is pinned by a full 40-hex commit SHA (no floating tags);
     # a trailing "# vX.Y" comment (the ci.yml style) is allowed after the SHA
     text = WORKFLOW.read_text(encoding="utf-8")
@@ -282,3 +283,54 @@ def test_frozen_selftest_still_fails_without_the_ok_line(
     monkeypatch.setattr(build.subprocess, "run", fake_run)
     with pytest.raises(SystemExit, match="frozen selftest failed"):
         build.run_frozen_selftest()
+
+
+def test_release_notes_carry_install_lines_and_the_version_s_changelog_section() -> None:
+    """The release body is generated from the changelog, never hand-written in YAML."""
+    spec = importlib.util.spec_from_file_location(
+        "curvestudio_packaging_release_notes", PACKAGING / "release_notes.py"
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    changelog = (
+        "# Changelog\n\n"
+        "## [1.2.3] - 2026-01-02\n\n### Fixed\n- A thing that was broken.\n\n"
+        "## [1.2.2] - 2026-01-01\n\n### Fixed\n- An older thing.\n"
+    )
+    notes = module.build_notes("1.2.3", changelog)
+    assert "CurveStudio 1.2.3" in notes
+    assert "curvestudio-desktop_1.2.3_amd64.deb" in notes
+    assert "curvestudio-desktop-1.2.3-linux-x86_64.AppImage" in notes
+    assert "curvestudio-desktop-1.2.3-windows-x86_64.zip" in notes
+    assert "SHA256SUMS" in notes
+    assert "A thing that was broken." in notes
+    assert "An older thing." not in notes  # only this version's section
+    assert "See CHANGELOG.md." in module.build_notes("9.9.9", changelog)
+
+
+def test_the_release_workflow_publishes_on_tags_and_dry_runs_on_dispatch() -> None:
+    workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    # YAML parses the bare key `on` as True; accept either spelling
+    triggers = workflow.get("on", workflow.get(True))
+    assert triggers["push"]["tags"] == ["v*"]
+    assert "workflow_dispatch" in triggers
+    assert workflow["permissions"]["contents"] == "write"
+
+    jobs = workflow["jobs"]
+    assert set(jobs) == {"linux", "windows"}
+    for job in jobs.values():
+        steps = job["steps"]
+        publish = [step for step in steps if "action-gh-release" in str(step.get("uses", ""))]
+        assert len(publish) == 1, "each platform job publishes its own artifacts once"
+        assert publish[0]["if"] == "startsWith(github.ref, 'refs/tags/v')"
+        # the tag must match the app version before anything is built or published
+        assert any("does not match the app version" in str(step.get("run", "")) for step in steps)
+    linux = str(jobs["linux"])
+    assert "build.py release" in linux
+    assert "sha256sum -c" in linux
+    assert "release_notes.py" in linux
+    windows = str(jobs["windows"])
+    assert "build.py sums" in windows
+    assert "release_notes.py" in windows
