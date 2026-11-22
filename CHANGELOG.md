@@ -2,6 +2,23 @@
 
 All notable changes are listed here. Dates are IST. Format: [Keep a Changelog](https://keepachangelog.com/); versions follow [SemVer](https://semver.org/).
 
+## [0.10.8] - 2026-11-22
+
+### Changed
+- **Desktop: R² and adjusted R² are shown at full stored precision** (the shortest
+  round-tripping form) in the ranking table, the fit summary, the details window and the
+  self-test line. A near-perfect fit such as 0.9999999999999999 no longer displays as
+  `1.0000`; an exact fit shows `1.0`. Numeric columns size to their values, so a narrow
+  dock scrolls instead of rounding. RMSE keeps its four-significant-digit form.
+- **Web: the selected dataset card no longer has a coloured bar down its left side**;
+  selection is the accent tint plus the accent-tinted border.
+
+### Fixed
+- Registering with an email that already has an account now says so and points at sign-in,
+  instead of “the account could not be created with these details”.
+- A rate-limited sign-in now reports how long to wait (“try again in N s”) instead of
+  “try again later”.
+
 ## [0.10.7] - 2026-11-22
 
 ### Changed
