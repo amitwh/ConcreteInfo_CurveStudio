@@ -2,6 +2,30 @@
 
 All notable changes are listed here. Dates are IST. Format: [Keep a Changelog](https://keepachangelog.com/); versions follow [SemVer](https://semver.org/).
 
+## [0.11.0] - 2026-11-22
+
+### Added
+- **Email verification**: registering sends a branded verification link (24 h, single use)
+  and sign-in is refused until the address is verified. Unverified sign-ins offer a resend;
+  existing accounts are migrated as verified so nobody is locked out.
+- **Password reset by email**: a “forgot password” link sends a one-hour, single-use reset
+  link; setting a new password also verifies the address and signs out every other session.
+- **Social sign-in**: Google, Microsoft and LinkedIn (OAuth 2.0 + PKCE) are supported and
+  appear automatically once their client ID and secret are configured; accounts are matched
+  by verified email.
+- **Public home page**: a cams2-style landing page at `/` with the feature pillars, the
+  four-step workflow, the model library, the statistics that matter, an Auto-fit ranking
+  mock, use cases, FAQ and a working sign-in box (plus social buttons). The workspace now
+  sits behind sign-in.
+
+### Changed
+- Registration no longer signs the user in; the page asks them to check their inbox.
+- Anonymous unknown routes redirect to the home page instead of the sign-in form.
+
+### Deployment
+- The Hostinger VPS instance (shared Postgres, 2 GiB / 2 vCPU caps) hosts
+  **https://curvestudio.concreteinfo.cloud**; the desktop app is unchanged.
+
 ## [0.10.8] - 2026-11-22
 
 ### Changed
