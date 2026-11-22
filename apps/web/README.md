@@ -82,3 +82,9 @@ FitPanel/tabs, shown only when selected.
 * **Dependencies**: exact-pinned in `package.json` (versions verified against OSV on
   2026-11-17); `package-lock.json` is committed. TypeScript is pinned to 5.9.x because
   typescript-eslint and openapi-typescript do not support TS 7 yet.
+
+## Pointing the SPA at another API origin
+
+The SPA calls `/api/v1` on its own origin by default. For a static-only host (no
+FastAPI behind it), build with `VITE_API_BASE=https://<api-host>/api/v1` and add that
+host's origin to the API's `CURVESTUDIO_CORS_ORIGINS`.

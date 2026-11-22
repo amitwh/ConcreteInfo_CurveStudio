@@ -12,7 +12,13 @@
 
 import type { components } from "./schema";
 
-export const API_BASE = "/api/v1";
+/**
+ * Where the API lives. Same origin (`/api/v1`) by default; a static-only deployment can
+ * point the built SPA at another host with `VITE_API_BASE` (for example
+ * `VITE_API_BASE=https://api.example.com/api/v1`), and the API then lists that origin in
+ * `CURVESTUDIO_CORS_ORIGINS`.
+ */
+export const API_BASE = String(import.meta.env.VITE_API_BASE ?? "/api/v1").replace(/\/+$/, "");
 
 /** Must match the API's CURVESTUDIO_MAX_UPLOAD_BYTES default (apps/api/.env.example). */
 export const MAX_UPLOAD_BYTES = 20_000_000;
