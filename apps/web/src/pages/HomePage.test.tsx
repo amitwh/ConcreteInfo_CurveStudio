@@ -61,7 +61,7 @@ describe("HomePage", () => {
     expect(screen.getByRole("heading", { name: /ranking is the result/i })).toBeTruthy();
     expect(screen.getByRole("heading", { name: /curves engineers/i })).toBeTruthy();
     expect(screen.getByRole("heading", { name: /one engine/i })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: /questions, answered/i })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: /questions we get asked/i })).toBeTruthy();
 
     // Settle the provider discovery so its state update happens inside act().
     await waitFor(() => expect(api.oauthProviders).toHaveBeenCalled());

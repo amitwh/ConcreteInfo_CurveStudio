@@ -125,12 +125,12 @@ const PILLARS = [
   {
     icon: Sparkles,
     title: "Auto-fit ranking",
-    body: "Every applicable model is fitted and ranked in one run, so the best form is never an accident.",
+    body: "Every applicable model is fitted and ranked in one run. The order is the ranking, not a guess.",
   },
   {
     icon: Sigma,
     title: "Honest statistics",
-    body: "R², adjusted R², RMSE, AICc and confidence bands are reported — never hidden behind a single score.",
+    body: "R², adjusted R², RMSE, AICc and confidence bands are all reported, not hidden behind one score.",
   },
   {
     icon: FileText,
@@ -153,7 +153,7 @@ const STEPS = [
   {
     kind: "inspect" as const,
     title: "Inspect statistics, bands, diagnostics",
-    body: "Read the parameters, confidence bands, residuals and leverage before you trust a line.",
+    body: "Read the parameters, confidence bands and residuals before you trust a line.",
   },
   {
     kind: "export" as const,
@@ -186,12 +186,12 @@ const RANK_ROWS = [
 ] as const;
 
 const USE_CASES = [
-  { icon: FlaskConical, title: "Cube strength vs age", body: "Fit the 3-, 7- and 28-day breaks and carry a defensible prediction forward." },
-  { icon: Gauge, title: "Mix / water-binder optimisation", body: "Model the response surface and see which variables actually move strength." },
-  { icon: TrendingUp, title: "Decay & ingress curves", body: "Carbonation, chloride ingress and drying — compare several decay forms at once." },
+  { icon: FlaskConical, title: "Cube strength vs age", body: "Fit the 3-, 7- and 28-day breaks, then predict the strength you need with a confidence band." },
+  { icon: Gauge, title: "Mix / water-binder optimisation", body: "Fit strength against water-binder ratio at each age and compare the forms that hold." },
+  { icon: TrendingUp, title: "Decay & ingress curves", body: "Carbonation, chloride ingress and drying: fit several decay forms and compare them." },
   { icon: Activity, title: "Calibration curves", body: "Fit instrument response to known standards, with residuals and confidence bands." },
-  { icon: Cpu, title: "Sensor drift", body: "Track a slow baseline change and separate drift from real signal." },
-  { icon: ShieldCheck, title: "Lab QC", body: "Fit control charts and flag the points that fall outside the fitted envelope." },
+  { icon: Cpu, title: "Sensor drift", body: "Fit the slow baseline and read the residuals for real changes." },
+  { icon: ShieldCheck, title: "Lab QC", body: "Fit a stable baseline and read the residuals for the points that break it." },
 ] as const;
 
 const FAQ = [
@@ -205,7 +205,7 @@ const FAQ = [
   },
   {
     q: "What happens to my data?",
-    a: "On the web app, datasets stay in your account on the server. The desktop app keeps them on your machine. Your data is never sold or used to train models.",
+    a: "On the web app, datasets stay in your account on the server. The desktop app keeps them on your machine. It is not sold, and it is not shared for advertising.",
   },
   {
     q: "Which models are available?",
@@ -293,7 +293,7 @@ const FIT_MODELS: readonly FitModel[] = [
     equation: "y = a+b·x+c·x²",
     r2: "0.9828",
     rmse: "3.07",
-    note: "simple calibration and response surfaces where a gently curved line is enough.",
+    note: "simple calibration and gentle curvature where a straight line is not enough.",
     f: (x) => 8 - 2.4 * x + 0.62 * x * x,
     domain: [0, 10],
   },
@@ -733,14 +733,14 @@ export function HomePage(): ReactElement {
         <section className="hp-hero">
           <div className="hp-wrap hp-hero__grid">
             <div className="hp-hero__copy">
-              <p className="hp-eyebrow">CURVE FITTING &amp; DATA ANALYSIS · NIST-VALIDATED</p>
+              <p className="hp-eyebrow">CURVE FITTING &amp; DATA ANALYSIS · VALIDATED ON NIST STRD DATASETS</p>
               <h1>
                 From paired measurements to a defensible model —{" "}
                 <span className="hp-accent">automatically.</span>
               </h1>
               <p className="hp-lede">
-                Auto-fit ranks every applicable model, reports honest statistics with confidence
-                bands, and turns the result into a reproducible report.
+                Auto-fit fits every applicable model and ranks them. You get the statistics, the
+                confidence bands and a report you can hand over.
               </p>
               <div className="hp-actions">
                 <Link to="/register" className="btn btn--primary btn--pill">
@@ -811,7 +811,7 @@ export function HomePage(): ReactElement {
           <div className="hp-wrap">
             <div className="hp-pills">
               {[
-                "NIST StRD validated",
+                "NIST StRD reference sets",
                 "~250 models",
                 "AICc / BIC ranking",
                 "Confidence & prediction bands",
@@ -874,7 +874,7 @@ export function HomePage(): ReactElement {
             <SectionHead
               eyebrow="HOW IT WORKS"
               title="Four steps from raw data to a reported model."
-              lede="No scripts, no spreadsheet gymnastics — the same sequence every time."
+              lede="No scripts and no spreadsheet workarounds; the same sequence every time."
             />
             <div className="hp-grid-4">
               {STEPS.map((step, index) => (
@@ -921,7 +921,7 @@ export function HomePage(): ReactElement {
             <SectionHead
               eyebrow="MODEL GALLERY"
               title="Fits you can reproduce."
-              lede="Six shapes cover most measurements. Pick one to see the curve, the confidence band and the numbers CurveStudio reports for it."
+              lede="Six shapes cover most measurements. Pick one to see the curve, the confidence band and the numbers CurveStudio reports. The values below are illustrative runs, not live data."
             />
             <FitGallery />
           </div>
@@ -1017,7 +1017,7 @@ export function HomePage(): ReactElement {
             <SectionHead
               eyebrow="AUTO-FIT RANKING"
               title="The ranking is the result."
-              lede="174 candidates ranked in one run — AICc picks the order, not a hunch."
+              lede="174 candidates ranked in one run. AICc sets the order, not a hunch."
             />
             <div className="hp-card hp-rank">
               <div className="hp-rank__head" aria-hidden="true">
@@ -1094,7 +1094,7 @@ export function HomePage(): ReactElement {
                 <ul className="hp-list">
                   <li>Same fitting engine</li>
                   <li>Your data stays in your account</li>
-                  <li>Nothing is sold or used for training</li>
+                  <li>Nothing is sold or shared for advertising</li>
                 </ul>
               </article>
             </div>
@@ -1104,7 +1104,7 @@ export function HomePage(): ReactElement {
         {/* 10 — FAQ */}
         <section className="hp-sec hp-sec--alt" id="faq">
           <div className="hp-wrap hp-faq">
-            <SectionHead eyebrow="FAQ" title="Questions, answered." />
+            <SectionHead eyebrow="FAQ" title="Questions we get asked." />
             {FAQ.map((item) => (
               <details className="hp-faq__item" key={item.q}>
                 <summary>{item.q}</summary>
