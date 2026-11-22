@@ -19,7 +19,7 @@ from the presses themselves, because the platform's move grab can swallow the se
 press before Qt turns it into a double-click event.
 """
 
-from PySide6.QtCore import QPoint, QSize, Qt, Signal
+from PySide6.QtCore import QPoint, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QMouseEvent
 from PySide6.QtWidgets import (
     QApplication,
@@ -34,6 +34,7 @@ from curvestudio_desktop.views.icons import icon
 
 _BUTTON_ICON_SIZE = QSize(16, 16)
 _DOUBLE_CLICK_SLOP = 4  # px the pointer may drift between the two presses of a double-click
+_DOUBLE_CLICK_TAIL_MS = 600  # how long the pair's trailing event may still arrive
 
 
 class DockTitleBar(QWidget):
@@ -148,12 +149,18 @@ class DockTitleBar(QWidget):
         if self._is_second_click(event):
             self._dock.setFloating(False)  # double-click a floating title: dock it back
             self._swallow_double_click = True  # the platform may still deliver the pair
+            # the tail of this click arrives at once or not at all; never let a stale
+            # flag swallow a later, unrelated double-click on the docked title bar
+            QTimer.singleShot(_DOUBLE_CLICK_TAIL_MS, self._clear_swallow)
             event.accept()
             return
         handle = self._dock.windowHandle()
         if handle is not None:
             handle.startSystemMove()  # the window manager drags from here (see module note)
         event.accept()
+
+    def _clear_swallow(self) -> None:
+        self._swallow_double_click = False
 
     def _is_second_click(self, event: QMouseEvent) -> bool:
         """Whether this press completes a double-click on the title bar."""
