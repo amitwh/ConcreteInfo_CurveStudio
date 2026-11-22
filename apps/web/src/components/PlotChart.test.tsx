@@ -49,12 +49,21 @@ function lastConfig(): { displayModeBar?: boolean | "hover" | "static" } {
   return (call?.[3] ?? {}) as { displayModeBar?: boolean | "hover" | "static" };
 }
 
-function renderChart() {
+type Annotation = { text: string; font?: { color?: string } };
+
+/** The layout handed to Plotly.react as its third argument. */
+function lastLayout(): { annotations?: Annotation[] } {
+  const call = plotly.react.mock.calls.at(-1);
+  return (call?.[2] ?? {}) as { annotations?: Annotation[] };
+}
+
+function renderChart(dark = false, annotations?: Annotation[]) {
   return render(
     <PlotChart
       traces={[{ type: "scatter", x: [1, 2], y: [3, 4] }]}
-      layout={{ title: { text: "Curve" } }}
+      layout={{ title: { text: "Curve" }, ...(annotations ? { annotations } : {}) }}
       ariaLabel="Curve chart"
+      dark={dark}
     />,
   );
 }
@@ -82,5 +91,56 @@ describe("PlotChart config", () => {
     await waitFor(() => expect(lastConfig().displayModeBar).toBe(false));
     reportWidth(900);
     await waitFor(() => expect(lastConfig().displayModeBar).toBe("hover"));
+  });
+});
+
+describe("PlotChart watermark", () => {
+  it("adds exactly one faint watermark in light mode", async () => {
+    renderChart();
+    await waitFor(() => expect(plotly.react).toHaveBeenCalled());
+
+    const annotations = lastLayout().annotations ?? [];
+    expect(annotations).toHaveLength(1);
+    expect(annotations[0]).toMatchObject({
+      text: "ConcreteInfo CurveStudio",
+      xref: "paper",
+      yref: "paper",
+      x: 0.995,
+      y: 0.012,
+      xanchor: "right",
+      yanchor: "bottom",
+      showarrow: false,
+      font: { size: 10, color: "rgba(70,70,70,0.20)" },
+    });
+  });
+
+  it("uses the dark watermark colour in dark mode", async () => {
+    renderChart(true);
+    await waitFor(() => expect(plotly.react).toHaveBeenCalled());
+    reportWidth(360);
+    await waitFor(() => expect(plotly.react).toHaveBeenCalled());
+
+    const annotations = lastLayout().annotations ?? [];
+    expect(annotations.filter((a) => a.text === "ConcreteInfo CurveStudio")).toHaveLength(1);
+    expect(annotations.at(-1)?.font?.color).toBe("rgba(241,241,241,0.22)");
+  });
+
+  it("preserves existing annotations and appends the watermark last", async () => {
+    renderChart(false, [{ text: "Fit: y = 2.35*x^0.89" }]);
+    await waitFor(() => expect(plotly.react).toHaveBeenCalled());
+
+    const annotations = lastLayout().annotations ?? [];
+    expect(annotations).toHaveLength(2);
+    expect(annotations[0]?.text).toBe("Fit: y = 2.35*x^0.89");
+    expect(annotations.at(-1)?.text).toBe("ConcreteInfo CurveStudio");
+  });
+
+  it("does not duplicate a watermark the caller already supplied", async () => {
+    renderChart(false, [{ text: "ConcreteInfo CurveStudio" }]);
+    await waitFor(() => expect(plotly.react).toHaveBeenCalled());
+
+    const annotations = lastLayout().annotations ?? [];
+    expect(annotations).toHaveLength(1);
+    expect(annotations[0]?.text).toBe("ConcreteInfo CurveStudio");
   });
 });

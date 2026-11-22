@@ -42,6 +42,14 @@ _PREDICTION_COLOR = band_fill("prediction", dark=False)
 _BANNER_COLOR = "#b2182b"
 _NA_COLOR = "0.4"
 
+#: The faint brand mark on every published figure. ``curvestudio_reporting`` carries the
+#: same literal separately: the import contracts forbid plotting importing reporting, so
+#: the two packages duplicate the text by design rather than sharing it.
+WATERMARK_TEXT = "ConcreteInfo CurveStudio"
+WATERMARK_ALPHA = 0.22
+_WATERMARK_COLOR = "#464646"
+_WATERMARK_FONT_SIZE = 6
+
 PANEL_TITLES = ("Residuals vs fitted", "Residuals vs x", "Normal Q-Q", "Histogram")
 
 _RC_LOCK = threading.Lock()
@@ -55,6 +63,24 @@ because the import contracts forbid plotting from importing the reporting packag
 def _clean(text: str) -> str:
     """Strip control characters a font has no glyph for (they render as boxes)."""
     return _XML_ILLEGAL.sub("", text)
+
+
+def _watermark(fig: Figure) -> None:
+    """Draw the faint brand mark in the figure's bottom-right corner.
+
+    It lives on the :class:`~matplotlib.figure.Figure` (not an axes), so every format
+    :func:`save_figure` writes and every report image built from the figure inherit it.
+    """
+    fig.text(
+        0.995,
+        0.006,
+        WATERMARK_TEXT,
+        ha="right",
+        va="bottom",
+        fontsize=_WATERMARK_FONT_SIZE,
+        color=_WATERMARK_COLOR,
+        alpha=WATERMARK_ALPHA,
+    )
 
 
 def fit_figure(
@@ -102,6 +128,7 @@ def fit_figure(
             zorder=5,
         )
         ax.legend()
+        _watermark(fig)
         return fig
 
     ax.set_title(_clean(bundle.equation_text), fontsize=9, parse_math=False)
@@ -119,6 +146,7 @@ def fit_figure(
     if show_prediction and bundle.prediction_band is not None:
         _draw_band(ax, bundle.prediction_band, _PREDICTION_COLOR)
     ax.legend()
+    _watermark(fig)
     return fig
 
 
@@ -160,6 +188,7 @@ def residual_figure(bundle: FitBundle) -> Figure:
             _na_panel(ax, reason)
         else:
             draw(ax, residuals, x_name)
+    _watermark(fig)
     return fig
 
 

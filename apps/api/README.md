@@ -95,6 +95,8 @@ Register the exact callback URI at each provider:
 https://<app host>/api/v1/auth/oauth/{provider}/callback
 ```
 
+Step-by-step console setup: [`OAUTH_SETUP.md`](OAUTH_SETUP.md).
+
 Setup: create an OAuth client per provider and set `CURVESTUDIO_OAUTH_GOOGLE_CLIENT_ID/SECRET`,
 `CURVESTUDIO_OAUTH_MICROSOFT_CLIENT_ID/SECRET` (+ `CURVESTUDIO_OAUTH_MICROSOFT_TENANT`, default
 `common`), `CURVESTUDIO_OAUTH_LINKEDIN_CLIENT_ID/SECRET`. The scopes are fixed: Google

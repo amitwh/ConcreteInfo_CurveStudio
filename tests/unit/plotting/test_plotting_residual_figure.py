@@ -6,7 +6,7 @@ from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 
 from curvestudio.workflow import FitBundle
-from curvestudio_plotting import residual_figure
+from curvestudio_plotting import WATERMARK_TEXT, residual_figure
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -50,3 +50,15 @@ def test_failed_fit_shows_na_panels(failed_bundle: FitBundle) -> None:
     fig = residual_figure(failed_bundle)
     all_texts = " ".join(t for ax in fig.axes for t in axes_texts(ax))
     assert "n/a" in all_texts
+
+
+def test_residual_figure_carries_the_brand_watermark(poly_bundle: FitBundleFactory) -> None:
+    fig = residual_figure(poly_bundle())
+    assert WATERMARK_TEXT in [text.get_text() for text in fig.texts]
+
+
+def test_undefined_residual_figure_carries_the_brand_watermark(
+    non_converged_bundle: FitBundle,
+) -> None:
+    fig = residual_figure(non_converged_bundle)
+    assert WATERMARK_TEXT in [text.get_text() for text in fig.texts]

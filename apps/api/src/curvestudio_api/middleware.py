@@ -13,9 +13,15 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from curvestudio_api.errors import ApiError, envelope
 from curvestudio_api.logging_setup import get_logger, log_fields, request_id_var
 
+# The client-side PDF renderer needs three narrow allowances:
+#   * `'wasm-unsafe-eval'` instantiates its WebAssembly text-layout engine (compilation
+#     only — not JavaScript `eval`), so the no-unsafe-eval posture is preserved;
+#   * `worker-src blob:` lets it start its font-subsetting worker from a blob URL;
+#   * `connect-src data:` lets it read the engine's inline data-URL payload.
 CSP = (
     "default-src 'self'; img-src 'self' data: blob:; font-src 'self' data:; "
-    "style-src 'self' 'unsafe-inline'; script-src 'self'"
+    "style-src 'self' 'unsafe-inline'; script-src 'self' 'wasm-unsafe-eval'; "
+    "worker-src 'self' blob:; connect-src 'self' data: blob:"
 )
 SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",

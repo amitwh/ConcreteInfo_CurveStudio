@@ -10,7 +10,17 @@
  * accent colour is reserved for emphasis, leaves and buttons.
  */
 
-import { useEffect, useState, type ReactElement, type ReactNode, type SubmitEvent } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactElement,
+  type ReactNode,
+  type RefObject,
+  type SubmitEvent,
+} from "react";
 import {
   Activity,
   Cpu,
@@ -211,6 +221,444 @@ const FAQ = [
   },
 ] as const;
 
+/* ---- "Fits you can reproduce" gallery ------------------------------------------------ */
+
+interface FitModel {
+  id: string;
+  name: string;
+  equation: string;
+  r2: string;
+  rmse: string;
+  note: string;
+  f: (x: number) => number;
+  domain: readonly [number, number];
+}
+
+/** Six representative shapes, each with a fixed illustrative fit. Everything is
+ *  deterministic, so the chart is identical on every visit without a fitting engine. */
+const FIT_MODELS: readonly FitModel[] = [
+  {
+    id: "exp-decay",
+    name: "Exponential decay",
+    equation: "y = a·exp(−b·x)+c",
+    r2: "0.9964",
+    rmse: "1.84",
+    note: "strength loss, carbonation and chloride ingress with depth or time.",
+    f: (x) => 98 * Math.exp(-0.42 * x) + 12,
+    domain: [0, 10],
+  },
+  {
+    id: "logistic",
+    name: "Logistic growth",
+    equation: "y = L/(1+exp(−k(x−x₀)))",
+    r2: "0.9931",
+    rmse: "2.37",
+    note: "strength gain, curing progress and any response that levels off.",
+    f: (x) => 96 / (1 + Math.exp(-0.9 * (x - 4))),
+    domain: [0, 10],
+  },
+  {
+    id: "langmuir",
+    name: "Langmuir binding",
+    equation: "y = Bmax·x/(Kd+x)",
+    r2: "0.9917",
+    rmse: "2.05",
+    note: "adsorption and binding isotherms, from inhibitor uptake to sensor saturation.",
+    f: (x) => (120 * x) / (3.2 + x),
+    domain: [0, 10],
+  },
+  {
+    id: "gaussian",
+    name: "Gaussian peak",
+    equation: "y = A·exp(−(x−μ)²/(2σ²))",
+    r2: "0.9894",
+    rmse: "1.62",
+    note: "peaks and drift — instrument response, particle-size modes and spectral lines.",
+    f: (x) => 95 * Math.exp(-((x - 5.2) ** 2) / (2 * 1.35 ** 2)),
+    domain: [0, 10],
+  },
+  {
+    id: "power",
+    name: "Power law",
+    equation: "y = a·x^b",
+    r2: "0.9862",
+    rmse: "3.41",
+    note: "scaling laws: allometric relations and fatigue or fracture growth exponents.",
+    f: (x) => 14 * x ** 0.72,
+    domain: [0, 10],
+  },
+  {
+    id: "quadratic",
+    name: "Quadratic",
+    equation: "y = a+b·x+c·x²",
+    r2: "0.9828",
+    rmse: "3.07",
+    note: "simple calibration and response surfaces where a gently curved line is enough.",
+    f: (x) => 8 - 2.4 * x + 0.62 * x * x,
+    domain: [0, 10],
+  },
+];
+
+const FIT_CHART = { width: 560, height: 320, top: 18, right: 18, bottom: 38, left: 48 } as const;
+
+/** Deterministic residuals (fractions of the data range) for the scattered points. */
+const FIT_NOISE = [
+  0.024, -0.018, 0.031, -0.026, 0.012, 0.038, -0.014, -0.033, 0.02, -0.007, 0.027, -0.021,
+] as const;
+
+interface FitChart {
+  curve: string;
+  band: string;
+  points: Array<{ cx: number; cy: number }>;
+  xTicks: Array<{ x: number; label: string }>;
+  yTicks: Array<{ y: number; label: string }>;
+  axisX: number;
+  axisY: number;
+}
+
+function buildFitChart(model: FitModel): FitChart {
+  const [x0, x1] = model.domain;
+  const samples = 72;
+  const xs = Array.from({ length: samples + 1 }, (_, i) => x0 + ((x1 - x0) * i) / samples);
+  const ys = xs.map((x) => model.f(x));
+  const span = Math.max(...ys) - Math.min(...ys) || 1;
+
+  const pointXs = FIT_NOISE.map((_, i) => x0 + ((x1 - x0) * (i + 0.5)) / FIT_NOISE.length);
+  const pointYs = pointXs.map((x, i) => model.f(x) + FIT_NOISE[i]! * span);
+  const bandHalf = (x: number): number =>
+    span * (0.028 + (0.02 * Math.abs(x - (x0 + x1) / 2)) / ((x1 - x0) / 2));
+  const lower = xs.map((x, i) => ys[i]! - bandHalf(x));
+  const upper = xs.map((x, i) => ys[i]! + bandHalf(x));
+
+  const yMin = Math.min(...ys, ...pointYs, ...lower);
+  const yMax = Math.max(...ys, ...pointYs, ...upper);
+  const pad = (yMax - yMin) * 0.08 || 1;
+  const lo = yMin - pad;
+  const hi = yMax + pad;
+
+  const plotW = FIT_CHART.width - FIT_CHART.left - FIT_CHART.right;
+  const plotH = FIT_CHART.height - FIT_CHART.top - FIT_CHART.bottom;
+  const px = (x: number): number => FIT_CHART.left + ((x - x0) / (x1 - x0)) * plotW;
+  const py = (y: number): number =>
+    FIT_CHART.height - FIT_CHART.bottom - ((y - lo) / (hi - lo)) * plotH;
+  const command = (x: number, y: number, first: boolean): string =>
+    `${first ? "M" : "L"}${px(x).toFixed(1)} ${py(y).toFixed(1)}`;
+
+  const curve = xs.map((x, i) => command(x, ys[i]!, i === 0)).join(" ");
+  const band = [
+    ...xs.map((x, i) => command(x, upper[i]!, i === 0)),
+    ...xs
+      .map((x, i) => ({ x, y: lower[i]! }))
+      .reverse()
+      .map((point) => command(point.x, point.y, false)),
+    "Z",
+  ].join(" ");
+
+  const xTicks = [0, 1, 2, 3, 4, 5].map((step) => {
+    const x = x0 + ((x1 - x0) * step) / 5;
+    return { x: px(x), label: String(Math.round(x)) };
+  });
+  const yTicks = [0, 1, 2, 3, 4].map((step) => {
+    const y = lo + ((hi - lo) * step) / 4;
+    return { y: py(y), label: String(Math.round(y)) };
+  });
+
+  return {
+    curve,
+    band,
+    points: pointXs.map((x, i) => ({ cx: px(x), cy: py(pointYs[i]!) })),
+    xTicks,
+    yTicks,
+    axisX: FIT_CHART.height - FIT_CHART.bottom,
+    axisY: FIT_CHART.left,
+  };
+}
+
+const AICC_ROWS = [
+  { name: "Exp. decay", delta: 0, aicc: "−182.4" },
+  { name: "Logistic", delta: 10.6, aicc: "−171.8" },
+  { name: "Langmuir", delta: 14.2, aicc: "−168.2" },
+  { name: "Gaussian", delta: 27.7, aicc: "−154.7" },
+  { name: "Power law", delta: 41.1, aicc: "−141.3" },
+] as const;
+
+function prefersReducedMotion(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  );
+}
+
+/** `inView` starts true when there is no IntersectionObserver (tests, very old
+ *  browsers), so nothing is ever left hidden without JS. */
+function useInView<T extends HTMLElement>(): [RefObject<T | null>, boolean] {
+  const ref = useRef<T>(null);
+  const [inView, setInView] = useState(typeof IntersectionObserver === "undefined");
+
+  useEffect(() => {
+    if (typeof IntersectionObserver === "undefined") return;
+    const element = ref.current;
+    if (element === null) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setInView(true);
+          observer.disconnect();
+        }
+      },
+      { threshold: 0.35 },
+    );
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
+  return [ref, inView];
+}
+
+/** Counts from zero to `target` once `active`; reduced motion (and environments without
+ *  IntersectionObserver or rAF) shows the final value immediately. */
+function useCountUp(target: number, active: boolean): number {
+  const animate =
+    typeof IntersectionObserver !== "undefined" &&
+    typeof requestAnimationFrame === "function" &&
+    !prefersReducedMotion();
+  const [value, setValue] = useState(animate ? 0 : target);
+
+  useEffect(() => {
+    if (!animate) {
+      setValue(target);
+      return;
+    }
+    if (!active) return;
+    const start = performance.now();
+    let frame = 0;
+    const step = (now: number): void => {
+      const progress = Math.min(1, (now - start) / 900);
+      const eased = 1 - (1 - progress) ** 3;
+      setValue(Math.round(target * eased));
+      if (progress < 1) frame = requestAnimationFrame(step);
+    };
+    frame = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(frame);
+  }, [target, active, animate]);
+
+  return value;
+}
+
+function CountUp({
+  target,
+  prefix = "",
+  suffix = "",
+}: {
+  target: number;
+  prefix?: string;
+  suffix?: string;
+}): ReactElement {
+  const [ref, inView] = useInView<HTMLSpanElement>();
+  const value = useCountUp(target, inView);
+  return (
+    <span ref={ref}>
+      {prefix}
+      {value.toLocaleString("en-IN")}
+      {suffix}
+    </span>
+  );
+}
+
+function FitGallery(): ReactElement {
+  const fallback = FIT_MODELS[0]!;
+  const [selected, setSelected] = useState(fallback.id);
+  const model = FIT_MODELS.find((item) => item.id === selected) ?? fallback;
+  const chart = useMemo(() => buildFitChart(model), [model]);
+
+  return (
+    <>
+      <div className="hp-chips" role="group" aria-label="Model families">
+        {FIT_MODELS.map((item) => {
+          const active = item.id === model.id;
+          return (
+            <button
+              key={item.id}
+              type="button"
+              className={active ? "hp-chip hp-chip--active" : "hp-chip"}
+              aria-pressed={active}
+              onClick={() => setSelected(item.id)}
+            >
+              {item.name}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="hp-fits">
+        <figure className="hp-card hp-fits__figure">
+          <svg
+            viewBox={`0 0 ${FIT_CHART.width} ${FIT_CHART.height}`}
+            aria-hidden="true"
+            focusable="false"
+          >
+            <g stroke="var(--border)" strokeWidth="1">
+              {chart.yTicks.map((tick) => (
+                <line
+                  key={`gy-${tick.label}`}
+                  x1={FIT_CHART.left}
+                  x2={FIT_CHART.width - FIT_CHART.right}
+                  y1={tick.y}
+                  y2={tick.y}
+                />
+              ))}
+              {chart.xTicks.map((tick) => (
+                <line
+                  key={`gx-${tick.label}`}
+                  x1={tick.x}
+                  x2={tick.x}
+                  y1={FIT_CHART.top}
+                  y2={chart.axisX}
+                />
+              ))}
+            </g>
+            <g fill="var(--muted)" fontSize="11">
+              {chart.xTicks.map((tick) => (
+                <text
+                  key={`tx-${tick.label}`}
+                  x={tick.x}
+                  y={chart.axisX + 18}
+                  textAnchor="middle"
+                >
+                  {tick.label}
+                </text>
+              ))}
+              {chart.yTicks.map((tick) => (
+                <text
+                  key={`ty-${tick.label}`}
+                  x={FIT_CHART.left - 8}
+                  y={tick.y + 4}
+                  textAnchor="end"
+                >
+                  {tick.label}
+                </text>
+              ))}
+            </g>
+            <line
+              x1={FIT_CHART.left}
+              x2={FIT_CHART.width - FIT_CHART.right}
+              y1={chart.axisX}
+              y2={chart.axisX}
+              stroke="var(--border-strong)"
+            />
+            <line
+              x1={chart.axisY}
+              x2={chart.axisY}
+              y1={FIT_CHART.top}
+              y2={chart.axisX}
+              stroke="var(--border-strong)"
+            />
+            <path
+              key={`band-${model.id}`}
+              className="hp-fits__band"
+              d={chart.band}
+              fill="var(--accent)"
+              fillOpacity="0.1"
+            />
+            <g key={`points-${model.id}`} className="hp-fits__points" fill="var(--accent)">
+              {chart.points.map((point) => (
+                <circle
+                  key={`${point.cx}-${point.cy}`}
+                  cx={point.cx}
+                  cy={point.cy}
+                  r="3"
+                  opacity="0.85"
+                />
+              ))}
+            </g>
+            <path
+              key={`curve-${model.id}`}
+              className="hp-fits__curve"
+              d={chart.curve}
+              pathLength={1}
+              fill="none"
+              stroke="var(--accent)"
+              strokeWidth="2.2"
+              strokeLinecap="round"
+            />
+          </svg>
+        </figure>
+
+        <div className="hp-card hp-fits__detail">
+          <h3 className="hp-fits__name">{model.name}</h3>
+          <code className="hp-fits__equation">{model.equation}</code>
+          <dl className="hp-fits__stats">
+            <div>
+              <dt>R²</dt>
+              <dd>{model.r2}</dd>
+            </div>
+            <div>
+              <dt>RMSE</dt>
+              <dd>{model.rmse}</dd>
+            </div>
+          </dl>
+          <p>
+            <strong>Where you meet it:</strong> {model.note}
+          </p>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function AiccChart(): ReactElement {
+  const labelW = 86;
+  const maxBar = 190;
+  const maxDelta = AICC_ROWS[AICC_ROWS.length - 1]?.delta ?? 1;
+  return (
+    <figure className="hp-card hp-figure hp-aicc">
+      <svg viewBox="0 0 340 170" aria-hidden="true" focusable="false">
+        {AICC_ROWS.map((row, index) => {
+          const y = 14 + index * 32;
+          const width = Math.max(2, (row.delta / maxDelta) * maxBar);
+          return (
+            <g key={row.name}>
+              <text x="0" y={y + 12} fontSize="10.5" fill="var(--muted)">
+                {row.name}
+              </text>
+              <rect
+                x={labelW}
+                y={y}
+                width={maxBar}
+                height="16"
+                rx="4"
+                fill="var(--border)"
+                opacity="0.35"
+              />
+              <rect
+                className="hp-aicc__bar"
+                x={labelW}
+                y={y}
+                width={width}
+                height="16"
+                rx="4"
+                fill="var(--accent)"
+                opacity={row.delta === 0 ? 1 : 0.45}
+              />
+              <text
+                x={labelW + maxBar + 6}
+                y={y + 12}
+                fontSize="10"
+                fill="var(--muted)"
+                fontFamily="var(--font-mono)"
+              >
+                {row.aicc}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+      <figcaption>ΔAICc against the best model — lower is better.</figcaption>
+    </figure>
+  );
+}
+
 export function HomePage(): ReactElement {
   const { login } = useAuth();
   const navigate = useNavigate();
@@ -220,6 +668,30 @@ export function HomePage(): ReactElement {
   const [error, setError] = useState<string | null>(null);
   const [unverified, setUnverified] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const mainRef = useRef<HTMLElement>(null);
+
+  // Reveal each top-level section once as it scrolls into view. The `hp-reveal` class is
+  // only applied when IntersectionObserver exists, so tests and no-observer browsers
+  // never start with hidden content. Respects prefers-reduced-motion in CSS.
+  useLayoutEffect(() => {
+    if (typeof IntersectionObserver === "undefined") return;
+    const sections = Array.from(
+      mainRef.current?.querySelectorAll<HTMLElement>(":scope > section") ?? [],
+    );
+    for (const section of sections) section.classList.add("hp-reveal");
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          entry.target.classList.add("is-visible");
+          observer.unobserve(entry.target);
+        }
+      },
+      { threshold: 0.08, rootMargin: "0px 0px -48px 0px" },
+    );
+    for (const section of sections) observer.observe(section);
+    return () => observer.disconnect();
+  }, []);
 
   // The header links carry a hash; scroll to it whenever it changes.
   useEffect(() => {
@@ -256,7 +728,7 @@ export function HomePage(): ReactElement {
 
   return (
     <>
-      <main className="hp-main">
+      <main className="hp-main" ref={mainRef}>
         {/* 1 — hero with the sign-in card */}
         <section className="hp-hero">
           <div className="hp-wrap hp-hero__grid">
@@ -336,19 +808,41 @@ export function HomePage(): ReactElement {
 
         {/* 2 — trust strip */}
         <section className="hp-trust" aria-label="Capabilities at a glance">
-          <div className="hp-wrap hp-pills">
-            {[
-              "NIST StRD validated",
-              "~250 models",
-              "AICc / BIC ranking",
-              "Confidence & prediction bands",
-              "AGPL-3.0",
-              "Offline desktop app",
-            ].map((pill) => (
-              <span className="hp-pill" key={pill}>
-                {pill}
-              </span>
-            ))}
+          <div className="hp-wrap">
+            <div className="hp-pills">
+              {[
+                "NIST StRD validated",
+                "~250 models",
+                "AICc / BIC ranking",
+                "Confidence & prediction bands",
+                "AGPL-3.0",
+                "Offline desktop app",
+              ].map((pill) => (
+                <span className="hp-pill" key={pill}>
+                  {pill}
+                </span>
+              ))}
+            </div>
+            <div className="hp-trust__stats">
+              <div className="hp-trust__stat">
+                <strong>
+                  <CountUp target={174} />
+                </strong>
+                <span>candidates ranked in one run</span>
+              </div>
+              <div className="hp-trust__stat">
+                <strong>
+                  <CountUp target={250} prefix="~" />
+                </strong>
+                <span>models in the library</span>
+              </div>
+              <div className="hp-trust__stat">
+                <strong>
+                  <CountUp target={6} />
+                </strong>
+                <span>export formats</span>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -418,6 +912,18 @@ export function HomePage(): ReactElement {
               <span>Polynomials</span>
               <span>Custom grammar</span>
             </div>
+          </div>
+        </section>
+
+        {/* 5b — fits you can reproduce */}
+        <section className="hp-sec" id="fits">
+          <div className="hp-wrap">
+            <SectionHead
+              eyebrow="MODEL GALLERY"
+              title="Fits you can reproduce."
+              lede="Six shapes cover most measurements. Pick one to see the curve, the confidence band and the numbers CurveStudio reports for it."
+            />
+            <FitGallery />
           </div>
         </section>
 
@@ -499,6 +1005,7 @@ export function HomePage(): ReactElement {
                   </svg>
                   <figcaption>95% confidence band around the fit</figcaption>
                 </figure>
+                <AiccChart />
               </div>
             </div>
           </div>
@@ -635,6 +1142,15 @@ export function HomePage(): ReactElement {
               height={44}
             />
             <p>Curve fitting and model discovery for paired measurements.</p>
+            <a
+              className="hp-footer__ci"
+              href="https://www.concreteinfo.in"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <img src="/concreteinfo-logo.png" alt="ConcreteInfo" width={100} height={28} />
+            </a>
+            <p className="hp-footer__ci-note">A ConcreteInfo product.</p>
           </div>
           <nav aria-label="Product">
             <h3>Product</h3>
@@ -667,6 +1183,43 @@ export function HomePage(): ReactElement {
               </li>
               <li>
                 <a href="https://www.concreteinfo.in">ConcreteInfo</a>
+              </li>
+            </ul>
+          </nav>
+          <nav aria-label="Open source">
+            <h3>Open source</h3>
+            <ul>
+              <li>
+                <a
+                  href="https://github.com/amitwh/ConcreteInfo_CurveStudio"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  CurveStudio source (AGPL-3.0)
+                </a>
+              </li>
+              <li>
+                <a href="https://pcpower.concreteinfo.net/" target="_blank" rel="noopener noreferrer">
+                  PC Power Calculator
+                </a>
+              </li>
+              <li>
+                <a
+                  href="https://github.com/amitwh/markdown-converter"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Markdown Converter
+                </a>
+              </li>
+              <li>
+                <a
+                  href="https://github.com/amitwh/GitHubDesktopLinux"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  GitHub Desktop for Linux
+                </a>
               </li>
             </ul>
           </nav>

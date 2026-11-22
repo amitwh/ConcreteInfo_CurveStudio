@@ -29,8 +29,22 @@ declare module "plotly.js-dist-min" {
     [key: string]: unknown;
   }
 
+  export interface PlotlyAnnotation {
+    text: string;
+    xref?: string;
+    yref?: string;
+    x?: number;
+    y?: number;
+    xanchor?: string;
+    yanchor?: string;
+    showarrow?: boolean;
+    font?: { size?: number; color?: string; family?: string; [key: string]: unknown };
+    [key: string]: unknown;
+  }
+
   export interface PlotlyLayout {
     title?: { text: string };
+    annotations?: PlotlyAnnotation[];
     font?: { family?: string; size?: number; color?: string };
     paper_bgcolor?: string;
     plot_bgcolor?: string;
@@ -86,6 +100,8 @@ declare module "plotly.js-dist-min" {
     ): Promise<unknown>;
     purge(root: HTMLElement): void;
     downloadImage(root: HTMLElement, options: DownloadImageOptions): Promise<unknown>;
+    /** Serialise the current graph to a data URL (PNG by default). */
+    toImage(root: HTMLElement, options?: DownloadImageOptions): Promise<string>;
     Plots: { resize(root: HTMLElement): void };
   };
 

@@ -2,6 +2,7 @@
 
 import numpy as np
 import pytest
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication, QLabel
 
 from curvestudio_desktop.views.plot_view import PlotView
@@ -101,6 +102,26 @@ def test_export_png_and_svg(plot: PlotView, tmp_path) -> None:
 def test_export_refused_without_data(plot: PlotView, tmp_path) -> None:
     assert plot.export_png(tmp_path / "empty.png") is False
     assert not (tmp_path / "empty.png").exists()
+
+
+def test_watermark_is_a_faint_scene_brand_mark(plot: PlotView, tmp_path) -> None:
+    """The mark lives in the scene (so both exports carry it) and never grabs the mouse."""
+    plot.set_data(np.array([1.0, 2.0, 3.0]), np.array([2.0, 4.0, 8.0]), "x", "y")
+    plot.resize(640, 480)
+    assert plot.watermark_text() == "ConcreteInfo CurveStudio"
+    mark = plot._watermark
+    assert mark.isVisible()
+    assert mark.parentItem() is plot._plot.graphicsItem()
+    assert mark.acceptedMouseButtons() == Qt.MouseButton.NoButton
+    assert mark.zValue() > 2.0, "the mark sits above the traces"
+    # the SVG serialises the scene, so the mark is in the exported file
+    svg = tmp_path / "watermarked.svg"
+    assert plot.export_svg(svg) is True
+    assert "ConcreteInfo CurveStudio" in svg.read_text(encoding="utf-8")
+    # it belongs to the widget, not the data: clearing the dataset keeps it visible
+    plot.clear_data()
+    assert mark.isVisible()
+    assert plot.watermark_text() == "ConcreteInfo CurveStudio"
 
 
 def test_export_png_hides_the_crosshair(plot: PlotView, tmp_path, monkeypatch) -> None:

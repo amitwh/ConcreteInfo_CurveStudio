@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -120,5 +120,71 @@ describe("HomePage", () => {
     vi.mocked(api.oauthProviders).mockResolvedValue(["google"]);
     renderHome();
     expect(await screen.findByRole("button", { name: /continue with google/i })).toBeTruthy();
+  });
+
+  it("shows the ConcreteInfo product and open-source project links in the footer", () => {
+    renderHome();
+    const footer = screen.getByRole("contentinfo");
+
+    const logo = within(footer).getByAltText("ConcreteInfo");
+    expect(logo.getAttribute("src")).toBe("/concreteinfo-logo.png");
+    expect(logo.getAttribute("width")).toBe("100");
+    expect(logo.getAttribute("height")).toBe("28");
+    const logoLink = logo.closest("a");
+    expect(logoLink?.getAttribute("href")).toBe("https://www.concreteinfo.in");
+    expect(logoLink?.getAttribute("target")).toBe("_blank");
+    expect(logoLink?.getAttribute("rel")).toBe("noopener noreferrer");
+    expect(within(footer).getByText("A ConcreteInfo product.")).toBeTruthy();
+
+    expect(within(footer).getByRole("heading", { name: "Open source" })).toBeTruthy();
+    const projects: Array<[RegExp, string]> = [
+      [/CurveStudio source/i, "https://github.com/amitwh/ConcreteInfo_CurveStudio"],
+      [/PC Power Calculator/i, "https://pcpower.concreteinfo.net/"],
+      [/Markdown Converter/i, "https://github.com/amitwh/markdown-converter"],
+      [/GitHub Desktop for Linux/i, "https://github.com/amitwh/GitHubDesktopLinux"],
+    ];
+    for (const [name, href] of projects) {
+      const link = within(footer).getByRole("link", { name });
+      expect(link.getAttribute("href")).toBe(href);
+      expect(link.getAttribute("target")).toBe("_blank");
+      expect(link.getAttribute("rel")).toBe("noopener noreferrer");
+    }
+  });
+
+  it("renders the six reproducible-fit chips and switches the displayed equation", async () => {
+    const user = userEvent.setup();
+    renderHome();
+    const section = document.getElementById("fits");
+    expect(section).not.toBeNull();
+    const scoped = within(section as HTMLElement);
+
+    expect(scoped.getAllByRole("button")).toHaveLength(6);
+    const decay = scoped.getByRole("button", { name: "Exponential decay" });
+    expect(decay.getAttribute("aria-pressed")).toBe("true");
+    expect(scoped.getByText("y = a·exp(−b·x)+c", { selector: "code" })).toBeTruthy();
+    expect(scoped.getByText("0.9964")).toBeTruthy();
+
+    const firstCurve = section?.querySelector(".hp-fits__curve")?.getAttribute("d") ?? "";
+    expect(firstCurve).toMatch(/^M[\d.]+ [\d.]+ L/);
+    expect(firstCurve).not.toMatch(/NaN|undefined/);
+    expect(section?.querySelector(".hp-fits__band")?.getAttribute("d") ?? "").not.toMatch(
+      /NaN|undefined/,
+    );
+    expect(section?.querySelectorAll(".hp-fits__points circle")).toHaveLength(12);
+
+    const logistic = scoped.getByRole("button", { name: "Logistic growth" });
+    await user.click(logistic);
+
+    expect(logistic.getAttribute("aria-pressed")).toBe("true");
+    expect(decay.getAttribute("aria-pressed")).toBe("false");
+    expect(scoped.getByText("y = L/(1+exp(−k(x−x₀)))", { selector: "code" })).toBeTruthy();
+    expect(scoped.queryByText("y = a·exp(−b·x)+c", { selector: "code" })).toBeNull();
+    expect(section?.querySelector(".hp-fits__curve")?.getAttribute("d")).not.toBe(firstCurve);
+  });
+
+  it("renders the five-model AICc comparison in the statistics section", () => {
+    renderHome();
+    expect(document.querySelectorAll(".hp-aicc__bar")).toHaveLength(5);
+    expect(screen.getByText(/ΔAICc against the best model/i)).toBeTruthy();
   });
 });

@@ -20,7 +20,12 @@ from reportlab.platypus import Table
 
 from curvestudio.workflow import FitBundle, format_equation
 from curvestudio_reporting import fit_to_pdf
-from curvestudio_reporting.pdf_report import _WIDTH, _flowables
+from curvestudio_reporting.pdf_report import (
+    _WIDTH,
+    DISCLAIMER_TEXT,
+    WATERMARK_TEXT,
+    _flowables,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -226,6 +231,27 @@ def test_pdf_writes_to_a_binary_stream_too(
     buffer = io.BytesIO()
     fit_to_pdf(poly_bundle(), buffer)
     assert buffer.getvalue().startswith(b"%PDF")
+
+
+def test_every_page_carries_the_watermark_and_disclaimer(
+    poly_bundle: FitBundleFactory, tmp_path: Path, uncompressed: None
+) -> None:
+    data = make_pdf(poly_bundle(), tmp_path)
+    pages = len(re.findall(rb"/Type\s*/Page\b", data))
+    assert pages >= 2, "a converged report breaks to a figure page"
+    text = pdf_text(data)
+    assert text.count(WATERMARK_TEXT) == pages, "the watermark is painted on every page"
+    assert text.count(DISCLAIMER_TEXT) == pages, "the disclaimer is on every page"
+
+
+def test_a_single_page_report_carries_the_watermark_and_disclaimer(
+    non_converged_bundle: FitBundle, tmp_path: Path, uncompressed: None
+) -> None:
+    data = make_pdf(non_converged_bundle, tmp_path)
+    pages = len(re.findall(rb"/Type\s*/Page\b", data))
+    text = pdf_text(data)
+    assert WATERMARK_TEXT in text
+    assert text.count(DISCLAIMER_TEXT) == pages
 
 
 def test_every_table_has_a_width_per_column_and_fits_the_frame(

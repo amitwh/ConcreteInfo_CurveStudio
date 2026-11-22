@@ -1,8 +1,11 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { components } from "../../api/schema";
 import { ResultsTabs } from "./ResultsTabs";
+
+const exportMock = vi.hoisted(() => ({ exportFitPdf: vi.fn() }));
+vi.mock("../../lib/report/export", () => ({ exportFitPdf: exportMock.exportFitPdf }));
 
 type FitBundle = components["schemas"]["FitBundle"];
 
@@ -119,6 +122,92 @@ describe("non-converged fit display (UI honesty)", () => {
     expect(screen.queryByRole("columnheader", { name: "t" })).toBeNull();
     expect(screen.queryByRole("columnheader", { name: "p" })).toBeNull();
     expect(screen.getByRole("columnheader", { name: "95% CI" })).toBeTruthy();
+  });
+});
+
+describe("PDF report export", () => {
+  beforeEach(() => {
+    exportMock.exportFitPdf.mockReset();
+    exportMock.exportFitPdf.mockResolvedValue(undefined);
+  });
+
+  function renderTabs(
+    captureChart?: () => Promise<string | null>,
+  ): ReturnType<typeof render> {
+    return render(
+      <ResultsTabs
+        fitId="fit-1"
+        bundle={bundle("converged", "converged: rtol")}
+        fits={[]}
+        onLoadFit={vi.fn()}
+        onDeleteFit={vi.fn()}
+        captureChart={captureChart}
+        datasetName="decay.csv"
+      />,
+    );
+  }
+
+  it("renders a PDF report button in the tab strip", () => {
+    renderTabs();
+    expect(screen.getByRole("button", { name: "PDF report" })).toBeTruthy();
+  });
+
+  it("captures the chart and exports the bundle", async () => {
+    const captureChart = vi.fn().mockResolvedValue("data:image/png;base64,CHART");
+    renderTabs(captureChart);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "PDF report" }));
+
+    expect(captureChart).toHaveBeenCalledTimes(1);
+    expect(exportMock.exportFitPdf).toHaveBeenCalledTimes(1);
+    const [exportedBundle, meta] = exportMock.exportFitPdf.mock.calls[0] as [
+      FitBundle,
+      Record<string, unknown>,
+    ];
+    expect(exportedBundle.result.model_id).toBe("exp_decay");
+    expect(meta).toMatchObject({
+      datasetName: "decay.csv",
+      chartImage: "data:image/png;base64,CHART",
+    });
+  });
+
+  it("still exports without a chart when no capture is wired", async () => {
+    renderTabs();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "PDF report" }));
+
+    const [, meta] = exportMock.exportFitPdf.mock.calls[0] as [
+      FitBundle,
+      Record<string, unknown>,
+    ];
+    expect(meta).toMatchObject({ chartImage: null });
+  });
+
+  it("survives a failed chart capture and exports without the chart", async () => {
+    const captureChart = vi.fn().mockRejectedValue(new Error("Plotly is gone"));
+    renderTabs(captureChart);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "PDF report" }));
+
+    const [, meta] = exportMock.exportFitPdf.mock.calls[0] as [
+      FitBundle,
+      Record<string, unknown>,
+    ];
+    expect(meta).toMatchObject({ chartImage: null });
+  });
+
+  it("shows an inline error and re-enables the button when generation fails", async () => {
+    exportMock.exportFitPdf.mockRejectedValueOnce(new Error("renderer unavailable"));
+    const captureChart = vi.fn().mockResolvedValue(null);
+    renderTabs(captureChart);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "PDF report" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.className).toContain("alert--error");
+    expect(alert.textContent).toBe("renderer unavailable");
+    const button = screen.getByRole("button", { name: "PDF report" }) as HTMLButtonElement;
+    expect(button.disabled).toBe(false);
   });
 });
 

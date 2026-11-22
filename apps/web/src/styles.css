@@ -1332,6 +1332,12 @@ li.dataset:hover .dataset__delete,
   box-shadow: inset 0 -2px 0 var(--accent);
 }
 
+/* The PDF report action sits at the far end of the tab strip. */
+.tabs__export {
+  margin-left: auto;
+  align-self: center;
+}
+
 .stats {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(7rem, 1fr));
@@ -3004,7 +3010,7 @@ html[data-theme="dark"] .about-logo {
 
 .hp-footer__grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.6fr) minmax(0, 0.7fr) minmax(0, 0.7fr);
+  grid-template-columns: minmax(0, 1.6fr) repeat(3, minmax(0, 0.7fr));
   gap: 2rem;
 }
 
@@ -3018,6 +3024,26 @@ html[data-theme="dark"] .about-logo {
   display: block;
   height: 2.75rem;
   width: auto;
+}
+
+.hp-footer__ci {
+  display: inline-flex;
+  margin-top: 0.9rem;
+  padding: 0.3rem 0.5rem;
+  border-radius: var(--radius-md);
+  background: #fff;
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
+.hp-footer__ci img {
+  display: block;
+  height: 28px;
+  width: auto;
+}
+
+.hp-footer__brand .hp-footer__ci-note {
+  margin: 0.4rem 0 0;
+  font-size: 0.82rem;
 }
 
 .hp-footer h3 {
@@ -3061,7 +3087,261 @@ html[data-theme="dark"] .about-logo {
   margin: 0;
 }
 
+/* ---- entrance motion ---- */
+
+@keyframes hp-hero-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.hp-hero__copy,
+.hp-hero__panel {
+  animation: hp-hero-in 350ms ease-out both;
+}
+
+/* The class is added by the observer only; without it everything stays visible. */
+@media (prefers-reduced-motion: no-preference) {
+  .hp-reveal {
+    opacity: 0;
+    transform: translateY(12px);
+    transition:
+      opacity 550ms ease,
+      transform 550ms ease;
+  }
+
+  .hp-reveal.is-visible {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hp-hero__copy,
+  .hp-hero__panel {
+    animation: none;
+  }
+
+  .hp-reveal {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ---- fits you can reproduce ---- */
+
+.hp-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1.1rem;
+}
+
+.hp-chip {
+  padding: 0.42rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.84rem;
+  cursor: pointer;
+}
+
+.hp-chip:hover {
+  border-color: var(--border-strong);
+}
+
+.hp-chip--active {
+  border-color: var(--accent);
+  background: var(--accent-weak);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.hp-chip:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.hp-fits {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.hp-fits__figure {
+  margin: 0;
+}
+
+.hp-fits__figure svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.hp-fits__detail {
+  display: grid;
+  gap: 0.65rem;
+  align-content: start;
+}
+
+.hp-fits__name {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.hp-fits__equation {
+  justify-self: start;
+  padding: 0.3rem 0.6rem;
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--heading);
+  font-family: var(--font-mono);
+  font-size: 0.88rem;
+}
+
+.hp-fits__stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem;
+  margin: 0;
+}
+
+.hp-fits__stats dt {
+  color: var(--muted);
+  font-size: 0.7rem;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.hp-fits__stats dd {
+  margin: 0.15rem 0 0;
+  color: var(--heading);
+  font-family: var(--font-mono);
+  font-size: 0.95rem;
+}
+
+.hp-fits__detail p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+
+@keyframes hp-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes hp-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.hp-fits__curve {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: hp-draw 600ms ease-out forwards;
+}
+
+.hp-fits__band,
+.hp-fits__points {
+  animation: hp-fade-in 320ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hp-fits__curve {
+    stroke-dasharray: none;
+    stroke-dashoffset: 0;
+    animation: none;
+  }
+
+  .hp-fits__band,
+  .hp-fits__points {
+    animation: none;
+  }
+}
+
+/* ---- trust-strip counters ---- */
+
+.hp-trust__stats {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.8rem clamp(1.5rem, 6vw, 4.5rem);
+  margin-top: 0.95rem;
+  padding-top: 0.95rem;
+  border-top: 1px solid var(--border);
+}
+
+.hp-trust__stat {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+}
+
+.hp-trust__stat strong {
+  color: var(--heading);
+  font-family: var(--font-mono);
+  font-size: 1.15rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.hp-trust__stat span {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+/* ---- AICc comparison ---- */
+
+.hp-aicc {
+  margin: 0;
+}
+
+.hp-aicc__bar {
+  transform-box: fill-box;
+  transform-origin: left center;
+  transition: transform 700ms ease;
+}
+
+.hp-reveal .hp-aicc__bar {
+  transform: scaleX(0);
+}
+
+.hp-reveal.is-visible .hp-aicc__bar {
+  transform: scaleX(1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hp-aicc__bar {
+    transition: none;
+  }
+}
+
 /* ---- responsive ---- */
+
+@media (max-width: 1000px) {
+  .hp-footer__grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .hp-footer__brand {
+    grid-column: 1 / -1;
+  }
+}
 
 @media (max-width: 900px) {
   .hp-hero__grid {
@@ -3080,12 +3360,8 @@ html[data-theme="dark"] .about-logo {
     grid-template-columns: 1fr;
   }
 
-  .hp-footer__grid {
-    grid-template-columns: 1fr 1fr;
-  }
-
-  .hp-footer__brand {
-    grid-column: 1 / -1;
+  .hp-fits {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -3111,12 +3387,14 @@ html[data-theme="dark"] .about-logo {
   }
 }
 
-@media (max-width: 520px) {
-  .hp-grid-4 {
+@media (max-width: 700px) {
+  .hp-footer__grid {
     grid-template-columns: 1fr;
   }
+}
 
-  .hp-footer__grid {
+@media (max-width: 520px) {
+  .hp-grid-4 {
     grid-template-columns: 1fr;
   }
 

@@ -14,7 +14,7 @@ from typing import BinaryIO
 
 from openpyxl import Workbook
 from openpyxl.drawing.image import Image as ExcelImage
-from openpyxl.styles import Font
+from openpyxl.styles import Alignment, Font
 from openpyxl.worksheet.worksheet import Worksheet
 
 from curvestudio.fitting import FitStatus
@@ -40,6 +40,17 @@ FIXED_EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 
 _STATUS_RED = Font(color="FFB2182B", bold=True)
 
+#: Same literal as the PDF report's watermark and disclaimer. They are repeated here so
+#: the spreadsheet writer never imports the PDF renderer (and reportlab with it).
+WATERMARK_TEXT = "ConcreteInfo CurveStudio"
+DISCLAIMER_TEXT = (
+    "Results describe agreement with the sample, not compliance or engineering advice"
+    " — verify before use."
+)
+_FOOTER_FONT_SIZE = 7
+_FOOTER_COLOR = "808080"
+_DISCLAIMER_FONT = Font(color="FFA6A6A6", italic=True, size=8)
+
 
 def fit_to_xlsx(bundle: FitBundle, target: Path | BinaryIO) -> None:
     """Write the workbook for ``bundle`` to ``target`` (a path or binary stream)."""
@@ -53,7 +64,17 @@ def fit_to_xlsx(bundle: FitBundle, target: Path | BinaryIO) -> None:
     _write_observations(workbook.create_sheet("Observations"), bundle)
     _write_statistics(workbook.create_sheet("Statistics"), bundle)
     _write_plot(workbook.create_sheet("Plot"), bundle)
+    _decorate_sheets(workbook)
     workbook.save(target)
+
+
+def _decorate_sheets(workbook: Workbook) -> None:
+    """Print the brand line and disclaimer in every sheet's page footer."""
+    footer = f"{WATERMARK_TEXT} — {DISCLAIMER_TEXT}"
+    for sheet in workbook.worksheets:
+        sheet.oddFooter.center.text = footer
+        sheet.oddFooter.center.size = _FOOTER_FONT_SIZE
+        sheet.oddFooter.center.color = _FOOTER_COLOR
 
 
 def _fix_properties(workbook: Workbook) -> None:
@@ -62,6 +83,7 @@ def _fix_properties(workbook: Workbook) -> None:
     workbook.properties.created = FIXED_EPOCH
     workbook.properties.modified = FIXED_EPOCH
     workbook.properties.title = "CurveStudio fit report"
+    workbook.properties.description = DISCLAIMER_TEXT
 
 
 def _label(sheet: Worksheet, label: str, value: StatValue, *, bold: bool = False) -> None:
@@ -110,8 +132,18 @@ def _write_summary(sheet: Worksheet, bundle: FitBundle) -> None:
         else f"not defined: the fit is {result.status.value}, so no criterion was computed",
     )
     _label(sheet, "assumptions and limitations", assumptions_text())
+    _write_disclaimer(sheet)
     sheet.column_dimensions["A"].width = 34.0
     sheet.column_dimensions["B"].width = 100.0
+
+
+def _write_disclaimer(sheet: Worksheet) -> None:
+    """One grey italic disclaimer row below the summary's identification lines."""
+    row = sheet.max_row + 2
+    cell = sheet.cell(row=row, column=1, value=safe_text(DISCLAIMER_TEXT))
+    cell.font = _DISCLAIMER_FONT
+    cell.alignment = Alignment(wrap_text=True, vertical="top")
+    sheet.merge_cells(start_row=row, start_column=1, end_row=row, end_column=2)
 
 
 def _write_parameters(sheet: Worksheet, bundle: FitBundle) -> None:

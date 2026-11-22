@@ -21,6 +21,7 @@ import {
   type OpenRowOut,
 } from "../api/client";
 import { ErrorBox, Loading, errorText } from "../components/States";
+import { exportPlotPngDataUrl } from "../components/PlotChart";
 import { useTheme } from "../components/ThemeToggle";
 import { useJobPolling } from "../hooks/useJobPolling";
 import { ModeSwitch } from "../workspace/ModeSwitch";
@@ -101,6 +102,12 @@ export function WorkspacePage({
   const [bundleSource, setBundleSource] = useState<BundleSource>("manual");
   const [bundleError, setBundleError] = useState<unknown>(null);
   const [fitError, setFitError] = useState<string | null>(null);
+  /** The live Plotly root, captured for the PDF report. */
+  const chartRootRef = useRef<HTMLDivElement | null>(null);
+  const captureChart = useCallback(
+    () => exportPlotPngDataUrl(chartRootRef.current),
+    [],
+  );
 
   const autofit = useAutofit();
   const autoState = autofit.stateFor(selectedId);
@@ -459,6 +466,7 @@ export function WorkspacePage({
           rankingRows={mode === "auto" ? (autoState.stored?.result.ranked ?? null) : null}
           storedCurves={mode === "auto" ? (autoState.stored?.result.curves ?? null) : null}
           selectedRowId={mode === "auto" ? selectedRowId : null}
+          rootRef={chartRootRef}
         />
         {detailLoading && <Loading label="Loading dataset…" />}
         {detailError !== null && <ErrorBox error={detailError} />}
@@ -539,6 +547,8 @@ export function WorkspacePage({
             fitsError={fitsError}
             onLoadFit={(id) => void loadBundle(id, "manual")}
             onDeleteFit={(id) => void onDeleteFit(id)}
+            captureChart={captureChart}
+            datasetName={detail?.name ?? null}
           />
         )}
       </div>

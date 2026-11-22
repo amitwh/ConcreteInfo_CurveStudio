@@ -4,7 +4,7 @@
  * non-converged fit contributes no curve — the toggles then show why.
  */
 
-import { useMemo, useRef, useState, type ReactElement } from "react";
+import { useMemo, useRef, useState, type ReactElement, type RefObject } from "react";
 import { Database, Download } from "lucide-react";
 import { PlotChart, downloadPlotPng } from "../components/PlotChart";
 import type { DatasetDetailOut, FitBundle, RankedFit, RowCurve } from "../api/client";
@@ -30,6 +30,8 @@ export interface ChartPanelProps {
   storedCurves?: Readonly<Record<string, RowCurve>> | null;
   /** The ranking row the chart follows; its rank colours the single curve. */
   selectedRowId?: string | null;
+  /** Receives the Plotly root so the workspace can capture it for the PDF report. */
+  rootRef?: RefObject<HTMLDivElement | null>;
 }
 
 export function ChartPanel({
@@ -39,6 +41,7 @@ export function ChartPanel({
   rankingRows = null,
   storedCurves = null,
   selectedRowId = null,
+  rootRef,
 }: ChartPanelProps): ReactElement {
   const [toggles, setToggles] = useState<ChartToggles>({
     confidence: true,
@@ -47,7 +50,9 @@ export function ChartPanel({
     logY: false,
     top3: false,
   });
-  const chartRootRef = useRef<HTMLDivElement>(null);
+  const internalRootRef = useRef<HTMLDivElement>(null);
+  // One root for both the in-panel "Download PNG" and any owner-provided capture ref.
+  const chartRootRef = rootRef ?? internalRootRef;
 
   const points = dataset?.points ?? null;
   const logAllowed = useMemo(() => logAxesAllowed(points, bundle), [points, bundle]);

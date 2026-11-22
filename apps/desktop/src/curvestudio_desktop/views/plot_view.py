@@ -22,6 +22,7 @@ from PySide6.QtWidgets import QLabel, QStackedLayout, QVBoxLayout, QWidget
 
 from curvestudio.workflow import format_equation
 from curvestudio_desktop.theme import current_scheme, mono_font
+from curvestudio_plotting import WATERMARK_ALPHA, WATERMARK_TEXT
 from curvestudio_plotting.palette import band_fill, curve_style, data_color
 
 _DARK_PLOT_BACKGROUND = "#1e1e1e"
@@ -29,6 +30,12 @@ _DARK_PLOT_FOREGROUND = "#d4d4d4"
 #: Bands sit below the curves so a fill never tints the line it belongs to.
 _BAND_Z = 0.5
 _CURVE_Z = 2.0
+#: The in-app brand mark: the same text (and faintness) as the published figures.
+_WATERMARK_Z = 10.0
+_WATERMARK_HTML = (
+    f'<span style="color: rgba(70,70,70,{WATERMARK_ALPHA:g}); font-size: 7pt;">'
+    f"{WATERMARK_TEXT}</span>"
+)
 
 
 _EQUATION_LINE_WIDTH = 52
@@ -134,6 +141,13 @@ class PlotView(QWidget):
         outer.addLayout(stack)
         outer.addWidget(self._readout)
         self._install_crosshair()
+        # The faint brand mark is a scene item (not a QLabel overlay) so both exporters
+        # — ImageExporter's PNG and the QSvgGenerator SVG, which serialise the scene —
+        # render it. NoButton keeps it out of the crosshair's way.
+        self._watermark = pg.LabelItem(text=_WATERMARK_HTML, parent=self._plot.graphicsItem())
+        self._watermark.anchor(itemPos=(1, 1), parentPos=(1, 1), offset=(-8, -6))
+        self._watermark.setZValue(_WATERMARK_Z)
+        self._watermark.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
         # auto "peak" downsampling is off: peak decimation assumes sorted x and
         # distorts an unsorted scatter. clip-to-view stays on.
         self._plot.getPlotItem().setDownsampling(auto=False)
@@ -169,6 +183,10 @@ class PlotView(QWidget):
     def plot_background(self) -> str:
         """The drawn plot background as ``#rrggbb`` (what the theme tests assert)."""
         return str(self._plot.backgroundBrush().color().name())
+
+    def watermark_text(self) -> str:
+        """The brand mark drawn faintly in the plot's bottom-right corner (also exported)."""
+        return WATERMARK_TEXT
 
     # -- data --------------------------------------------------------------------------------
 

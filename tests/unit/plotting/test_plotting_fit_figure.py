@@ -2,12 +2,13 @@
 
 from typing import TYPE_CHECKING
 
+import pytest
 from matplotlib.colors import to_hex, to_rgba
 from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
 
 from curvestudio.workflow import FitBundle
-from curvestudio_plotting import fit_figure
+from curvestudio_plotting import WATERMARK_ALPHA, WATERMARK_TEXT, fit_figure
 from curvestudio_plotting.palette import (
     BAND_CONFIDENCE_FILL,
     BAND_PREDICTION_FILL,
@@ -32,6 +33,23 @@ def figure_texts(fig: Figure) -> list[str]:
 
 def line_labels(fig: Figure) -> list[str]:
     return [line.get_label() for ax in fig.axes for line in ax.get_lines()]
+
+
+def watermark_artists(fig: Figure) -> list:
+    return [text for text in fig.texts if text.get_text() == WATERMARK_TEXT]
+
+
+def test_every_fit_figure_carries_the_brand_watermark(poly_bundle: FitBundleFactory) -> None:
+    marks = watermark_artists(fit_figure(poly_bundle()))
+    assert len(marks) == 1
+    assert marks[0].get_alpha() == pytest.approx(WATERMARK_ALPHA)
+
+
+def test_non_converged_figure_carries_the_brand_watermark(
+    non_converged_bundle: FitBundle, failed_bundle: FitBundle
+) -> None:
+    for bundle in (non_converged_bundle, failed_bundle):
+        assert watermark_artists(fit_figure(bundle)), bundle.result.status
 
 
 def test_converged_fit_draws_curve_data_and_confidence_band(poly_bundle: FitBundleFactory) -> None:

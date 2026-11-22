@@ -8,6 +8,7 @@ from openpyxl import load_workbook
 
 from curvestudio.workflow import FitBundle, format_equation
 from curvestudio_reporting import fit_to_xlsx
+from curvestudio_reporting.xlsx_report import DISCLAIMER_TEXT, WATERMARK_TEXT
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -178,6 +179,31 @@ def test_workbook_properties_are_fixed_for_reproducibility(
     fit_to_xlsx(poly_bundle(), tmp_path / "fit.xlsx")
     props = load(tmp_path / "fit.xlsx").properties
     assert props.creator == "CurveStudio"
+    assert props.description == DISCLAIMER_TEXT
     # openpyxl reads the pinned epoch back as a naive datetime (no timezone kept)
     assert props.created is not None
     assert props.created.replace(tzinfo=UTC) == datetime(1970, 1, 1, tzinfo=UTC)
+
+
+def test_every_sheet_prints_the_brand_footer(poly_bundle: FitBundleFactory, tmp_path: Path) -> None:
+    fit_to_xlsx(poly_bundle(), tmp_path / "fit.xlsx")
+    wb = load(tmp_path / "fit.xlsx")
+    for sheet in wb.worksheets:
+        footer = sheet.oddFooter.center.text
+        assert footer is not None
+        assert WATERMARK_TEXT in footer
+        assert DISCLAIMER_TEXT in footer
+        assert sheet.oddFooter.center.size == 7
+        assert "808080" in str(sheet.oddFooter.center.color)
+
+
+def test_summary_sheet_carries_a_faint_italic_disclaimer(
+    poly_bundle: FitBundleFactory, tmp_path: Path
+) -> None:
+    fit_to_xlsx(poly_bundle(), tmp_path / "fit.xlsx")
+    sheet = load(tmp_path / "fit.xlsx")["Summary"]
+    cell = next(cell for row in sheet.iter_rows() for cell in row if cell.value == DISCLAIMER_TEXT)
+    assert cell.font.italic is True
+    assert cell.font.size == 8
+    assert cell.font.color is not None
+    assert str(cell.font.color.rgb).upper() == "FFA6A6A6"

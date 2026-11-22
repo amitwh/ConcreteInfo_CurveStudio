@@ -247,7 +247,8 @@ def test_security_headers_on_every_response(shared_client: TestClient) -> None:
         assert h["referrer-policy"]
         assert h["content-security-policy"] == (
             "default-src 'self'; img-src 'self' data: blob:; font-src 'self' data:; "
-            "style-src 'self' 'unsafe-inline'; script-src 'self'"
+            "style-src 'self' 'unsafe-inline'; script-src 'self' 'wasm-unsafe-eval'; "
+            "worker-src 'self' blob:; connect-src 'self' data: blob:"
         )
         assert "strict-transport-security" not in h  # only in production
 

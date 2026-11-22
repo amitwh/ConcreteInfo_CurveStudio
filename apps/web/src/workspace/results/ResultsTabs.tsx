@@ -6,6 +6,7 @@
 
 import { useState, type ReactElement } from "react";
 import type { FitBundle, FitSummaryOut } from "../../api/client";
+import { exportFitPdf } from "../../lib/report/export";
 import { isConverged } from "../traces";
 import { EquationTab } from "./EquationTab";
 import { HistoryTab } from "./HistoryTab";
@@ -22,6 +23,10 @@ export interface ResultsTabsProps {
   fitsError?: unknown;
   onLoadFit: (id: string) => void;
   onDeleteFit: (id: string) => void;
+  /** Capture the live chart as a PNG data URL; null (or a failure) omits it. */
+  captureChart?: () => Promise<string | null>;
+  /** Dataset name shown in the report. */
+  datasetName?: string | null;
 }
 
 const TABS = ["Parameters", "Statistics", "Residuals", "Equation", "Predict", "History"] as const;
@@ -40,11 +45,40 @@ export function ResultsTabs({
   fitsError = null,
   onLoadFit,
   onDeleteFit,
+  captureChart,
+  datasetName = null,
 }: ResultsTabsProps): ReactElement {
   const [tab, setTab] = useState<TabName>("Parameters");
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
   const status = bundle.result.status;
   const failed = !isConverged(bundle);
   const heading = FAILURE_HEADING[status] ?? `The fit ${status}`;
+
+  async function onExportPdf(): Promise<void> {
+    setExporting(true);
+    setExportError(null);
+    let chartImage: string | null = null;
+    if (captureChart !== undefined) {
+      // A failed capture must not lose the report: it is generated without the chart.
+      try {
+        chartImage = await captureChart();
+      } catch {
+        chartImage = null;
+      }
+    }
+    try {
+      await exportFitPdf(bundle, { datasetName, chartImage, version: __APP_VERSION__ });
+    } catch (error) {
+      setExportError(
+        error instanceof Error && error.message !== ""
+          ? error.message
+          : "The PDF report could not be generated.",
+      );
+    } finally {
+      setExporting(false);
+    }
+  }
 
   return (
     <section className="panel results" aria-label="Fit results">
@@ -68,7 +102,21 @@ export function ResultsTabs({
             {name}
           </button>
         ))}
+        <button
+          type="button"
+          className="btn btn--small tabs__export"
+          disabled={exporting}
+          aria-busy={exporting}
+          onClick={() => void onExportPdf()}
+        >
+          PDF report
+        </button>
       </div>
+      {exportError !== null && (
+        <p className="alert alert--error" role="alert">
+          {exportError}
+        </p>
+      )}
       <div
         role="tabpanel"
         id={`panel-${tab.toLowerCase()}`}

@@ -7,7 +7,12 @@
  */
 
 import { useEffect, useMemo, useRef, useState, type ReactElement, type RefObject } from "react";
-import type { PlotlyConfig, PlotlyLayout, PlotlyTrace } from "plotly.js-dist-min";
+import type {
+  PlotlyAnnotation,
+  PlotlyConfig,
+  PlotlyLayout,
+  PlotlyTrace,
+} from "plotly.js-dist-min";
 
 type PlotlyLib = (typeof import("plotly.js-dist-min"))["default"];
 
@@ -43,10 +48,16 @@ const NARROW_LEGEND_PX = 640;
 const SHORT_VIEWPORT_PX = 800;
 const SHORT_HEIGHT = 300;
 
+/** Faint attribution in the bottom-right corner of every chart. It lives in the live
+ *  layout, so `Plotly.downloadImage` (which serialises that same graph) includes it in
+ *  the exported PNG for free. */
+export const CHART_WATERMARK = "ConcreteInfo CurveStudio";
+
 export function PlotChart({
   traces,
   layout,
   ariaLabel,
+  dark = false,
   height = 360,
   outerRef,
 }: PlotChartProps): ReactElement {
@@ -106,14 +117,33 @@ export function PlotChart({
   );
 
   const fullLayout = useMemo<Partial<PlotlyLayout>>(() => {
-    if (!narrow) return { ...layout, height: chartHeight };
-    return {
-      ...layout,
-      height: chartHeight,
-      legend: { orientation: "h", y: -0.18, ...layout.legend },
-      margin: { b: 64, ...layout.margin },
+    const base: Partial<PlotlyLayout> = narrow
+      ? {
+          ...layout,
+          height: chartHeight,
+          legend: { orientation: "h", y: -0.18, ...layout.legend },
+          margin: { b: 64, ...layout.margin },
+        }
+      : { ...layout, height: chartHeight };
+    const existing = layout.annotations ?? [];
+    const watermark: PlotlyAnnotation = {
+      text: CHART_WATERMARK,
+      xref: "paper",
+      yref: "paper",
+      x: 0.995,
+      y: 0.012,
+      xanchor: "right",
+      yanchor: "bottom",
+      showarrow: false,
+      font: { size: 10, color: dark ? "rgba(241,241,241,0.22)" : "rgba(70,70,70,0.20)" },
     };
-  }, [layout, chartHeight, narrow]);
+    return {
+      ...base,
+      annotations: existing.some((annotation) => annotation.text === CHART_WATERMARK)
+        ? existing
+        : [...existing, watermark],
+    };
+  }, [layout, chartHeight, narrow, dark]);
 
   useEffect(() => {
     const root = rootRef.current;
@@ -163,4 +193,24 @@ export function downloadPlotPng(root: HTMLElement | null, filename: string): voi
   void loadPlotly().then((Plotly) => {
     void Plotly.downloadImage(root, { format: "png", filename, scale: 2 });
   });
+}
+
+/**
+ * Serialise the current graph to a PNG data URL for the PDF report. A root that is not
+ * mounted (or a serialisation failure) yields null: the report is generated without the
+ * chart rather than failing outright.
+ */
+export async function exportPlotPngDataUrl(
+  root: HTMLElement | null,
+  options: { width?: number; height?: number; scale?: number } = {},
+): Promise<string | null> {
+  if (root === null) return null;
+  const { width = 1000, height = 620, scale = 2 } = options;
+  try {
+    const Plotly = await loadPlotly();
+    const url = await Plotly.toImage(root, { format: "png", width, height, scale });
+    return typeof url === "string" && url !== "" ? url : null;
+  } catch {
+    return null;
+  }
 }

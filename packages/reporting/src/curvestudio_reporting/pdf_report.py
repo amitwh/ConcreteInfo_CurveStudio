@@ -34,6 +34,7 @@ from reportlab.lib.units import inch
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.pdfmetrics import registerFontFamily
 from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.pdfgen.canvas import Canvas
 from reportlab.platypus import (
     Flowable,
     Image,
@@ -69,6 +70,25 @@ _WIDTH = A4[0] - 2 * _MARGIN
 _MAX_CELL_CHARS = 200
 """Display maximum for one table cell; longer text is cut and ends in an ellipsis."""
 
+#: The faint diagonal brand watermark on every page. ``curvestudio_plotting`` carries the
+#: same literal separately: the import contracts forbid plotting importing reporting, so
+#: the two packages duplicate the text by design rather than sharing it.
+WATERMARK_TEXT = "ConcreteInfo CurveStudio"
+DISCLAIMER_TEXT = (
+    "Results describe agreement with the sample, not compliance or engineering advice"
+    " — verify before use."
+)
+WATERMARK_ALPHA = 0.06
+_BRAND_GREY = (0.275, 0.275, 0.275)  # #464646
+_WATERMARK_ANGLE = 35
+_WATERMARK_FONT_SIZE = 34
+_FOOTER_FONT_SIZE = 6.5
+_FOOTER_ALPHA = 0.75
+_FOOTER_GREY = colors.HexColor("#666666")
+#: The footer baseline, 18 pt (~6.4 mm) above the page bottom: below the 0.7 in content
+#: margin, so the disclaimer can never collide with body text or a figure.
+_FOOTER_Y = 18.0
+
 
 def _register_unicode_fonts() -> tuple[str, str]:
     """Register DejaVu Sans (shipped by matplotlib) as the PDF body font.
@@ -95,6 +115,30 @@ def _register_unicode_fonts() -> tuple[str, str]:
 _BODY_FONT, _BOLD_FONT = _register_unicode_fonts()
 
 
+def _decorate_page(canvas: Canvas, _doc: SimpleDocTemplate) -> None:
+    """Paint one page's faint diagonal watermark and footer disclaimer.
+
+    ReportLab calls this at page start (``onFirstPage``/``onLaterPages``), so the
+    watermark is painted underneath the flowables rather than over the text.
+    """
+    canvas.saveState()
+    # the big diagonal brand mark, centred on the page, behind the content
+    canvas.setFillAlpha(WATERMARK_ALPHA)
+    canvas.setFillColorRGB(*_BRAND_GREY)
+    canvas.translate(A4[0] / 2, A4[1] / 2)
+    canvas.rotate(_WATERMARK_ANGLE)
+    canvas.setFont(_BOLD_FONT, _WATERMARK_FONT_SIZE)
+    canvas.drawCentredString(0, 0, WATERMARK_TEXT)
+    canvas.restoreState()
+    # the disclaimer sits in the bottom margin, under every page's content
+    canvas.saveState()
+    canvas.setFillColor(_FOOTER_GREY)
+    canvas.setFillAlpha(_FOOTER_ALPHA)
+    canvas.setFont(_BODY_FONT, _FOOTER_FONT_SIZE)
+    canvas.drawCentredString(A4[0] / 2, _FOOTER_Y, DISCLAIMER_TEXT)
+    canvas.restoreState()
+
+
 def fit_to_pdf(bundle: FitBundle, target: Path | BinaryIO) -> None:
     """Write the PDF report for ``bundle`` to ``target`` (a path or binary stream)."""
     filename: str | BinaryIO = str(target) if isinstance(target, Path) else target
@@ -110,7 +154,9 @@ def fit_to_pdf(bundle: FitBundle, target: Path | BinaryIO) -> None:
         # read at call time so a caller can flip rl_config.pageCompression
         pageCompression=rl_config.pageCompression,
     )
-    document.build(_flowables(bundle))
+    # reportlab 5 builds one page template per callback; passing them to build() is the
+    # supported hook (the constructor ignores unknown keyword arguments such as these)
+    document.build(_flowables(bundle), onFirstPage=_decorate_page, onLaterPages=_decorate_page)
 
 
 def _flowables(bundle: FitBundle) -> list[Flowable]:
