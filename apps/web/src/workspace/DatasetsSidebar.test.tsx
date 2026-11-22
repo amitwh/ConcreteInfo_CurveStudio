@@ -14,6 +14,8 @@ function renderSidebar(): HTMLElement {
       onSelect={() => {}}
       onUploaded={() => {}}
       onDeleted={() => {}}
+      collapsed={false}
+      onToggleCollapse={() => {}}
     />,
   );
   return container;
@@ -92,6 +94,8 @@ describe("DatasetsSidebar — pasting a spreadsheet block", () => {
         onSelect={() => {}}
         onUploaded={() => {}}
         onDeleted={() => {}}
+        collapsed={false}
+        onToggleCollapse={() => {}}
       />,
     );
 
@@ -106,5 +110,52 @@ describe("DatasetsSidebar — pasting a spreadsheet block", () => {
     const file = upload.mock.calls[0]?.[0] as File;
     expect(file.name).toBe("pasted.tsv");
     expect(await file.text()).toBe("x\ty\n1\t2.5\n2\t4.5\n");
+  });
+});
+
+describe("DatasetsSidebar — collapse", () => {
+  it("shows a collapse control that hides the upload flow", async () => {
+    const onToggleCollapse = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <DatasetsSidebar
+        datasets={[]}
+        selectedId={null}
+        loading={false}
+        loadError={null}
+        onSelect={() => {}}
+        onUploaded={() => {}}
+        onDeleted={() => {}}
+        collapsed={false}
+        onToggleCollapse={onToggleCollapse}
+      />,
+    );
+
+    expect(screen.getByText("Drop a data file here")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Collapse datasets" }));
+    expect(onToggleCollapse).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders a narrow rail with the count when collapsed", async () => {
+    const onToggleCollapse = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <DatasetsSidebar
+        datasets={[]}
+        selectedId={null}
+        loading={false}
+        loadError={null}
+        onSelect={() => {}}
+        onUploaded={() => {}}
+        onDeleted={() => {}}
+        collapsed
+        onToggleCollapse={onToggleCollapse}
+      />,
+    );
+
+    expect(screen.queryByText("Drop a data file here")).toBeNull();
+    expect(screen.getByTitle("0 datasets")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Expand datasets" }));
+    expect(onToggleCollapse).toHaveBeenCalledTimes(1);
   });
 });

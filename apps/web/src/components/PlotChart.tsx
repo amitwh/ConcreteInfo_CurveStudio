@@ -51,17 +51,38 @@ export function PlotChart({
   outerRef,
 }: PlotChartProps): ReactElement {
   const rootRef = useRef<HTMLDivElement>(null);
+  const libRef = useRef<PlotlyLib | null>(null);
   const [narrow, setNarrow] = useState(false);
   const [shortViewport, setShortViewport] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
+    void loadPlotly().then((Plotly) => {
+      if (!cancelled) libRef.current = Plotly;
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     const root = rootRef.current;
     if (root === null || typeof ResizeObserver === "undefined") return;
+    let frame = 0;
     const observer = new ResizeObserver((entries) => {
       setNarrow((entries[0]?.contentRect.width ?? 0) < NARROW_LEGEND_PX);
+      if (typeof requestAnimationFrame !== "function") return;
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const lib = libRef.current;
+        if (lib !== null) lib.Plots.resize(root);
+      });
     });
     observer.observe(root);
-    return () => observer.disconnect();
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
   }, []);
 
   useEffect(() => {
@@ -74,6 +95,15 @@ export function PlotChart({
   }, []);
 
   const chartHeight = shortViewport ? Math.min(height, SHORT_HEIGHT) : height;
+
+  /** The modebar is redundant next to the app's own "Download PNG" button, and on a
+   *  phone it is drawn over the plotted area, so it is hidden there. The wide case
+   *  names "hover" explicitly: Plotly reads an `undefined` value as false, which would
+   *  also remove the modebar on desktop and would not restore it after a resize. */
+  const plotConfig = useMemo<Partial<PlotlyConfig>>(
+    () => ({ ...BASE_CONFIG, displayModeBar: narrow ? false : "hover" }),
+    [narrow],
+  );
 
   const fullLayout = useMemo<Partial<PlotlyLayout>>(() => {
     if (!narrow) return { ...layout, height: chartHeight };
@@ -90,12 +120,12 @@ export function PlotChart({
     if (root === null) return;
     let cancelled = false;
     void loadPlotly().then((Plotly) => {
-      if (!cancelled) void Plotly.react(root, traces, fullLayout, BASE_CONFIG);
+      if (!cancelled) void Plotly.react(root, traces, fullLayout, plotConfig);
     });
     return () => {
       cancelled = true;
     };
-  }, [traces, fullLayout]);
+  }, [traces, fullLayout, plotConfig]);
 
   useEffect(() => {
     const root = rootRef.current;

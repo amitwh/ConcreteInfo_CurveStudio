@@ -144,12 +144,11 @@ export function AppNav({
         <Link to="/" className="brand" aria-label="CurveStudio — back to the workspace">
           <img
             className="brand__logo"
-            src="/concreteinfo-logo.png"
-            alt="ConcreteInfo"
-            width={100}
-            height={28}
+            src="/curvestudio-logo.png"
+            alt="ConcreteInfo CurveStudio"
+            width={165}
+            height={44}
           />
-          <span className="brand__product">CurveStudio</span>
         </Link>
         <nav aria-label="Main" className="app-nav">
           <Link to="/" aria-current={overlay === null ? "page" : undefined}>

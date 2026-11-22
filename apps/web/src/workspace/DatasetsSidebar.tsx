@@ -6,7 +6,7 @@
  */
 
 import { useRef, useState, type ChangeEvent, type DragEvent, type ReactElement } from "react";
-import { ClipboardPaste, Database, Trash2, Upload } from "lucide-react";
+import { ClipboardPaste, Database, PanelLeftClose, PanelLeftOpen, Trash2, Upload } from "lucide-react";
 import {
   ApiError,
   MAX_UPLOAD_BYTES,
@@ -26,6 +26,8 @@ export interface DatasetsSidebarProps {
   onSelect: (id: string) => void;
   onUploaded: (dataset: DatasetOut) => void;
   onDeleted: (id: string) => void;
+  collapsed: boolean;
+  onToggleCollapse: () => void;
 }
 
 const ACCEPT = ".csv,.tsv,.txt,.xlsx,.json";
@@ -60,6 +62,8 @@ export function DatasetsSidebar({
   onSelect,
   onUploaded,
   onDeleted,
+  collapsed,
+  onToggleCollapse,
 }: DatasetsSidebarProps): ReactElement {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -163,12 +167,43 @@ export function DatasetsSidebar({
     }
   };
 
+  if (collapsed) {
+    return (
+      <section className="panel datasets-rail" aria-label="Datasets">
+        <button
+          type="button"
+          className="panel-collapse"
+          aria-label="Expand datasets"
+          title="Expand datasets"
+          onClick={onToggleCollapse}
+        >
+          <PanelLeftOpen className="icon" aria-hidden="true" focusable="false" />
+        </button>
+        <span className="rail-count" title={`${datasets.length} datasets`}>{datasets.length}</span>
+      </section>
+    );
+  }
+
   return (
     <section className="panel" aria-label="Datasets">
-      <h2 className="panel-title">Datasets</h2>
+      <div className="panel-head">
+        <h2 className="panel-title">Datasets</h2>
+        <span className="panel-head__actions">
+          <span className="panel-count" title={`${datasets.length} datasets`}>{datasets.length}</span>
+          <button
+            type="button"
+            className="panel-collapse"
+            aria-label="Collapse datasets"
+            title="Collapse datasets"
+            onClick={onToggleCollapse}
+          >
+            <PanelLeftClose className="icon" aria-hidden="true" focusable="false" />
+          </button>
+        </span>
+      </div>
 
       <div
-        className={`dropzone${dragOver ? " dropzone--over" : ""}`}
+        className={`upload-card${dragOver ? " upload-card--over" : ""}`}
         onDragOver={(e) => {
           e.preventDefault();
           setDragOver(true);
@@ -176,15 +211,19 @@ export function DatasetsSidebar({
         onDragLeave={() => setDragOver(false)}
         onDrop={onDrop}
       >
-        <p className="muted">Drag a file here, or</p>
         <button
           type="button"
-          className="btn"
+          className="upload-card__target"
           onClick={() => fileInputRef.current?.click()}
           disabled={uploading}
         >
-          <Upload className="icon" aria-hidden="true" focusable="false" />
-          Choose file
+          <span className="upload-card__icon">
+            <Upload className="icon" aria-hidden="true" focusable="false" />
+          </span>
+          <span className="upload-card__title">Drop a data file here</span>
+          <span className="upload-card__hint">
+            csv · tsv · txt · xlsx · json — up to {Math.floor(MAX_UPLOAD_BYTES / MB)} MB
+          </span>
         </button>
         <input
           ref={fileInputRef}
@@ -195,19 +234,26 @@ export function DatasetsSidebar({
           aria-hidden="true"
           tabIndex={-1}
         />
-        <p className="muted">or paste a block of cells</p>
-        <button
-          type="button"
-          className="btn"
-          onClick={() => setPasteOpen(true)}
-          disabled={uploading}
-        >
-          <ClipboardPaste className="icon" aria-hidden="true" focusable="false" />
-          Paste data
-        </button>
-        <p className="hint">
-          csv, tsv, txt, xlsx or json · up to {Math.floor(MAX_UPLOAD_BYTES / MB)} MB
-        </p>
+        <div className="upload-card__actions">
+          <button
+            type="button"
+            className="btn btn--small"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading}
+          >
+            <Upload className="icon" aria-hidden="true" focusable="false" />
+            Choose file
+          </button>
+          <button
+            type="button"
+            className="btn btn--small btn--ghost"
+            onClick={() => setPasteOpen(true)}
+            disabled={uploading}
+          >
+            <ClipboardPaste className="icon" aria-hidden="true" focusable="false" />
+            Paste data
+          </button>
+        </div>
       </div>
 
       {pasteOpen && (
@@ -348,12 +394,12 @@ export function DatasetsSidebar({
             ) : (
               <button
                 type="button"
-                className="btn btn--small dataset__delete"
+                className="dataset__delete"
                 aria-label={`Delete ${dataset.name}`}
+                title={`Delete ${dataset.name}`}
                 onClick={() => setConfirmDelete(dataset.id)}
               >
                 <Trash2 className="icon" aria-hidden="true" focusable="false" />
-                Delete
               </button>
             )}
           </li>

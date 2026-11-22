@@ -59,6 +59,7 @@ declare module "plotly.js-dist-min" {
     responsive?: boolean;
     displaylogo?: boolean;
     staticPlot?: boolean;
+    displayModeBar?: boolean | "hover" | "static";
     [key: string]: unknown;
   }
 
@@ -85,6 +86,7 @@ declare module "plotly.js-dist-min" {
     ): Promise<unknown>;
     purge(root: HTMLElement): void;
     downloadImage(root: HTMLElement, options: DownloadImageOptions): Promise<unknown>;
+    Plots: { resize(root: HTMLElement): void };
   };
 
   export default Plotly;

@@ -90,6 +90,9 @@ export function WorkspacePage({
   const [openRowBusy, setOpenRowBusy] = useState<string | null>(null);
   const [openRowError, setOpenRowError] = useState<string | null>(null);
   const [manualPreset, setManualPreset] = useState<ManualPreset | null>(null);
+  const [datasetsCollapsed, setDatasetsCollapsed] = useState(
+    () => localStorage.getItem("curvestudio:datasetsCollapsed") === "1",
+  );
 
   const [fits, setFits] = useState<FitSummaryOut[]>([]);
   const [fitsError, setFitsError] = useState<unknown>(null);
@@ -149,6 +152,14 @@ export function WorkspacePage({
     } finally {
       setDatasetsLoading(false);
     }
+  }, []);
+
+  const toggleDatasets = useCallback(() => {
+    setDatasetsCollapsed((current) => {
+      const next = !current;
+      localStorage.setItem("curvestudio:datasetsCollapsed", next ? "1" : "0");
+      return next;
+    });
   }, []);
 
   const loadFits = useCallback(async (datasetId: string): Promise<void> => {
@@ -410,7 +421,7 @@ export function WorkspacePage({
   })();
 
   return (
-    <div className="workspace">
+    <div className={datasetsCollapsed ? "workspace workspace--rail-collapsed" : "workspace"}>
       <DatasetsSidebar
         datasets={datasets}
         selectedId={selectedId}
@@ -419,6 +430,8 @@ export function WorkspacePage({
         onSelect={(id) => void selectDataset(id)}
         onUploaded={onUploaded}
         onDeleted={onDeletedDataset}
+        collapsed={datasetsCollapsed}
+        onToggleCollapse={toggleDatasets}
       />
 
       <div className="workspace__main">
