@@ -2,6 +2,24 @@
 
 All notable changes are listed here. Dates are IST. Format: [Keep a Changelog](https://keepachangelog.com/); versions follow [SemVer](https://semver.org/).
 
+## [0.10.4] - 2026-11-22
+
+### Fixed
+- **The app no longer opens with a panel floating over the workspace.** A panel floated in
+  one session was saved as floating and reopened as a stranded window over the middle of the
+  chart — usually at a position from a different screen size, which read as "the app opened
+  broken". Floating is now a session state: every panel is restored **docked** in its own
+  area (the Analysis panel on the right, the data table at the bottom, the project tree on
+  the left) and the status bar says so. A closed panel still stays closed, and a docked,
+  narrowed arrangement still restores exactly as saved.
+
+### Added
+- A GitHub Actions release workflow that builds and publishes every supported platform —
+  Linux (`.deb`, `.AppImage`, `.tar.gz`) and Windows (`.zip`, Inno Setup installer when
+  available) — on a `v*` tag, with a tag/version check, a fast test gate, checksum
+  verification and release notes taken from this file. `workflow_dispatch` builds and
+  uploads the artifacts without publishing.
+
 ## [0.10.3] - 2026-11-22
 
 ### Added

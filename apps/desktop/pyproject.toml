@@ -1,6 +1,6 @@
 [project]
 name = "curvestudio-desktop"
-version = "0.10.3"
+version = "0.10.4"
 description = "ConcreteInfo CurveStudio desktop application (PySide6)"
 readme = "README.md"
 requires-python = ">=3.14"
