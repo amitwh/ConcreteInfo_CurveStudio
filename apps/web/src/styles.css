@@ -313,16 +313,21 @@ html[data-theme="dark"] .brand__logo {
   display: inline-flex;
   align-items: center;
   flex: none;
+  border: 1px solid transparent;
   border-radius: 999px;
-  transition: background-color 150ms ease;
+  transition: background-color 150ms ease, border-color 150ms ease;
 }
 
 .ws-tab:hover {
   background: var(--bg);
+  border-color: var(--border);
 }
 
+/* The active workspace keeps its own colour and a real border: the tab strip is a
+   workspace switcher, so the current one must be obvious at a glance. */
 .ws-tab--active {
   background: var(--accent-weak);
+  border-color: var(--accent);
 }
 
 .ws-tab__label {
@@ -342,20 +347,20 @@ html[data-theme="dark"] .brand__logo {
 }
 
 .ws-tab--active .ws-tab__label {
-  color: var(--heading);
+  color: var(--accent);
+  font-weight: 650;
 }
 
-.ws-tab__dot {
+.ws-tab__icon {
   flex: none;
-  width: 0.45rem;
-  height: 0.45rem;
-  border-radius: 50%;
-  background: var(--border-strong);
+  width: 0.9rem;
+  height: 0.9rem;
+  opacity: 0.65;
 }
 
-.ws-tab--active .ws-tab__dot {
-  background: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-weak);
+.ws-tab--active .ws-tab__icon {
+  opacity: 1;
+  color: var(--accent);
 }
 
 .ws-tab__name {
@@ -379,6 +384,7 @@ html[data-theme="dark"] .brand__logo {
 }
 
 .ws-tab:hover .ws-tab__close,
+.ws-tab--active .ws-tab__close,
 .ws-tab__close:focus-visible {
   opacity: 1;
 }
@@ -386,6 +392,10 @@ html[data-theme="dark"] .brand__logo {
 .ws-tab__close:hover {
   background: var(--border);
   color: var(--heading);
+}
+
+.ws-tab--active .ws-tab__close {
+  color: var(--accent);
 }
 
 .ws-tab__close .icon {

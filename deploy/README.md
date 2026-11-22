@@ -87,7 +87,7 @@ The same image deploys on Coolify as **one application** (no compose needed):
    (the whole repo is the build context).
 3. Port: the container listens on **8000** (`ports_exposes` 8000). Health check path
    `/api/v1/health` (it queries the database, so wait for "healthy" before routing traffic).
-4. Domain: your `curvestudio.concreteinfo.co.in`-style host behind the Coolify proxy.
+4. Domain: your own `curvestudio.<your-domain>` host behind the Coolify proxy.
 5. Database: create a database in the **shared-postgres** standalone resource and connect the
    app to it (Coolify adds the `coolify` network and the env vars). The internal hostname is
    the **resource UUID**, i.e. `CURVESTUDIO_DATABASE_URL=postgresql://<user>:<password>@<resource-uuid>:5432/<dbname>`

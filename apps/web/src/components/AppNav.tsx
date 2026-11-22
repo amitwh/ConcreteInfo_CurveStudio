@@ -10,7 +10,18 @@
  */
 
 import { useEffect, useRef, useState, type ReactElement } from "react";
-import { CircleHelp, Download, Info, LayoutGrid, LogOut, Moon, Plus, Sun, X } from "lucide-react";
+import {
+  BookOpen,
+  Info,
+  Layers,
+  LayoutDashboard,
+  LogOut,
+  MonitorDown,
+  Moon,
+  Plus,
+  Sun,
+  X,
+} from "lucide-react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../api/auth";
 import { useTheme } from "./ThemeToggle";
@@ -94,7 +105,7 @@ function WorkspaceTab({
           setEditing(true);
         }}
       >
-        <span className="ws-tab__dot" aria-hidden="true" />
+        <Layers className="ws-tab__icon" aria-hidden="true" focusable="false" />
         <span className="ws-tab__name truncate">{workspace.name}</span>
       </button>
       {closable && (
@@ -142,11 +153,11 @@ export function AppNav({
         </Link>
         <nav aria-label="Main" className="app-nav">
           <Link to="/" aria-current={overlay === null ? "page" : undefined}>
-            <LayoutGrid className="icon" aria-hidden="true" focusable="false" />
+            <LayoutDashboard className="icon" aria-hidden="true" focusable="false" />
             <span className="nav__label">Workspace</span>
           </Link>
           <Link to="/help" aria-current={overlay === "help" ? "page" : undefined}>
-            <CircleHelp className="icon" aria-hidden="true" focusable="false" />
+            <BookOpen className="icon" aria-hidden="true" focusable="false" />
             <span className="nav__label">Help</span>
           </Link>
           <Link to="/about" aria-current={overlay === "about" ? "page" : undefined}>
@@ -162,7 +173,7 @@ export function AppNav({
               onClick={() => void install()}
               title="Install CurveStudio on this device"
             >
-              <Download className="icon" aria-hidden="true" focusable="false" />
+              <MonitorDown className="icon" aria-hidden="true" focusable="false" />
               <span className="btn__label">Install</span>
             </button>
           )}

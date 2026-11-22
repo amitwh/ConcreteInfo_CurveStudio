@@ -11,7 +11,7 @@
  */
 
 import { useCallback, useEffect, useState, type ReactElement } from "react";
-import { CircleHelp, Info, Moon, Sun } from "lucide-react";
+import { BookOpen, Info, Moon, Sun } from "lucide-react";
 import { Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "./api/auth";
 import { AppNav } from "./components/AppNav";
@@ -59,7 +59,7 @@ function PublicHeader(): ReactElement {
         </Link>
         <nav aria-label="Main" className="app-nav">
           <Link to="/help">
-            <CircleHelp className="icon" aria-hidden="true" focusable="false" />
+            <BookOpen className="icon" aria-hidden="true" focusable="false" />
             <span className="nav__label">Help</span>
           </Link>
           <Link to="/about">
