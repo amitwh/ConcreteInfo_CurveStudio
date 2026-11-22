@@ -142,7 +142,7 @@ const PILLARS = [
 const STEPS = [
   {
     kind: "upload" as const,
-    title: "Upload x–y data",
+    title: "Upload x/y data",
     body: "Drop a CSV or XLSX file, or paste columns. Map the pair you want to fit.",
   },
   {
@@ -273,7 +273,7 @@ const FIT_MODELS: readonly FitModel[] = [
     equation: "y = A·exp(−(x−μ)²/(2σ²))",
     r2: "0.9894",
     rmse: "1.62",
-    note: "peaks and drift — instrument response, particle-size modes and spectral lines.",
+    note: "peaks and drift: instrument response, particle-size modes and spectral lines.",
     f: (x) => 95 * Math.exp(-((x - 5.2) ** 2) / (2 * 1.35 ** 2)),
     domain: [0, 10],
   },
@@ -654,7 +654,7 @@ function AiccChart(): ReactElement {
           );
         })}
       </svg>
-      <figcaption>ΔAICc against the best model — lower is better.</figcaption>
+      <figcaption>ΔAICc against the best model. Lower is better.</figcaption>
     </figure>
   );
 }
@@ -735,7 +735,7 @@ export function HomePage(): ReactElement {
             <div className="hp-hero__copy">
               <p className="hp-eyebrow">CURVE FITTING &amp; DATA ANALYSIS · VALIDATED ON NIST STRD DATASETS</p>
               <h1>
-                From paired measurements to a defensible model —{" "}
+                From paired measurements to a defensible model.{" "}
                 <span className="hp-accent">automatically.</span>
               </h1>
               <p className="hp-lede">
@@ -755,7 +755,7 @@ export function HomePage(): ReactElement {
             <div className="hp-hero__panel" id="login-card">
               <form className="card auth-card hp-login" onSubmit={(e) => void onSubmit(e)} noValidate>
                 <h2>Sign in</h2>
-                <p className="muted">CurveStudio — curve fitting in your browser.</p>
+                <p className="muted">CurveStudio: curve fitting in your browser.</p>
                 {error !== null && (
                   <p className="alert alert--error" role="alert">
                     {error}
@@ -959,7 +959,7 @@ export function HomePage(): ReactElement {
                 <p className="hp-note">
                   Adjusted R² penalises extra parameters; AICc compares models while accounting
                   for small samples; the confidence interval belongs to the fitted line, not to a
-                  future measurement — that is the prediction band.
+                  future measurement; that is the prediction band.
                 </p>
               </div>
               <div className="hp-plot-stack">
@@ -978,7 +978,7 @@ export function HomePage(): ReactElement {
                       <circle cx="288" cy="58" r="3" />
                     </g>
                   </svg>
-                  <figcaption>Residuals — no visible pattern</figcaption>
+                  <figcaption>Residuals: no visible pattern</figcaption>
                 </figure>
                 <figure className="hp-card hp-figure">
                   <svg viewBox="0 0 320 150" aria-hidden="true" focusable="false">
