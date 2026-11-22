@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
 from curvestudio.discovery import RankedFit
 from curvestudio.workflow import FitBundle, WorkflowError, get_model
 from curvestudio_desktop.theme import mono_font
-from curvestudio_desktop.views.ranking_table import format_fixed, format_metric
+from curvestudio_desktop.views.ranking_table import format_metric, format_precise
 
 HINT_TEXT = "Select a ranked row to see its numbers"
 METRIC_TITLES = ("R²", "adj. R²", "RMSE", "k")
@@ -106,7 +106,9 @@ class FitSummaryPanel(QWidget):
     def _build_metrics(self) -> QGridLayout:
         grid = QGridLayout()
         grid.setContentsMargins(0, 0, 0, 0)
-        grid.setHorizontalSpacing(14)
+        # Full-precision R² strings are long; a tighter gap keeps the strip readable
+        # at the dock's default width.
+        grid.setHorizontalSpacing(8)
         grid.setVerticalSpacing(1)
         self._metric_values: dict[str, QLabel] = {}
         for column, title in enumerate(METRIC_TITLES):
@@ -208,10 +210,16 @@ class FitSummaryPanel(QWidget):
         apply_status_badge(self.status_label, status)
         meta = category or "—"
         self.category_dataset.setText(f"{meta} · {dataset_name}")
-        self._metric_values["R²"].setText(format_fixed(r2))
-        self._metric_values["adj. R²"].setText(format_fixed(adj_r2))
-        self._metric_values["RMSE"].setText(format_metric(rmse))
-        self._metric_values["k"].setText(str(k))
+        # The tooltip carries the full value even if a narrow dock clips the label.
+        for title, text in (
+            ("R²", format_precise(r2)),
+            ("adj. R²", format_precise(adj_r2)),
+            ("RMSE", format_metric(rmse)),
+            ("k", str(k)),
+        ):
+            label = self._metric_values[title]
+            label.setText(text)
+            label.setToolTip(text)
 
     # -- accessors (tests and the status bar) -------------------------------------------------
 

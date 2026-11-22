@@ -38,7 +38,7 @@ class SlidingWindowLimiter:
                 raise ApiError(
                     429,
                     "RATE_LIMITED",
-                    "too many attempts; try again later",
+                    f"too many attempts; try again in {retry_after} s",
                     {"retry_after_s": retry_after},
                     {"Retry-After": str(retry_after)},
                 )

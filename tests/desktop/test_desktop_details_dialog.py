@@ -233,8 +233,8 @@ def test_summary_export_is_only_available_for_a_complete_fit(autofit_window, qtb
     assert summary.export_button.isEnabled() is True
 
 
-def test_metrics_strips_show_fixed_decimals_and_na(make_window, qtbot, write_file) -> None:
-    """A perfect fit reads 1.0000, never the misleading significant-digit "1"."""
+def test_metrics_strips_show_full_precision_and_na(make_window, qtbot, write_file) -> None:
+    """R² renders its exact stored value: a perfect fit reads "1.0", not a rounded form."""
     window = make_window()
     qtbot.addWidget(window)
     window.show()
@@ -247,13 +247,13 @@ def test_metrics_strips_show_fixed_decimals_and_na(make_window, qtbot, write_fil
     qtbot.waitUntil(lambda: dialog.bundle() is not None, timeout=30000)
 
     header = dialog.metrics_text()
-    assert "R² 1.0000" in header
-    assert "adj. R² 1.0000" in header
+    assert "R² 1.0" in header
+    assert "adj. R² 1.0" in header
     summary = window.analysis_panel.summary
-    assert summary.metric_text("R²") == "1.0000"
-    assert summary.metric_text("adj. R²") == "1.0000"
+    assert summary.metric_text("R²") == "1.0"
+    assert summary.metric_text("adj. R²") == "1.0"
 
-    # an undefined metric is still n/a, never 0.0000
+    # an undefined metric is still n/a, never 0
     bundle = dialog.bundle()
     assert bundle is not None
     stats = bundle.result.stats

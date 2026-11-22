@@ -135,7 +135,10 @@ def register(body: RegisterIn, request: Request, ctx: Ctx, db: Db) -> UserOut:
         )
         db.commit()
         raise ApiError(
-            409, "CONFLICT", "the account could not be created with these details"
+            409,
+            "CONFLICT",
+            "an account with this email already exists — sign in instead",
+            {"code": "EMAIL_TAKEN"},
         ) from None
     audit.record(db, "user.register", "user", user_id=user.id, entity_id=user.id)
     db.commit()

@@ -21,6 +21,7 @@ from curvestudio_desktop.views.fit_summary import FitSummaryPanel
 from curvestudio_desktop.views.ranking_table import (
     COLUMN_PADDING,
     COLUMNS,
+    ITEM_HORIZONTAL_PADDING,
     RankingTableView,
 )
 from curvestudio_desktop.views.results_tabs import ResultsTabs
@@ -64,7 +65,7 @@ def test_summary_panel_sits_below_the_table_page(autofit_window) -> None:
     assert summary_top >= table_bottom  # the summary never rides above the ranking
 
 
-def test_ranking_drops_the_equation_and_never_needs_a_horizontal_scroll(
+def test_ranking_drops_the_equation_and_shows_every_value_in_full(
     autofit_window,
 ) -> None:
     view = autofit_window.analysis_panel.autofit_view
@@ -84,10 +85,24 @@ def test_ranking_drops_the_equation_and_never_needs_a_horizontal_scroll(
         model.headerData(c, Qt.Orientation.Horizontal) for c in range(model.columnCount())
     ] == list(COLUMNS)
     QApplication.processEvents()
-    # at the default dock width the fixed numerics leave the model column the rest:
-    # no cell is pushed out of view, so no horizontal scrollbar is needed
-    assert view.table.horizontalScrollBar().maximum() == 0
-    assert view.table.verticalHeader().isHidden()  # rank is a column, not a row number
+    table = view.table
+    header = table.horizontalHeader()
+    metrics = table.fontMetrics()
+    # Full-precision R² is much wider than four fixed decimals, so on the narrow dock the
+    # numeric columns can exceed the viewport and the table scrolls horizontally. What
+    # must never happen is a value being cut: every numeric cell paints its whole string.
+    for row in range(model.rowCount()):
+        for column in (0, 2, 3, 4, 5):
+            text = str(model.data(model.index(row, column)))
+            assert (
+                metrics.elidedText(
+                    text,
+                    Qt.TextElideMode.ElideRight,
+                    header.sectionSize(column) - ITEM_HORIZONTAL_PADDING,
+                )
+                == text
+            ), f"column {column} elides {text!r}"
+    assert table.verticalHeader().isHidden()  # rank is a column, not a row number
 
 
 def test_summary_mirrors_the_selected_row(autofit_window) -> None:
@@ -296,7 +311,7 @@ def test_ranking_numeric_columns_never_clip_their_values(qtbot, width) -> None:
         assert model.data(model.index(0, column), Qt.ItemDataRole.TextAlignmentRole) == right
 
 
-def test_summary_strip_uses_fixed_decimals_and_na(qtbot) -> None:
+def test_summary_strip_uses_full_precision_and_na(qtbot) -> None:
     summary = FitSummaryPanel()
     qtbot.addWidget(summary)
     perfect = RankedFit(
@@ -307,8 +322,8 @@ def test_summary_strip_uses_fixed_decimals_and_na(qtbot) -> None:
         metrics=CandidateMetrics(k=2, n=5, r2=1.0, adj_r2=1.0, rmse=0.0),
     )
     summary.show_row(perfect, "exact data")
-    assert summary.metric_text("R²") == "1.0000"
-    assert summary.metric_text("adj. R²") == "1.0000"
+    assert summary.metric_text("R²") == "1.0"
+    assert summary.metric_text("adj. R²") == "1.0"
 
     undefined = RankedFit(
         rank=2,
@@ -550,8 +565,9 @@ def test_order_combo_elides_the_closed_field_and_keeps_the_full_label(
     assert combo.itemText(0) == full
 
 
-def test_r2_columns_use_fixed_four_decimals(qtbot) -> None:
-    """Fixed four decimals: "1.0000" and "0.9999" share one precision regime."""
+def test_r2_columns_show_full_precision(qtbot) -> None:
+    """The full stored value: a near-perfect fit never renders as the exact "1.0"."""
+    near_perfect = 0.9999999999999999
     rows = tuple(
         RankedFit(
             rank=index + 1,
@@ -561,7 +577,7 @@ def test_r2_columns_use_fixed_four_decimals(qtbot) -> None:
             metrics=CandidateMetrics(k=2, n=20, r2=value, adj_r2=value, rmse=0.1),
             status="converged",
         )
-        for index, value in enumerate((1.0, 0.9999))
+        for index, value in enumerate((1.0, near_perfect))
     )
     view = RankingTableView()
     qtbot.addWidget(view)
@@ -572,14 +588,16 @@ def test_r2_columns_use_fixed_four_decimals(qtbot) -> None:
 
     model = view.model()
     assert model is not None
-    assert model.data(model.index(0, 2)) == "1.0000"
-    assert model.data(model.index(0, 3)) == "1.0000"
-    assert model.data(model.index(1, 2)) == "0.9999"
-    assert model.data(model.index(1, 3)) == "0.9999"
+    assert model.data(model.index(0, 2)) == "1.0"
+    assert model.data(model.index(0, 3)) == "1.0"
+    # the near-perfect row keeps its exact value, never rounding to the exact fit
+    assert model.data(model.index(1, 2)) == repr(near_perfect)
+    assert model.data(model.index(1, 3)) == repr(near_perfect)
+    assert model.data(model.index(1, 2)) not in ("1.0", "1.0000")
     # the width comes from the strings the column actually paints
     metrics = view.fontMetrics()
     assert view.horizontalHeader().sectionSize(2) >= (
-        metrics.horizontalAdvance("1.0000") + COLUMN_PADDING
+        metrics.horizontalAdvance(repr(near_perfect)) + COLUMN_PADDING
     )
 
 

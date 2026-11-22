@@ -271,6 +271,7 @@ def _run_selftest(argv: list[str] | None = None) -> int:
     from curvestudio.workflow import FitSpec, fit_dataset
     from curvestudio.workflow.spec import PolynomialRef
     from curvestudio_desktop.controllers.analysis import MODE_AUTOFIT
+    from curvestudio_desktop.views.ranking_table import format_precise
 
     app = create_application(argv if argv is not None else [sys.argv[0]])
     from curvestudio_desktop.theme import apply_theme
@@ -315,7 +316,8 @@ def _run_selftest(argv: list[str] | None = None) -> int:
         if not pool_ok:
             print(f"SELFTEST FAIL: {pool_summary}", file=sys.stderr)
             return 1
-        r2 = bundle.summary.result_summary.get("r2", "n/a") if bundle.summary else "n/a"
+        summary_r2 = bundle.summary.result_summary.get("r2") if bundle.summary else None
+        r2 = format_precise(summary_r2) if isinstance(summary_r2, float) else "n/a"
 
         # Auto-fit starts by itself on import (the product rule); wait for its result
         # without an exec() loop: pump the event loop until it lands in the project
@@ -337,7 +339,8 @@ def _run_selftest(argv: list[str] | None = None) -> int:
             return 1
         top = result.ranked[0] if result.ranked else None
         top_text = (
-            f", autofit ({len(result.ranked)} fitted, top: {top.model_id} R² {top.metrics.r2:.4f})"
+            f", autofit ({len(result.ranked)} fitted, top: {top.model_id} "
+            f"R² {format_precise(top.metrics.r2)})"
             if top is not None and top.metrics.r2 is not None
             else f", autofit ({len(result.ranked)} fitted)"
         )

@@ -4,8 +4,9 @@ The dock shows the decisive columns only — rank, model, R², adj. R², RMSE an
 fitted equation, the information criteria, category and status live in the details
 window (ranked rows are converged by definition, and exact/degenerate/redundant state is
 already marked in the Model cell). Every numeric column is sized from its widest actual
-value, so a value is never elided; only the model column stretches and elides, keeping
-the table free of a horizontal scrollbar at the dock's default width. Display rules that
+value, so a value is never elided; only the model column stretches and elides. Showing
+R² and adj. R² at full precision makes those columns wide, so a narrow dock scrolls
+horizontally rather than rounding a value. Display rules that
 matter for honesty (Review Focus 3): undefined metrics render as ``n/a``, never 0 or a
 blank that reads as zero; markers in the Model cell point at degenerate and redundant
 fits whose full explanation lives in the row tooltip; the row tooltip and the context
@@ -69,13 +70,13 @@ def format_metric(value: float | None, digits: int = 6) -> str:
     return _NA if value is None else f"{value:.{digits}g}"
 
 
-def format_fixed(value: float | None, digits: int = 4) -> str:
-    """``n/a`` for an undefined metric, else a fixed-decimal form for the metric strips.
+def format_precise(value: float | None) -> str:
+    """``n/a`` for an undefined metric, else the shortest string that round-trips.
 
-    The strips line up mixed magnitudes (R², adj. R²), where significant digits would
-    render a perfect fit as a misleading ``1`` rather than ``1.0000``.
+    ``repr`` is Python's shortest exact representation, so a near-perfect fit can
+    never display as exactly 1: 1.0 -> "1.0", 0.9999999999999999 -> that value.
     """
-    return _NA if value is None else f"{value:.{digits}f}"
+    return _NA if value is None else repr(value)
 
 
 def _markers(row: RankedFit) -> str:
@@ -178,11 +179,11 @@ class RankingTableModel(QAbstractTableModel):
         if column == 1:
             return row.name + _markers(row)
         if column == 2:
-            # fixed 4 decimals: "1.0000" and "0.9999" stay in one precision regime, so
-            # an R² of 0.99999 never rounds to the same "1" as a true perfect fit
-            return format_fixed(metrics.r2, 4)
+            # the full stored value: the shortest round-tripping string, so a near-perfect
+            # fit (0.9999999999999999) can never read as the same "1.0" as an exact one
+            return format_precise(metrics.r2)
         if column == 3:
-            return format_fixed(metrics.adj_r2, 4)
+            return format_precise(metrics.adj_r2)
         if column == 4:
             # four significant digits keep the comparison readable; the details
             # window carries the full precision

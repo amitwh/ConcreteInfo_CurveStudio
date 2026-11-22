@@ -1000,10 +1000,10 @@ textarea {
   padding: 0.25rem 0.3rem 0.25rem 0.45rem;
 }
 
+/* Selection is a tint plus an accent-tinted border; no side rail. */
 .dataset--selected {
   border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
   background: var(--accent-weak);
-  box-shadow: inset 3px 0 0 var(--accent);
 }
 
 .history--active {

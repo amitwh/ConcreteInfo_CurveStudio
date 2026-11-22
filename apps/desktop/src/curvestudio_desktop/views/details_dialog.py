@@ -28,7 +28,7 @@ from PySide6.QtWidgets import (
 from curvestudio.workflow import FitBundle, FitSpec, format_equation
 from curvestudio_desktop.theme import mono_font
 from curvestudio_desktop.views.fit_summary import apply_status_badge
-from curvestudio_desktop.views.ranking_table import format_fixed, format_metric
+from curvestudio_desktop.views.ranking_table import format_metric, format_precise
 from curvestudio_desktop.views.results_tabs import PredictCaller, ResultsTabs
 
 GEOMETRY_KEY = "details/geometry"
@@ -145,8 +145,8 @@ class DetailsDialog(QDialog):
         self.metrics_label.setText(
             "   ".join(
                 (
-                    f"R² {format_fixed(None if stats is None else stats.r2)}",
-                    f"adj. R² {format_fixed(None if stats is None else stats.adj_r2)}",
+                    f"R² {format_precise(None if stats is None else stats.r2)}",
+                    f"adj. R² {format_precise(None if stats is None else stats.adj_r2)}",
                     f"RMSE {format_metric(None if stats is None else stats.rmse)}",
                     f"k {len(result.parameters) if stats is None else stats.k}",
                 )
