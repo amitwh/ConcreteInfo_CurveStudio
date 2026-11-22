@@ -2,6 +2,27 @@
 
 All notable changes are listed here. Dates are IST. Format: [Keep a Changelog](https://keepachangelog.com/); versions follow [SemVer](https://semver.org/).
 
+## [0.10.7] - 2026-11-22
+
+### Changed
+- **The web header follows the PC Power Calculator**: the full CurveStudio lockup sits on
+  its own white chip, the sticky bar is translucent with a backdrop blur, and the pill rail
+  is right-aligned beside the session controls. The lockup asset is cropped to its artwork,
+  so the wordmark fills the chip instead of floating in white margins.
+- **The datasets panel is redesigned and collapsible**: a title row with a count chip, a
+  compact upload card (drag, choose file or paste a block of cells), compact two-column
+  dataset rows with a hover/focus-revealed delete, and a collapse toggle whose state is
+  remembered. Collapsing the rail hands its width to the chart.
+- **The chart now follows its column**: Plotly resizes with its container rather than only
+  on window resize, so collapsing the datasets rail grows the canvas instead of leaving it
+  stretched. The Plotly touch toolbar is hidden below 640px, where the app's own Download
+  PNG covers the need.
+
+### Fixed
+- **Mobile layout**: the header no longer overflows at 320–390px (the avatar chip hides
+  below 480px while sign-out stays reachable), and the Help and About overlays fit a
+  320px viewport.
+
 ## [0.10.6] - 2026-11-22
 
 ### Changed
