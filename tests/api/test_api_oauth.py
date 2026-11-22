@@ -353,3 +353,28 @@ def test_exchange_rejects_an_expired_code(
     assert expired.status_code == 400
     assert expired.json()["error"] == "INVALID_TOKEN"
     assert expired.json()["message"] == "this sign-in link is invalid or has expired"
+
+
+def test_http_error_keeps_the_provider_reason(monkeypatch) -> None:
+    """The token error body names the cause (AADSTS…); it must reach the callback log."""
+    import io
+    import json
+    import urllib.error
+
+    from curvestudio_api import oauth as oauth_module
+
+    body = json.dumps(
+        {"error": "invalid_client", "error_description": "AADSTS7000215: Invalid client secret"}
+    ).encode()
+
+    def failing(*args: object, **kwargs: object) -> object:
+        raise urllib.error.HTTPError(
+            "https://example.test", 401, "Unauthorized", {}, io.BytesIO(body)
+        )
+
+    monkeypatch.setattr(oauth_module.urllib.request, "urlopen", failing)
+    with pytest.raises(oauth_module.OAuthError) as caught:
+        oauth_module._http_json("https://example.test", data={"grant_type": "authorization_code"})
+    assert "HTTP 401" in str(caught.value)
+    assert "invalid_client" in str(caught.value)
+    assert "AADSTS7000215" in str(caught.value)

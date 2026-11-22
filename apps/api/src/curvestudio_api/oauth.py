@@ -261,7 +261,19 @@ def _http_json(
         with urllib.request.urlopen(request, timeout=HTTP_TIMEOUT_S) as response:
             raw = response.read()
     except urllib.error.HTTPError as exc:
-        raise OAuthError(f"the provider returned HTTP {exc.code}") from exc
+        # The provider names the reason in its JSON body (Microsoft: AADSTS codes). It never
+        # contains a client secret; keep it short and attach it so the callback log is useful.
+        detail = ""
+        try:
+            payload = json.loads(exc.read() or b"{}")
+        except json.JSONDecodeError, OSError:
+            payload = {}
+        if isinstance(payload, dict):
+            code = payload.get("error")
+            description = payload.get("error_description")
+            if isinstance(code, str) or isinstance(description, str):
+                detail = f" ({str(code)[:40]}: {str(description)[:200]})"
+        raise OAuthError(f"the provider returned HTTP {exc.code}{detail}") from exc
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
         raise OAuthError("could not reach the provider") from exc
     try:
