@@ -6,7 +6,7 @@ engine call goes through :mod:`curvestudio.workflow`, :mod:`curvestudio.project`
 or :mod:`curvestudio.data` types — never the maths layers directly.
 """
 
-__version__ = "0.10.1"
+__version__ = "0.10.2"
 
 APP_NAME = "ConcreteInfo CurveStudio"
 ORG_NAME = "ConcreteInfo"

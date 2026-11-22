@@ -2,6 +2,39 @@
 
 All notable changes are listed here. Dates are IST. Format: [Keep a Changelog](https://keepachangelog.com/); versions follow [SemVer](https://semver.org/).
 
+## [0.10.2] - 2026-11-22
+
+### Added
+- **A spreadsheet you can paste into, in both apps.** The desktop's *File → Import from
+  clipboard* now opens an editable grid (column letters, row numbers) instead of a text box:
+  copy a block of cells in Excel, LibreOffice Calc or Google Sheets and press Ctrl+V — the
+  block lands at the focused cell, rows and columns grow to fit, and a paste into an empty
+  grid replaces it. Cells stay editable, rows and columns can be added, quoted cells (a
+  comma, a tab or a line break inside a value) survive the round trip, and the first row is
+  the header. The web sidebar gains **Paste data** with the same grid, and the pasted sheet
+  travels through the ordinary upload path (column pickers included) as a `.tsv` file.
+
+### Fixed
+- **The model picker no longer shows a half-height line.** An editable combo hosts a real
+  text field, and the stylesheet's padding for text fields applied inside that field as well
+  — 8 px of a 16 px line stayed visible. The field now draws no padding of its own; the combo
+  around it provides the frame and the padding.
+- **The panels can be resized again.** The Analysis dock's content demanded 503×546 px, so
+  the chart/data-table divider had no travel and a floated panel could not be made smaller.
+  The Auto-fit controls sit on two rows, the ranking's minimum is a small usable window
+  (three rows; the default split still shows eight or more), the Manual fit form scrolls
+  inside the dock instead of pinning its height, and a page that is not on screen no longer
+  sets the dock's minimum. At 1280×820 the data table can now be dragged from 220 px to
+  about 330 px, and further when the Analysis panel is collapsed or floated.
+- **Floating panels move and resize like windows.** A custom title bar replaces the native
+  one, so a press on it now asks the platform to start the window move (X11, Wayland and the
+  native path) instead of doing nothing; a floating panel keeps its resize edges, and
+  double-clicking its title docks it back.
+- **View → Panels always returns a panel to its place.** Re-showing a panel re-docks it to
+  its home area at its remembered size, even if it had been floated, closed while floating
+  or dragged into a neighbour's area; the menu entry mirrors the dock without looping back
+  into the layout, which previously re-docked a panel the instant it floated.
+
 ## [0.10.1] - 2026-11-22
 
 ### Fixed
