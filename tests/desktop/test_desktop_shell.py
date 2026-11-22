@@ -252,3 +252,194 @@ def test_window_icon_and_status_bar_polish(make_window, qtbot) -> None:
     label = window.statusBar().findChild(QLabel, "noNetworkLabel")
     assert label is not None and label.text().startswith("Offline")
     assert mono_font(9).family() == "JetBrains Mono"
+
+
+# -- panels: resizable, movable, and always findable again -----------------------------
+
+
+def test_the_data_table_divider_has_real_travel(make_window, qtbot) -> None:
+    """The chart/data-table divider must be able to give the table real height.
+
+    The Analysis panel's content used to set a 546 px minimum height, so the bottom dock
+    had nothing to gain and the divider looked dead. The panel's floor now leaves room.
+    """
+    window = make_window()
+    qtbot.addWidget(window)
+    window.resize(1280, 820)
+    window.show()
+    QApplication.processEvents()
+
+    table = window.table_dock
+    before = table.height()
+    window.resizeDocks([table], [400], Qt.Orientation.Vertical)
+    QApplication.processEvents()
+    assert table.height() >= before + 100, f"{before} -> {table.height()}"
+    assert table.height() >= 280, table.height()
+    # the Analysis dock shrinks and never reaches into the table dock
+    assert window.analysis_panel.geometry().bottom() < table.geometry().top()
+
+
+def test_a_floating_panel_can_be_made_smaller(make_window, qtbot) -> None:
+    """A floated panel is a real window: it resizes down to a usable size, not a wall."""
+    window = make_window()
+    qtbot.addWidget(window)
+    window.resize(1280, 820)
+    window.show()
+    QApplication.processEvents()
+
+    dock = window.analysis_panel
+    dock.setFloating(True)
+    QApplication.processEvents()
+    dock.resize(320, 400)
+    QApplication.processEvents()
+    assert dock.width() <= 340, f"the floating panel is pinned at {dock.width()} px"
+    assert dock.height() <= 420, f"the floating panel is pinned at {dock.height()} px"
+
+
+def test_a_floating_title_bar_starts_a_platform_window_move(
+    make_window, qtbot, monkeypatch
+) -> None:
+    """The custom title bar hands a floating panel's drag to the window manager.
+
+    Qt re-dispatches mouse moves after a window shifts, and a QDockWidget that receives
+    a move without its press dereferences its drag state — moving the window by hand
+    from a mouse handler crashed. ``startSystemMove`` is the supported path (and the
+    reason ``float_button`` alone used to leave the panel unmovable).
+    """
+    from PySide6.QtCore import QPoint
+    from PySide6.QtGui import QWindow
+    from PySide6.QtTest import QTest
+
+    window = make_window()
+    qtbot.addWidget(window)
+    window.resize(1280, 820)
+    window.show()
+    QApplication.processEvents()
+
+    dock = window.project_dock
+    dock.setFloating(True)
+    QApplication.processEvents()
+
+    calls: list[bool] = []
+    monkeypatch.setattr(QWindow, "startSystemMove", lambda _self: calls.append(True) or True)
+    bar = dock.titleBarWidget()
+    QTest.mousePress(
+        bar,
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier,
+        QPoint(bar.width() // 2, bar.height() // 2),
+    )
+    QTest.mouseRelease(
+        bar,
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier,
+        QPoint(bar.width() // 2, bar.height() // 2),
+    )
+    QApplication.processEvents()
+    assert calls == [True], "the floating title bar never asked for a platform move"
+
+
+def test_double_clicking_a_floating_title_docks_it_back(make_window, qtbot) -> None:
+    from PySide6.QtCore import QPoint
+    from PySide6.QtTest import QTest
+
+    window = make_window()
+    qtbot.addWidget(window)
+    window.resize(1280, 820)
+    window.show()
+    QApplication.processEvents()
+
+    dock = window.table_dock
+    dock.setFloating(True)
+    QApplication.processEvents()
+    assert dock.isFloating()
+    bar = dock.titleBarWidget()
+    QTest.mouseDClick(
+        bar, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, QPoint(10, 10)
+    )
+    QApplication.processEvents()
+    assert not dock.isFloating()
+    assert window.dockWidgetArea(dock) is Qt.DockWidgetArea.BottomDockWidgetArea
+
+
+def test_the_float_button_toggles_and_reflects_the_state(make_window, qtbot) -> None:
+    window = make_window()
+    qtbot.addWidget(window)
+    window.resize(1280, 820)
+    window.show()
+    QApplication.processEvents()
+
+    bar = window._title_bars["analysis"]
+    assert bar.float_button.toolTip() == "Float panel"
+    bar.float_button.click()
+    QApplication.processEvents()
+    assert window.analysis_panel.isFloating()
+    assert bar.float_button.isChecked()
+    assert bar.float_button.toolTip() == "Dock panel"
+
+    bar.float_button.click()
+    QApplication.processEvents()
+    assert not window.analysis_panel.isFloating()
+    assert not bar.float_button.isChecked()
+    assert bar.float_button.toolTip() == "Float panel"
+
+
+def test_panels_menu_rehomes_a_panel_closed_while_floating(make_window, qtbot) -> None:
+    """Closing a floated panel must not leave it adrift: View → Panels brings it back."""
+    window = make_window()
+    qtbot.addWidget(window)
+    window.resize(1280, 820)
+    window.show()
+    QApplication.processEvents()
+
+    dock = window.analysis_panel
+    dock.setFloating(True)
+    QApplication.processEvents()
+    action = window._panel_actions["analysis"]
+    action.setChecked(False)  # what the X on a floating window does
+    QApplication.processEvents()
+    assert not dock.isVisible()
+
+    action.setChecked(True)
+    QApplication.processEvents()
+    assert dock.isVisible()
+    assert not dock.isFloating()
+    assert window.dockWidgetArea(dock) is Qt.DockWidgetArea.RightDockWidgetArea
+    assert dock.width() >= ANALYSIS_DOCK_WIDTH * 0.9
+
+
+def test_panels_menu_returns_a_panel_from_a_neighbours_area(make_window, qtbot) -> None:
+    window = make_window()
+    qtbot.addWidget(window)
+    window.resize(1280, 820)
+    window.show()
+    QApplication.processEvents()
+
+    window.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, window.table_dock)
+    assert window.dockWidgetArea(window.table_dock) is Qt.DockWidgetArea.RightDockWidgetArea
+    window.set_dock_visible("table", True)
+    QApplication.processEvents()
+    assert window.dockWidgetArea(window.table_dock) is Qt.DockWidgetArea.BottomDockWidgetArea
+    assert window.table_dock.isVisible()
+
+
+def test_the_editable_model_picker_shows_its_whole_line(make_window, qtbot) -> None:
+    """The combo's inner QLineEdit fits the field the combo gives it.
+
+    The generic QLineEdit padding rule also matched the combo's embedded editor, adding
+    a second 5 px inset inside an 18 px field: 8 px of a 16 px line stayed visible.
+    """
+    window = make_window()
+    qtbot.addWidget(window)
+    window.resize(1280, 820)
+    window.show()
+    QApplication.processEvents()
+
+    combo = window.analysis_panel.manual_view.model_combo
+    editor = combo.lineEdit()
+    assert editor is not None
+    # before the fix the field was 18 px with 10 px of the generic padding inside it:
+    # eight pixels of a sixteen-pixel line — the "half-cut model name"
+    assert editor.height() >= editor.fontMetrics().height() + 2, (
+        f"the editor is {editor.height()} px for {editor.fontMetrics().height()} px of text"
+    )

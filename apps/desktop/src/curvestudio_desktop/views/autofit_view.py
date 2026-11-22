@@ -182,7 +182,7 @@ class AutoFitView(QWidget):
         self.notice.setTextFormat(Qt.TextFormat.PlainText)
         self.notice.hide()
         layout.addWidget(self.notice)
-        header = QHBoxLayout()
+        order_row = QHBoxLayout()
         self.order_label = QLabel("Order by")
         self.order_label.setObjectName("orderByLabel")
         self.rank_combo = ElidingComboBox()
@@ -192,7 +192,7 @@ class AutoFitView(QWidget):
         self.rank_combo.setSizeAdjustPolicy(
             QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
         )
-        self.rank_combo.setMinimumContentsLength(16)
+        self.rank_combo.setMinimumContentsLength(10)
         for rank_by, label in RANK_LABELS:
             self.rank_combo.addItem(label, rank_by.value)
         self.rank_combo.setCurrentIndex(
@@ -201,6 +201,13 @@ class AutoFitView(QWidget):
             )
         )
         self.rank_combo.currentIndexChanged.connect(self._rank_combo_changed)
+        order_row.addWidget(self.order_label)
+        order_row.addWidget(self.rank_combo, stretch=1)
+        layout.addLayout(order_row)
+        # The row actions get their own line: all four controls in one row set a ~490 px
+        # minimum width for the whole dock, which stopped the user shrinking the panel
+        # (and so enlarging the plot). Split, the floor is the wider of the two rows.
+        action_row = QHBoxLayout()
         self.top3_check = QCheckBox("Show top 3")
         self.top3_check.setObjectName("showTop3Check")
         self.top3_check.setToolTip("Overlay the three best-ranked models on the plot")
@@ -208,21 +215,19 @@ class AutoFitView(QWidget):
         self.open_button = QPushButton("Open full results")
         self.open_button.setToolTip("Refit the selected row and open its details window")
         self.open_button.clicked.connect(self._open_selected)
-        header.addWidget(self.order_label)
-        header.addWidget(self.rank_combo)
-        header.addStretch(1)
-        header.addWidget(self.top3_check)
-        header.addWidget(self.open_button)
-        layout.addLayout(header)
+        action_row.addWidget(self.top3_check)
+        action_row.addStretch(1)
+        action_row.addWidget(self.open_button)
+        layout.addLayout(action_row)
         self.table = RankingTableView()
-        # The ranking is the primary result and never collapses: five visible rows are the
-        # floor. More rows scroll (the vertical scrollbar is always available for that);
-        # the table is not inflated to eight rows, which used to push the whole dock past
-        # its own rect and over the Data-table dock at 1280x800.
+        # The ranking is the primary result and never collapses; its *minimum* is a small
+        # usable window (three rows — everything more scrolls), because that floor is
+        # what decides whether the user can give the plot and the data table their space.
+        # The default splitter share still shows eight-plus rows on a normal screen.
         self.table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         row_height = self.table.verticalHeader().defaultSectionSize()
         header_height = self.table.horizontalHeader().sizeHint().height()
-        self.table.setMinimumHeight(5 * row_height + header_height + 4)
+        self.table.setMinimumHeight(3 * row_height + header_height + 4)
         self.table.selectionModel().currentRowChanged.connect(
             lambda _current, _previous: self._emit_selected()
         )

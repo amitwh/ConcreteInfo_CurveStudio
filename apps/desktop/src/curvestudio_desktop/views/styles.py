@@ -276,6 +276,19 @@ QComboBox::drop-down {
     border: none;
     width: 18px;
 }
+/* An editable combo hosts a real QLineEdit child, and a spin box its own line edit.
+   QComboBox hands that field the rect its own metrics allow (the combo's 30 px minus
+   this rule's 5 px vertical padding: 18 px), so the generic QLineEdit padding above
+   would apply a second inset inside it and clip the text to half height. The outer
+   widget already draws the frame and the padding; the inner editor must not repeat
+   them. */
+QComboBox QLineEdit, QSpinBox QLineEdit, QDoubleSpinBox QLineEdit {
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    padding: 0;
+    margin: 0;
+}
 QComboBox QAbstractItemView {
     background: $surface;
     color: $text;

@@ -427,7 +427,9 @@ def test_analysis_dock_fits_above_the_data_table(make_window, qtbot, write_file,
 
     The ranking table's old eight-row floor made the dock's minimum taller than the space
     the main window can give it at 1280x800 (the summary's Export button was painted over
-    the other dock's title bar). Five visible rows are the floor; anything more scrolls.
+    the other dock's title bar). The table's *minimum* is now a small usable window —
+    three rows — because that floor is what decides how much height the user can give the
+    chart and the data table; the default split still shows eight-plus rows.
     """
     window = make_window()
     qtbot.addWidget(window)
@@ -457,10 +459,10 @@ def test_analysis_dock_fits_above_the_data_table(make_window, qtbot, write_file,
         f"analysis dock bottom {panel.geometry().bottom()} reaches into the data dock "
         f"at {dock.geometry().top()} at {size}"
     )
-    # five rows is the floor, not eight (the old floor is what overflowed the dock)
+    # three rows is the floor, not eight (the old floor is what overflowed the dock)
     row_height = view.table.verticalHeader().defaultSectionSize()
-    assert view.table.minimumHeight() >= 5 * row_height
-    assert view.table.minimumHeight() < 8 * row_height
+    assert view.table.minimumHeight() >= 3 * row_height
+    assert view.table.minimumHeight() < 5 * row_height
 
 
 @pytest.mark.parametrize(("size", "minimum_rows"), [((1600, 920), 7), ((1280, 800), 5)])
@@ -594,3 +596,28 @@ def test_ranking_copy_equation_uses_the_readable_caret(autofit_window) -> None:
     assert view.table.copy_equation() is True
     assert QGuiApplication.clipboard().text() == format_equation(row.equation_fitted)
     assert "**" not in QGuiApplication.clipboard().text()
+
+
+@pytest.mark.parametrize("mode", ["autofit", "manual"])
+def test_the_data_table_can_grow_in_both_modes(make_window, qtbot, mode) -> None:
+    """Whatever page the Analysis dock shows, the chart/data-table divider has travel.
+
+    The dock's minimum height used to equal its content's (546 px), so the bottom dock
+    could not gain a pixel. Both pages are now compact enough to leave real room.
+    """
+    window = make_window()
+    qtbot.addWidget(window)
+    window.resize(1280, 820)
+    window.show()
+    window.analysis.set_mode(mode)
+    QApplication.processEvents()
+
+    table = window.table_dock
+    before = table.height()
+    window.resizeDocks([table], [380], Qt.Orientation.Vertical)
+    QApplication.processEvents()
+    # the Auto-fit page carries the taller floor (two heading rows plus three ranking
+    # rows), so it gives the table slightly less than the scrollable Manual fit page
+    assert table.height() >= before + 70, f"{mode}: {before} -> {table.height()}"
+    assert table.height() >= 290
+    assert window.analysis_panel.geometry().bottom() < table.geometry().top()

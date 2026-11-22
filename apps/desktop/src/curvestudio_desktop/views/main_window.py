@@ -73,6 +73,19 @@ _THEME_CHOICES: tuple[tuple[Preference, str], ...] = (
     ("light", "&Light"),
     ("dark", "&Dark"),
 )
+#: Where each panel belongs. View → Panels re-homes a panel here, so a panel that was
+#: floated, closed or docked into a neighbour's slot always comes back to its own place.
+_DOCK_HOME: dict[str, Qt.DockWidgetArea] = {
+    "project": Qt.DockWidgetArea.LeftDockWidgetArea,
+    "analysis": Qt.DockWidgetArea.RightDockWidgetArea,
+    "table": Qt.DockWidgetArea.BottomDockWidgetArea,
+}
+#: The axis and default extent a re-shown panel is given.
+_DOCK_EXTENT: dict[str, tuple[Qt.Orientation, int]] = {
+    "project": (Qt.Orientation.Horizontal, 256),
+    "analysis": (Qt.Orientation.Horizontal, ANALYSIS_DOCK_WIDTH),
+    "table": (Qt.Orientation.Vertical, 220),
+}
 
 
 class MainWindow(QMainWindow):
@@ -357,7 +370,7 @@ class MainWindow(QMainWindow):
             ("analysis", "&Analysis panel"),
             ("table", "&Data table"),
         ):
-            action = self._dock_toggle(self.docks[name], label)
+            action = self._dock_toggle(name, label)
             panels_menu.addAction(action)
             self._panel_actions[name] = action
         view_menu.addSeparator()
@@ -380,13 +393,60 @@ class MainWindow(QMainWindow):
         self.help_menu.addAction(self.action_about)
         self.help_menu.addAction(self.action_about_qt)
 
-    def _dock_toggle(self, dock: QDockWidget, label: str) -> QAction:
+    def _dock_toggle(self, name: str, label: str) -> QAction:
+        """A View → Panels entry: show the panel in its home area, or hide it."""
+        dock = self.docks[name]
         action = QAction(label, self)
         action.setCheckable(True)
         action.setChecked(dock.isVisible())
-        action.toggled.connect(dock.setVisible)
-        dock.visibilityChanged.connect(action.setChecked)
+        action.toggled.connect(
+            lambda visible, dock_name=name: self.set_dock_visible(dock_name, visible)
+        )
+        # The menu mirrors the dock, but that mirror must not loop back into
+        # set_dock_visible: floating a panel briefly hides it, and an unguarded
+        # setChecked -> toggled -> set_dock_visible would dock it again instantly.
+        dock.visibilityChanged.connect(
+            lambda visible, dock_name=name: self._sync_panel_action(dock_name, visible)
+        )
         return action
+
+    def _sync_panel_action(self, name: str, visible: bool) -> None:
+        action = self._panel_actions.get(name)
+        if action is None or action.isChecked() == visible:
+            return
+        blocked = action.blockSignals(True)
+        try:
+            action.setChecked(visible)
+        finally:
+            action.blockSignals(blocked)
+
+    def set_dock_visible(self, name: str, visible: bool) -> None:
+        """Show a panel where it belongs, or hide it.
+
+        Re-showing never leaves a panel floating at a stale spot (an old monitor, a
+        corner behind another window) and never drops it into a neighbour's slot: a
+        hidden or floated panel is re-docked to its home area and given its remembered
+        extent. That is what makes View → Panels a reliable way back to a sane layout.
+        """
+        dock = self.docks[name]
+        if not visible:
+            dock.hide()
+            return
+        if dock.isFloating():
+            dock.setFloating(False)
+        home = _DOCK_HOME[name]
+        if self.dockWidgetArea(dock) != home:
+            self.addDockWidget(home, dock)
+        dock.show()
+        dock.raise_()
+        if self._collapsed.get(name, False):
+            return  # a collapsed panel keeps its strip; Expand is on its title bar
+        orientation, default = _DOCK_EXTENT[name]
+        if orientation is Qt.Orientation.Horizontal:
+            dock.setMaximumWidth(_UNBOUNDED)
+        else:
+            dock.setMaximumHeight(_UNBOUNDED)
+        self.resizeDocks([dock], [self._expanded_extent.get(name, default)], orientation)
 
     def _build_toolbar(self) -> None:
         toolbar: QToolBar = self.addToolBar("Main")
@@ -1142,9 +1202,13 @@ class MainWindow(QMainWindow):
         content = dock.widget()
         if collapsed:
             extent = dock.width() if vertical else dock.height()
-            # a restored layout may already be narrow: keep the remembered expanded
-            # extent instead of learning the collapsed strip as the "previous size"
-            if extent > _COLLAPSED_EXTENT or name not in self._expanded_extent:
+            # Learn the expanded size only from a live window: a layout restored before
+            # the window is shown has not been laid out yet (the dock may still be a
+            # sliver), and overwriting the remembered extent with that sliver would lose
+            # the real size the expand has to restore.
+            if self.isVisible() and (
+                extent > _COLLAPSED_EXTENT or name not in self._expanded_extent
+            ):
                 self._expanded_extent[name] = extent
             if content is not None:
                 content.hide()
@@ -1185,6 +1249,7 @@ class MainWindow(QMainWindow):
             self._settings.remove(f"{_COLLAPSED_PREFIX}{name}")
             self._settings.remove(f"{_EXPANDED_PREFIX}{name}")
         self.layout_restored = False
+        self._expanded_extent.clear()
         for name, dock in self.docks.items():
             self.set_dock_collapsed(name, False, persist=False)
             dock.setFloating(False)

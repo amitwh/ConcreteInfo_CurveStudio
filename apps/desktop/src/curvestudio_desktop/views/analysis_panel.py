@@ -10,7 +10,7 @@ computes anything: the pages talk to the AnalysisController, and the shell wires
 signals to the plot, the summary and the details window.
 """
 
-from PySide6.QtCore import QSettings, Qt
+from PySide6.QtCore import QSettings, QSize, Qt
 from PySide6.QtGui import QShowEvent
 from PySide6.QtWidgets import (
     QButtonGroup,
@@ -36,6 +36,20 @@ _SPLITTER_KEY = "analysis/splitterSizes"
 _DEFAULT_SPLIT = (700, 190)
 
 
+class _PageStack(QStackedWidget):
+    """A page stack whose minimum follows the page on screen, not the tallest one.
+
+    ``QStackedWidget`` reports the maximum minimum size over *all* its pages, so the
+    tall Manual-fit form used to pin the Analysis dock's floor even while the Auto-fit
+    ranking was showing. That floor is what decides how much height the main window can
+    give the data-table dock (and how small the panel may be when floated).
+    """
+
+    def minimumSizeHint(self) -> QSize:
+        page = self.currentWidget()
+        return page.minimumSizeHint() if page is not None else super().minimumSizeHint()
+
+
 class AnalysisPanel(QDockWidget):
     """Right dock: ANALYSIS — mode switch, Auto-fit or Manual fit page, fit summary."""
 
@@ -52,7 +66,7 @@ class AnalysisPanel(QDockWidget):
         self.autofit_view = AutoFitView(analysis)
         self.manual_view = ManualFitView(analysis, selection.xy)
         self.summary = FitSummaryPanel()
-        self._pages = QStackedWidget()
+        self._pages = _PageStack()
         self._pages.addWidget(self.autofit_view)
         self._pages.addWidget(self.manual_view)
         self.autofit_button = QPushButton("Auto-fit")

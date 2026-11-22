@@ -4,11 +4,25 @@
 the main window (it knows the dock's orientation and size); the title bar only
 emits :attr:`DockTitleBar.collapseToggled` — from its button or a title double-click
 — and reflects the state through :meth:`set_collapsed`.
+
+A custom title bar replaces the native one, so the window manager never sees a title
+bar to drag a floating panel by. A press on a floating title bar therefore asks the
+platform to start the window move (``QWindow.startSystemMove``: _NET_WM_MOVERESIZE on
+X11, ``xdg_toplevel.move`` on Wayland, the native move elsewhere); a docked panel
+ignores the press so ``QDockWidget`` keeps its own drag-to-dock behaviour. Moving the
+window by hand from a mouse handler is not an option: Qt re-dispatches the move after
+the window has shifted, and a ``QDockWidget`` that receives a move it never saw the
+press for dereferences its drag state and crashes.
+
+Double-clicking a floating title bar docks the panel back. The click pair is detected
+from the presses themselves, because the platform's move grab can swallow the second
+press before Qt turns it into a double-click event.
 """
 
-from PySide6.QtCore import QSize, Qt, Signal
+from PySide6.QtCore import QPoint, QSize, Qt, Signal
 from PySide6.QtGui import QMouseEvent
 from PySide6.QtWidgets import (
+    QApplication,
     QDockWidget,
     QHBoxLayout,
     QLabel,
@@ -19,6 +33,7 @@ from PySide6.QtWidgets import (
 from curvestudio_desktop.views.icons import icon
 
 _BUTTON_ICON_SIZE = QSize(16, 16)
+_DOUBLE_CLICK_SLOP = 4  # px the pointer may drift between the two presses of a double-click
 
 
 class DockTitleBar(QWidget):
@@ -41,15 +56,22 @@ class DockTitleBar(QWidget):
         self._dock = dock
         self._vertical = vertical
         self._collapsed = False
+        self._last_press: tuple[int, QPoint] | None = None
+        self._swallow_double_click = False
 
         self.label = QLabel(title, self)
         self.label.setObjectName("dockTitleLabel")
         self.collapse_button = self._button("dockCollapseButton")
         self.float_button = self._button("dockFloatButton")
+        self.float_button.setCheckable(True)  # checked while the panel floats
         self.close_button = self._button("dockCloseButton")
         self.collapse_button.clicked.connect(self._toggle_collapse)
         self.float_button.clicked.connect(self._toggle_float)
         self.close_button.clicked.connect(dock.close)
+        # a panel can also be docked back by dragging it onto the main window or by
+        # the View menu: the button must always reflect the real state
+        dock.topLevelChanged.connect(self._on_floating_changed)
+        self._on_floating_changed(dock.isFloating())
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(8, 2, 4, 2)
@@ -100,14 +122,83 @@ class DockTitleBar(QWidget):
         self.collapseToggled.emit(not self._collapsed)
 
     def _toggle_float(self) -> None:
-        self._dock.setFloating(not self._dock.isFloating())
+        if self._dock.isFloating():
+            # back into the layout where the main window put it (never where it drifted)
+            self._dock.setFloating(False)
+            return
+        self._dock.setFloating(True)
+        self._dock.show()
+        self._dock.raise_()
+        self._dock.activateWindow()
 
-    def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:
-        if event.button() is Qt.MouseButton.LeftButton:
-            self.collapseToggled.emit(not self._collapsed)
+    def _on_floating_changed(self, floating: bool) -> None:
+        """Reflect the real state: a floating panel offers "dock", a docked one "float"."""
+        self.float_button.setChecked(floating)
+        self.float_button.setToolTip("Dock panel" if floating else "Float panel")
+        self._last_press = None
+
+    # -- moving a floating panel -------------------------------------------------------------
+
+    def mousePressEvent(self, event: QMouseEvent) -> None:
+        if event.button() is not Qt.MouseButton.LeftButton or not self._dock.isFloating():
+            # docked: ignore so QDockWidget still sees the press and drags the panel
+            # into another dock area (its own dock-drag handling lives in the parent)
+            super().mousePressEvent(event)
+            return
+        if self._is_second_click(event):
+            self._dock.setFloating(False)  # double-click a floating title: dock it back
+            self._swallow_double_click = True  # the platform may still deliver the pair
             event.accept()
             return
-        super().mouseDoubleClickEvent(event)
+        handle = self._dock.windowHandle()
+        if handle is not None:
+            handle.startSystemMove()  # the window manager drags from here (see module note)
+        event.accept()
+
+    def _is_second_click(self, event: QMouseEvent) -> bool:
+        """Whether this press completes a double-click on the title bar."""
+        previous = self._last_press
+        current = (event.timestamp(), event.globalPosition().toPoint())
+        self._last_press = current
+        if previous is None:
+            return False
+        elapsed, position = previous
+        return (current[1] - position).manhattanLength() <= _DOUBLE_CLICK_SLOP and (
+            current[0] - elapsed <= QApplication.doubleClickInterval()
+        )
+
+    def mouseMoveEvent(self, event: QMouseEvent) -> None:
+        """Keep a floating panel's moves away from QDockWidget's drag state machine.
+
+        The platform owns the drag (``startSystemMove``); an ignored move would
+        propagate to the dock, whose floating-drag handler expects the press it never
+        saw and dereferences its drag state (:class:`QDockWidget` crashes there).
+        """
+        if self._dock.isFloating():
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:
+        if self._dock.isFloating() and event.button() is Qt.MouseButton.LeftButton:
+            event.accept()  # the press was ours; the dock must not see its release
+            return
+        super().mouseReleaseEvent(event)
+
+    def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:
+        if event.button() is not Qt.MouseButton.LeftButton:
+            super().mouseDoubleClickEvent(event)
+            return
+        if self._swallow_double_click:
+            # the press pair already docked the panel; this is its tail, not a new request
+            self._swallow_double_click = False
+            event.accept()
+            return
+        if self._dock.isFloating():
+            self._dock.setFloating(False)  # a floating title docks its panel back
+        else:
+            self.collapseToggled.emit(not self._collapsed)
+        event.accept()
 
 
 __all__ = ["DockTitleBar"]

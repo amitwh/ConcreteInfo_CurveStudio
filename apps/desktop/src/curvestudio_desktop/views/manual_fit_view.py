@@ -23,11 +23,13 @@ from PySide6.QtWidgets import (
     QCompleter,
     QDoubleSpinBox,
     QFormLayout,
+    QFrame,
     QHBoxLayout,
     QHeaderView,
     QLabel,
     QLineEdit,
     QPushButton,
+    QScrollArea,
     QSpinBox,
     QTableWidget,
     QTableWidgetItem,
@@ -52,6 +54,9 @@ POLYNOMIAL_ID = "polynomial"
 METHODS = ("auto", "lm", "trf", "dogbox", "nelder", "powell", "bfgs", "lbfgsb")
 LOSSES = ("linear", "soft_l1", "huber", "cauchy", "arctan")
 DEBOUNCE_MS = 400
+_FORM_SCROLL_MIN_HEIGHT = 140
+"""The form scrolls rather than pinning the dock: a short viewport of the form is
+still usable, and the Analysis dock must be able to give its height to the plot."""
 _MAX_SEED = 2**31 - 1
 _ID_IN_TEXT = re.compile(r"^.*?\(([^()]+)\)")
 
@@ -77,8 +82,27 @@ class ManualFitView(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(6, 6, 6, 6)
         layout.setSpacing(4)
-        self._build_form(layout)
-        self._build_parameters(layout)
+        # The form is taller than a short dock at 720-820 px: inside a scroll area it
+        # scrolls instead of pinning the whole Analysis dock's minimum height (which
+        # used to stop the chart/data-table divider moving at all). Fit stays pinned
+        # below, so the action is always reachable.
+        body = QWidget()
+        self.form_body = body
+        body_layout = QVBoxLayout(body)
+        body_layout.setContentsMargins(0, 0, 0, 0)
+        body_layout.setSpacing(4)
+        self._build_form(body_layout)
+        self._build_parameters(body_layout)
+        body_layout.addStretch(1)
+        # a form never scrolls sideways: this floor keeps its rows readable
+        body.setMinimumWidth(300)
+        self.form_scroll = QScrollArea()
+        self.form_scroll.setObjectName("manualFormScroll")
+        self.form_scroll.setWidgetResizable(True)
+        self.form_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.form_scroll.setWidget(body)
+        self.form_scroll.setMinimumHeight(_FORM_SCROLL_MIN_HEIGHT)
+        layout.addWidget(self.form_scroll, stretch=1)
         self._build_actions(layout)
         self._banner = QLabel("")
         self._banner.setObjectName("bannerError")
@@ -114,8 +138,8 @@ class ManualFitView(QWidget):
         self.model_combo.setSizeAdjustPolicy(
             QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
         )
-        self.model_combo.setMinimumContentsLength(18)
-        self.model_combo.setMinimumWidth(220)
+        self.model_combo.setMinimumContentsLength(10)
+        self.model_combo.setMinimumWidth(150)
         self.model_combo.setLineEdit(self.model_edit)
         self.model_combo.currentIndexChanged.connect(lambda _index: self._on_model_changed())
         self.model_edit.textEdited.connect(lambda _text: self._schedule_validation())
