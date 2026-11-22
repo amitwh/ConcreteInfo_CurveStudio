@@ -4,8 +4,9 @@
  * what the toggles say — the chart may show the data points and nothing else.
  */
 
-import type { FitBundle, PointsOut } from "../api/client";
+import type { FitBundle, PointsOut, RankedFit } from "../api/client";
 import type { PlotlyLayout, PlotlyTrace } from "plotly.js-dist-min";
+import { fmtEquation } from "../format";
 
 export interface ChartToggles {
   confidence: boolean;
@@ -326,4 +327,93 @@ export function mergeLayout(...parts: Array<Partial<PlotlyLayout>>): Partial<Plo
     }
   }
   return merged as Partial<PlotlyLayout>;
+}
+
+// -- the selected model's equation, pinned to the chart -----------------------------------
+
+export interface ChartEquation {
+  name: string;
+  equation: string;
+}
+
+/**
+ * The equation the chart should caption: the selected ranking row's fitted equation when
+ * there is one, else the shown bundle's. The engine stores `**`; it is displayed as `^`
+ * (the same presentation rule as the ranking, details and reports).
+ */
+export function selectedEquation(
+  rows: readonly RankedFit[],
+  selectedRowId: string | null,
+  bundle: FitBundle | null,
+): ChartEquation | null {
+  if (selectedRowId !== null) {
+    const row = rows.find((candidate) => candidate.model_id === selectedRowId);
+    const fitted = row?.equation_fitted ?? null;
+    if (row !== undefined && fitted !== null && fitted !== "") {
+      return { name: fmtEquation(row.name), equation: fmtEquation(fitted) };
+    }
+  }
+  if (bundle === null) return null;
+  // a payload may omit both fields entirely (a non-converged fit), so guard undefined too
+  const fitted = bundle.result.equation_fitted ?? bundle.result.equation;
+  if (fitted === null || fitted === undefined || fitted === "") return null;
+  const row = rows.find((candidate) => candidate.model_id === bundle.result.model_id);
+  return { name: fmtEquation(row?.name ?? bundle.result.model_id), equation: fmtEquation(fitted) };
+}
+
+/** Soft-wrap a long equation at its ` + ` / ` - ` terms, so the caption stays on the chart. */
+export function wrapEquation(text: string, width = 64): string[] {
+  const parts = text.split(/(?= [+-] )/);
+  const lines: string[] = [];
+  let current = "";
+  for (const part of parts) {
+    if (current !== "" && current.length + part.length > width) {
+      lines.push(current);
+      current = part.trimStart();
+    } else {
+      current += part;
+    }
+  }
+  if (current !== "") lines.push(current);
+  return lines;
+}
+
+/** A Plotly layout fragment carrying the equation caption (empty when there is none). */
+export function equationLayout(
+  equation: ChartEquation | null,
+  dark: boolean,
+): Partial<PlotlyLayout> {
+  if (equation === null) return {};
+  const lines = wrapEquation(equation.equation);
+  return {
+    annotations: [
+      {
+        x: 0.012,
+        y: 0.985,
+        xref: "paper",
+        yref: "paper",
+        xanchor: "left",
+        yanchor: "top",
+        align: "left",
+        showarrow: false,
+        text: `<b>${escapeHtml(equation.name)}</b><br>${lines.map(escapeHtml).join("<br>")}`,
+        bgcolor: dark ? "rgba(28,25,23,0.88)" : "rgba(255,255,255,0.92)",
+        bordercolor: dark ? "#4a4643" : "#e3e3e3",
+        borderwidth: 1,
+        borderpad: 6,
+        font: {
+          size: 11,
+          color: dark ? "#f1f1f1" : "#0d0b09",
+          family: "JetBrains Mono Variable, JetBrains Mono, ui-monospace, monospace",
+        },
+      },
+    ],
+  };
+}
+
+function escapeHtml(text: string): string {
+  return text
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
 }

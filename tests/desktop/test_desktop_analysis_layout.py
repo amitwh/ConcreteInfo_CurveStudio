@@ -621,3 +621,17 @@ def test_the_data_table_can_grow_in_both_modes(make_window, qtbot, mode) -> None
     assert table.height() >= before + 70, f"{mode}: {before} -> {table.height()}"
     assert table.height() >= 290
     assert window.analysis_panel.geometry().bottom() < table.geometry().top()
+
+
+def test_selecting_a_ranking_row_captions_the_plot_with_its_equation(autofit_window) -> None:
+    """The curve's equation is on the chart, in the row's own colour — not a detour."""
+    view = autofit_window.analysis_panel.autofit_view
+    plot = autofit_window.plot_view
+    assert view.table.rows()
+    row = view.table.select_row(0)
+    QApplication.processEvents()
+    assert row is not None
+    text = plot.equation_text()
+    assert text is not None, "selecting a row drew no equation caption"
+    assert text.startswith(f"{row.name}\n")
+    assert "^" in text and "**" not in text

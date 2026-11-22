@@ -9,11 +9,15 @@ import {
   logAxesAllowed,
   mergeLayout,
   modelColor,
+  equationLayout,
+  selectedEquation,
   setWebglSupportedForTests,
   themeLayout,
+  wrapEquation,
 } from "./traces";
 
 type FitBundle = components["schemas"]["FitBundle"];
+type RankedFit = components["schemas"]["RankedFit"];
 type PointsOut = components["schemas"]["PointsOut"];
 
 const points = (x: number[], y: number[]): PointsOut => ({
@@ -283,5 +287,54 @@ describe("the no-curve invariant", () => {
       }),
     );
     expect(curveBadY).toEqual({ x: true, y: false });
+  });
+});
+
+describe("chart equation caption", () => {
+  const row = {
+    rank: 1,
+    model_id: "power",
+    name: "Power",
+    category: "power",
+    equation_fitted: "y = 2.35*x**0.89",
+    metrics: { k: 2, n: 8, r2: 0.99, adj_r2: 0.99, rmse: 0.1 },
+    status: "converged",
+    same_curve_as: [],
+    warnings: [],
+    parameters: [],
+    generated: false,
+    shape_parameters: 0,
+    degenerate: false,
+  } as unknown as RankedFit;
+
+  it("captions the selected row's fitted equation with ^ and its name", () => {
+    const equation = selectedEquation([row], "power", null);
+    expect(equation).toEqual({ name: "Power", equation: "y = 2.35*x^0.89" });
+    const layout = equationLayout(equation, false);
+    const annotations = (layout.annotations ?? []) as Array<{ text?: string }>;
+    expect(annotations[0]?.text).toContain("Power");
+    expect(annotations[0]?.text).toContain("y = 2.35*x^0.89");
+    expect(annotations[0]?.text).not.toContain("**");
+  });
+
+  it("falls back to the shown bundle when no row is selected", () => {
+    const bundle = {
+      result: { model_id: "power", equation: "y = a*x**b", equation_fitted: "y = 2.0*x**0.5" },
+    } as unknown as FitBundle;
+    expect(selectedEquation([], null, bundle)).toEqual({
+      name: "power",
+      equation: "y = 2.0*x^0.5",
+    });
+  });
+
+  it("has no caption without a model, and wraps long equations", () => {
+    expect(selectedEquation([], null, null)).toBeNull();
+    expect(equationLayout(null, false)).toEqual({});
+    const long = "y = 0.680918 + 2.37953*x + 0.0900383*x^2 + 0.0127839*x^3 + -0.000548964*x^4";
+    const lines = wrapEquation(long, 40);
+    expect(lines.length).toBeGreaterThan(1);
+    // the wrap splits between terms and drops the separator space it broke at
+    expect(lines.join("").replaceAll(" ", "")).toBe(long.replaceAll(" ", ""));
+    expect(lines.every((line) => line.length <= 44)).toBe(true);
   });
 });

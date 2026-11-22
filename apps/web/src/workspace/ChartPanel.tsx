@@ -10,9 +10,11 @@ import { PlotChart, downloadPlotPng } from "../components/PlotChart";
 import type { DatasetDetailOut, FitBundle, RankedFit, RowCurve } from "../api/client";
 import {
   buildTraces,
+  equationLayout,
   isConverged,
   logAxesAllowed,
   mergeLayout,
+  selectedEquation,
   themeLayout,
   type ChartToggles,
   type OverlayCurve,
@@ -95,9 +97,16 @@ export function ChartPanel({
     [points, bundle, toggles, dataset?.x_column, dataset?.y_column, dark, selectedPosition, overlay],
   );
 
+  // The selected model's fitted equation is captioned on the chart itself: it is the
+  // thing the curve *is*, and reading it should not need a trip to the ranking's details.
+  const equation = useMemo(
+    () => selectedEquation(rows, selectedRowId, bundle),
+    [rows, selectedRowId, bundle],
+  );
+
   const mergedLayout = useMemo(
-    () => mergeLayout(themeLayout(dark), layout),
-    [dark, layout],
+    () => mergeLayout(themeLayout(dark), layout, equationLayout(equation, dark)),
+    [dark, layout, equation],
   );
 
   return (

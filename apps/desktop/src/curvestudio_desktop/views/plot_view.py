@@ -7,8 +7,10 @@ values ≤ 0; export goes through ``pyqtgraph.exporters`` with the crosshair hid
 Publication-quality Matplotlib export arrives with D3.
 """
 
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
+from html import escape
 from pathlib import Path
 from typing import cast
 
@@ -18,6 +20,7 @@ from PySide6.QtCore import QEvent, QObject, QPointF, Qt
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QLabel, QStackedLayout, QVBoxLayout, QWidget
 
+from curvestudio.workflow import format_equation
 from curvestudio_desktop.theme import current_scheme, mono_font
 from curvestudio_plotting.palette import band_fill, curve_style, data_color
 
@@ -26,6 +29,38 @@ _DARK_PLOT_FOREGROUND = "#d4d4d4"
 #: Bands sit below the curves so a fill never tints the line it belongs to.
 _BAND_Z = 0.5
 _CURVE_Z = 2.0
+
+
+_EQUATION_LINE_WIDTH = 52
+_EQUATION_MAX_LINES = 4
+
+
+def _wrap_equation(
+    text: str, width: int = _EQUATION_LINE_WIDTH, max_lines: int = _EQUATION_MAX_LINES
+) -> list[str]:
+    """Wrap a fitted equation at its `` + ``/`` - `` terms, capped with an honest ellipsis.
+
+    A degree-8 polynomial runs to 120+ characters; the plot caption shows the first
+    lines and an ellipsis rather than silently clipping a line mid-term. The complete
+    equation is always in the details window and the reports.
+    """
+    terms: list[str] = []
+    for part in re.split(r"(?= [+-] )", text):
+        terms.append(part)
+    lines: list[str] = []
+    current = ""
+    for term in terms:
+        if current and len(current) + len(term) > width:
+            lines.append(current)
+            current = term.lstrip()
+        else:
+            current += term
+    if current:
+        lines.append(current)
+    if len(lines) > max_lines:
+        lines = lines[:max_lines]
+        lines[-1] = f"{lines[-1].rstrip()} …"
+    return lines
 
 
 @dataclass(frozen=True)
@@ -76,6 +111,15 @@ class PlotView(QWidget):
             " border-radius: 4px; padding: 4px 10px; }"
         )
         self._hint.hide()
+        # the selected model's equation, pinned to the plot's top-left corner: visible
+        # where the curve is, instead of a trip to the details window to read it
+        self._equation = QLabel(self._plot)
+        self._equation_text: tuple[str, str, int] | None = None
+        self._equation.setObjectName("plotEquation")
+        self._equation.setTextFormat(Qt.TextFormat.RichText)
+        self._equation.setWordWrap(True)
+        self._equation.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self._equation.hide()
         self._plot.installEventFilter(self)
         self._readout = QLabel("", self)
         self._readout.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -255,6 +299,7 @@ class PlotView(QWidget):
         self._band_prediction = None
         self._rebuild_legend()
         self._hint.hide()
+        self.clear_equation()
 
     # -- legend -------------------------------------------------------------------------------
 
@@ -317,9 +362,75 @@ class PlotView(QWidget):
         left = max(8, (self._plot.width() - self._hint.width()) // 2)
         self._hint.move(left, 8)
 
+    # -- the selected model's equation on the plot ---------------------------------------------
+
+    def set_equation(self, model: str, equation: str, *, position: int = 1) -> None:
+        """Caption the plot with the selected model's fitted equation.
+
+        ``position`` is the model's 1-based display position, so the equation takes the
+        same colour as its curve (never the tied rank's colour). The engine stores ``**``;
+        it is shown as ``^``, the way it is written in the details window and reports.
+        """
+        display = format_equation(equation)
+        if not display:
+            self.clear_equation()
+            return
+        # a generated family is named by its template, which carries the engine's **
+        self._equation_text = (format_equation(model), display, position)
+        self._render_equation()
+        self._position_equation()
+        self._equation.show()
+
+    def clear_equation(self) -> None:
+        self._equation_text = None
+        self._equation.setText("")
+        self._equation.hide()
+
+    def equation_text(self) -> str | None:
+        """The caption as ``"model\\nequation"`` text (``None`` when nothing is shown)."""
+        if self._equation_text is None:
+            return None
+        model, display, _position = self._equation_text
+        return f"{model}\n{display}"
+
+    def equation_visible(self) -> bool:
+        return not self._equation.isHidden()
+
+    def _render_equation(self) -> None:
+        if self._equation_text is None:
+            return
+        model, display, position = self._equation_text
+        colour, _width = curve_style(position)
+        dark = getattr(self, "_scheme", None) == "dark"
+        border = "#4a4643" if dark else "#e3e3e3"
+        background = "rgba(28, 25, 23, 0.90)" if dark else "rgba(255, 255, 255, 0.93)"
+        text = "#f1f1f1" if dark else "#0d0b09"
+        self._equation.setStyleSheet(
+            f"QLabel#plotEquation {{ background: {background}; color: {text};"
+            f" border: 1px solid {border}; border-radius: 4px; padding: 3px 7px; }}"
+        )
+        lines = _wrap_equation(display)
+        self._equation.setText(
+            f'<div style="font-size:8.5pt;">{escape(model)}</div>'
+            f"<div style=\"color:{colour}; font-family:'JetBrains Mono'; font-size:8.5pt;\">"
+            f"{'<br/>'.join(escape(line) for line in lines)}</div>"
+        )
+
+    def _position_equation(self) -> None:
+        """Pin the caption to the plot's top-left corner, clear of the y-axis labels."""
+        if self._equation.isHidden():
+            return
+        axis = self._plot.getPlotItem().getAxis("left")
+        left = max(10, int(axis.width()) + 6) if axis is not None else 10
+        width = max(220, min(520, int((self._plot.width() - left) * 0.78)))
+        self._equation.setFixedWidth(width)
+        self._equation.adjustSize()
+        self._equation.move(left, 8)
+
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:
         if watched is self._plot and event.type() is QEvent.Type.Resize:
             self._position_hint()
+            self._position_equation()
         return super().eventFilter(watched, event)
 
     def fit_curve_data(self) -> tuple[np.ndarray, np.ndarray] | None:

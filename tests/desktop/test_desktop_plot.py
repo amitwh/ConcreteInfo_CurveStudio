@@ -2,6 +2,7 @@
 
 import numpy as np
 import pytest
+from PySide6.QtWidgets import QApplication, QLabel
 
 from curvestudio_desktop.views.plot_view import PlotView
 
@@ -134,3 +135,32 @@ def test_large_scatter_is_not_peak_downsampled(plot: PlotView) -> None:
     shown_x, shown_y = plot.scatter_data()
     assert shown_x is not None and shown_y is not None
     assert len(shown_x) == 60_000 and len(shown_y) == 60_000
+
+
+def test_the_selected_equation_is_captioned_on_the_plot(plot: PlotView, qtbot) -> None:
+    """The curve's equation is shown where the curve is, never with the engine's ``**``."""
+    plot.set_data(np.array([1.0, 2.0, 3.0]), np.array([2.0, 4.0, 8.0]), "x", "y")
+    plot.set_fit([1.0, 2.0, 3.0], [2.0, 4.0, 8.0])
+    plot.set_equation("Quadratic", "y = 0.5 + 2.0*x + 0.09*x**2", position=1)
+    qtbot.wait(10)
+    assert plot.equation_visible()
+    text = plot.equation_text()
+    assert text is not None
+    assert text.startswith("Quadratic\n")
+    assert "^2" in text and "**" not in text
+    # the caption never leaves the plot's rect, even when the plot is narrow
+    for width in (420, 900):
+        plot.resize(width, 500)
+        QApplication.processEvents()
+        label = plot.findChild(QLabel, "plotEquation")
+        assert label is not None
+        assert label.geometry().right() <= plot.width()
+        assert label.geometry().bottom() <= plot.height()
+
+
+def test_clearing_the_fit_clears_the_equation(plot: PlotView) -> None:
+    plot.set_equation("Power", "y = 1.2*x**0.5")
+    assert plot.equation_visible()
+    plot.clear_fit()
+    assert not plot.equation_visible()
+    assert plot.equation_text() is None

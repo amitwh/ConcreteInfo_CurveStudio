@@ -811,6 +811,9 @@ class MainWindow(QMainWindow):
             (confidence.lower, confidence.upper) if confidence is not None else None,
             (prediction.lower, prediction.upper) if prediction is not None else None,
         )
+        fitted = fit_bundle.result.equation_fitted or fit_bundle.result.equation
+        if fitted:
+            self.plot_view.set_equation(name, fitted)
 
     def _on_fit_failed(self, message: str) -> None:
         self.analysis_panel.manual_view.show_failure(message)
@@ -858,6 +861,7 @@ class MainWindow(QMainWindow):
                 confidence=confidence,
                 prediction=prediction,
             )
+            self._show_equation(row, position)
             return
         assert curve is not None  # no overlay means the selected curve exists (checked above)
         self.plot_view.set_fit(
@@ -868,6 +872,14 @@ class MainWindow(QMainWindow):
             position=position,
             name=row.name if row is not None else "fitted curve",
         )
+        self._show_equation(row, position)
+
+    def _show_equation(self, row: RankedFit | None, position: int) -> None:
+        """Caption the plot with the selected row's fitted equation, in its curve colour."""
+        if row is None or not row.equation_fitted:
+            self.plot_view.clear_equation()
+            return
+        self.plot_view.set_equation(row.name, row.equation_fitted, position=position)
 
     @staticmethod
     def _bands(

@@ -10,12 +10,16 @@ type RankedFit = components["schemas"]["RankedFit"];
 type RowCurve = components["schemas"]["RowCurve"];
 type Trace = { mode?: string; fill?: string; name?: string; line?: { color?: string } };
 
-const captured = vi.hoisted(() => ({ traces: [] as Trace[] }));
+const captured = vi.hoisted(() => ({
+  traces: [] as Trace[],
+  layout: {} as Record<string, unknown>,
+}));
 
 // jsdom cannot host a real Plotly graph; capture the traces the panel builds.
 vi.mock("../components/PlotChart", () => ({
-  PlotChart: ({ traces }: { traces: Trace[] }) => {
+  PlotChart: ({ traces, layout }: { traces: Trace[]; layout: Record<string, unknown> }) => {
     captured.traces = traces;
+    captured.layout = layout;
     return <div data-testid="plot" />;
   },
   downloadPlotPng: () => {},
@@ -185,5 +189,33 @@ describe("ChartPanel banners for problem fits", () => {
     render(<ChartPanel dataset={dataset} bundle={bundle} dark={false} />);
     const warning = screen.getByText(/no curve could be sampled/);
     expect(warning.textContent).toContain("the fit range lies outside the data");
+  });
+});
+
+describe("ChartPanel equation caption", () => {
+  it("shows the selected row's fitted equation on the chart", () => {
+    const rows = [
+      {
+        rank: 1,
+        model_id: "power",
+        name: "Power",
+        status: "converged",
+        equation_fitted: "y = 2.35*x**0.89",
+        metrics: { k: 2, n: 10 },
+      },
+    ] as unknown as RankedFit[];
+    const bundle = {
+      result: { status: "converged" },
+      curve: { x: [0, 1], y: [2, 1] },
+      confidence_band: null,
+      prediction_band: null,
+    } as unknown as FitBundle;
+    render(
+      <ChartPanel dataset={dataset} bundle={bundle} dark={false} rankingRows={rows} selectedRowId="power" />,
+    );
+    const annotations = captured.layout.annotations as Array<{ text?: string }>;
+    expect(annotations).toHaveLength(1);
+    expect(annotations[0]?.text).toContain("Power");
+    expect(annotations[0]?.text).toContain("y = 2.35*x^0.89");
   });
 });
