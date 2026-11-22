@@ -21,3 +21,14 @@ createRoot(root).render(
     </AuthProvider>
   </StrictMode>,
 );
+
+// The installable app: register the shell service worker in production builds only, so
+// development is never served from a cache. The worker itself is network-first for
+// navigations and never touches /api.
+if (import.meta.env.PROD && "serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    void navigator.serviceWorker.register("/sw.js").catch(() => {
+      // A blocked registration (private mode, an old browser) leaves the app fully usable.
+    });
+  });
+}

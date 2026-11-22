@@ -247,3 +247,34 @@ describe("bounds and initial values follow the selection (no stale carry-over)",
     expect(polynomialOptions).toHaveLength(1);
   });
 });
+
+describe("FitPanel model picker", () => {
+  it("never hides the selected model behind a search filter", async () => {
+    const user = userEvent.setup();
+    render(
+      <FitPanel dataset={dataset(null)} models={models} busy={false} onFit={vi.fn()} fitError={null} />,
+    );
+    const select = screen.getByLabelText("Model") as HTMLSelectElement;
+    await user.selectOptions(select, "exp_decay");
+    expect(select.value).toBe("exp_decay");
+
+    // a filter that matches nothing still leaves the selected model available
+    const search = screen.getByLabelText(/search models/i);
+    await user.type(search, "zzzz-no-such-model");
+    expect((screen.getByLabelText("Model") as HTMLSelectElement).value).toBe("exp_decay");
+    expect(screen.getByRole("option", { name: "Exponential decay" })).toBeTruthy();
+  });
+
+  it("filters the options by id, name, category or equation", async () => {
+    const user = userEvent.setup();
+    render(
+      <FitPanel dataset={dataset(null)} models={models} busy={false} onFit={vi.fn()} fitError={null} />,
+    );
+    const search = screen.getByLabelText(/search models/i);
+    await user.type(search, "decay");
+    expect(screen.getByRole("option", { name: "Exponential decay" })).toBeTruthy();
+    expect(screen.queryByRole("option", { name: /polynomial/ })).toBeNull();
+    // the fixed entries stay reachable at any time
+    expect(screen.getByRole("option", { name: /Custom equation/ })).toBeTruthy();
+  });
+});

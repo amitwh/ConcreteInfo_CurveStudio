@@ -82,13 +82,15 @@ export function FitPanel({ dataset, models, busy, onFit, fitError, preset }: Fit
     const map = new Map<string, ModelInfo[]>();
     for (const model of models) {
       if (model.id === CATALOGUE_POLYNOMIAL_ID) continue;
-      if (!searchMatches(model, query)) continue;
+      // A filter must never hide the model that is actually selected: a blank picker
+      // over a live selection would let the panel fit a model it no longer names.
+      if (!searchMatches(model, query) && model.id !== selectedId) continue;
       const list = map.get(model.category) ?? [];
       list.push(model);
       map.set(model.category, list);
     }
     return [...map.entries()].sort(([a], [b]) => a.localeCompare(b));
-  }, [models, search]);
+  }, [models, search, selectedId]);
 
   const selection: ModelSelection = useMemo(() => {
     if (selectedId === POLY_VALUE)

@@ -47,7 +47,23 @@ const POLYNOMIAL_CANDIDATE = /^poly(\d+)(?:_origin)?$/;
 /** What the manual panel should be prefilled with ("Use this model manually"). */
 type ManualPreset = { kind: "registered"; id: string } | { kind: "polynomial"; degree: number };
 
-export function WorkspacePage(): ReactElement {
+export interface WorkspacePageProps {
+  /** The dataset this workspace remembers (null: nothing selected until the user picks). */
+  initialDatasetId?: string | null;
+  /** The workspace's analysis mode; falls back to the account's remembered mode. */
+  initialMode?: WorkspaceMode | null;
+  /** Report a dataset selection so the owning workspace can remember it. */
+  onSelectionChange?: (datasetId: string | null) => void;
+  /** Report a mode change so the owning workspace can remember it. */
+  onModeChange?: (mode: WorkspaceMode) => void;
+}
+
+export function WorkspacePage({
+  initialDatasetId = null,
+  initialMode = null,
+  onSelectionChange,
+  onModeChange,
+}: WorkspacePageProps = {}): ReactElement {
   const { user } = useAuth();
   const { theme } = useTheme();
   const dark = theme === "dark";
@@ -66,7 +82,9 @@ export function WorkspacePage(): ReactElement {
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [modelsError, setModelsError] = useState<unknown>(null);
 
-  const [mode, setMode] = useState<WorkspaceMode>(() => loadMode(user?.id ?? null));
+  const [mode, setMode] = useState<WorkspaceMode>(
+    () => initialMode ?? loadMode(user?.id ?? null),
+  );
   const [autofitOptions, setAutofitOptions] = useState<AutoFitOptions>(DEFAULT_AUTOFIT_OPTIONS);
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
   const [openRowBusy, setOpenRowBusy] = useState<string | null>(null);
@@ -156,6 +174,7 @@ export function WorkspacePage(): ReactElement {
   const selectDataset = useCallback(
     async (id: string): Promise<void> => {
       setSelectedId(id);
+      onSelectionChange?.(id);
       setDetail(null);
       setDetailError(null);
       setBundle(null);
@@ -183,8 +202,21 @@ export function WorkspacePage(): ReactElement {
         setDetailLoading(false);
       }
     },
-    [autofit, loadFits, poller],
+    [autofit, loadFits, onSelectionChange, poller],
   );
+
+  // A workspace remembers its dataset: select it once the list is in (a remembered
+  // dataset that no longer exists falls back to the most recent one, so the workspace
+  // is never a dead end).
+  const initialSelectionApplied = useRef(false);
+  useEffect(() => {
+    if (initialSelectionApplied.current || datasetsLoading || datasets.length === 0) return;
+    initialSelectionApplied.current = true;
+    if (initialDatasetId === null) return;
+    const remembered = datasets.some((dataset) => dataset.id === initialDatasetId);
+    const target = remembered ? initialDatasetId : (datasets[0]?.id ?? null);
+    if (target !== null) void selectDataset(target);
+  }, [datasets, datasetsLoading, initialDatasetId, selectDataset]);
 
   const onFit = useCallback(
     async (spec: Record<string, unknown>): Promise<void> => {
@@ -219,6 +251,7 @@ export function WorkspacePage(): ReactElement {
       autofit.clear(id);
       if (selectedId === id) {
         setSelectedId(null);
+        onSelectionChange?.(null);
         setDetail(null);
         setBundle(null);
         setActiveFitId(null);
@@ -228,7 +261,7 @@ export function WorkspacePage(): ReactElement {
         poller.reset();
       }
     },
-    [autofit, selectedId, poller],
+    [autofit, onSelectionChange, selectedId, poller],
   );
 
   const onDeleteFit = useCallback(
@@ -247,12 +280,13 @@ export function WorkspacePage(): ReactElement {
     [activeFitId],
   );
 
-  const onModeChange = useCallback(
+  const changeMode = useCallback(
     (next: WorkspaceMode): void => {
       setMode(next);
+      onModeChange?.(next);
       if (user !== null) saveMode(user.id, next);
     },
-    [user],
+    [onModeChange, user],
   );
 
   // Keep a valid row selected: default to the best row whenever the loaded ranking
@@ -328,9 +362,10 @@ export function WorkspacePage(): ReactElement {
         setManualPreset({ kind: "registered", id: row.modelId });
       }
       setMode("manual");
+      onModeChange?.("manual");
       if (user !== null) saveMode(user.id, "manual");
     },
-    [user],
+    [onModeChange, user],
   );
 
   const onRunAutofit = useCallback((): void => {
@@ -387,7 +422,7 @@ export function WorkspacePage(): ReactElement {
       />
 
       <div className="workspace__main">
-        <ModeSwitch mode={mode} onModeChange={onModeChange} autofitStatus={autofitStatus} />
+        <ModeSwitch mode={mode} onModeChange={changeMode} autofitStatus={autofitStatus} />
         <JobStatus
           state={poller.state}
           onCancel={() => void poller.cancel()}

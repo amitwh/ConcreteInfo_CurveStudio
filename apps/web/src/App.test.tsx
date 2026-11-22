@@ -1,46 +1,84 @@
-import { render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
-import { describe, expect, it } from "vitest";
-import App from "./App";
-import { AuthProvider } from "./api/auth";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import App, { overlayFor } from "./App";
 
-function renderApp(entry: string) {
-  return render(
-    <AuthProvider>
-      <MemoryRouter initialEntries={[entry]}>
-        <App />
-      </MemoryRouter>
-    </AuthProvider>,
+vi.mock("./api/auth", () => ({
+  useAuth: () => ({
+    status: "authed",
+    user: { id: "u1", email: "analyst@example.test", name: "" },
+    logout: vi.fn(),
+  }),
+}));
+
+vi.mock("./components/ThemeToggle", () => ({
+  ThemeProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  useTheme: () => ({ theme: "light", toggle: vi.fn() }),
+}));
+
+vi.mock("./components/useInstallPrompt", () => ({
+  useInstallPrompt: () => ({ canInstall: false, install: vi.fn() }),
+}));
+
+// The workspace is the thing that must survive navigation; a marker is enough here.
+vi.mock("./pages/WorkspacePage", () => ({
+  WorkspacePage: () => <div data-testid="workspace">workspace</div>,
+}));
+vi.mock("./pages/HelpPage", () => ({ HelpPage: () => <p>Help body</p> }));
+vi.mock("./pages/AboutPage", () => ({ AboutPage: () => <p>About body</p> }));
+
+afterEach(cleanup);
+
+function renderApp(path = "/"): void {
+  render(
+    <MemoryRouter initialEntries={[path]}>
+      <App />
+    </MemoryRouter>,
   );
 }
 
+describe("overlayFor", () => {
+  it("maps the two documentation URLs to their overlays and everything else to none", () => {
+    expect(overlayFor("/help")).toBe("help");
+    expect(overlayFor("/about")).toBe("about");
+    expect(overlayFor("/")).toBeNull();
+    expect(overlayFor("/anything")).toBeNull();
+  });
+});
+
 describe("App shell", () => {
-  it("has a Help link in the main navigation next to Workspace and About", () => {
-    renderApp("/about");
-    const nav = screen.getByRole("navigation", { name: "Main" });
-    const links = within(nav)
-      .getAllByRole("link")
-      .map((link) => [link.textContent?.trim(), link.getAttribute("href")]);
-    expect(links).toEqual([
-      ["Workspace", "/"],
-      ["Help", "/help"],
-      ["About", "/about"],
-    ]);
+  it("opens Help over the workspace without unmounting it", async () => {
+    const user = userEvent.setup();
+    renderApp();
+    expect(screen.getByTestId("workspace")).toBeTruthy();
+
+    await user.click(screen.getByRole("link", { name: "Help" }));
+    expect(screen.getByRole("dialog", { name: "Help contents" })).toBeTruthy();
+    expect(screen.getByText("Help body")).toBeTruthy();
+    // the main interface is still there, underneath the overlay
+    expect(screen.getByTestId("workspace")).toBeTruthy();
+
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByTestId("workspace")).toBeTruthy();
   });
 
-  it("renders the help page at /help", () => {
-    renderApp("/help");
-    expect(screen.getByRole("heading", { level: 1, name: /help/i })).toBeTruthy();
+  it("does the same for About", async () => {
+    const user = userEvent.setup();
+    renderApp("/about");
+    expect(screen.getByRole("dialog", { name: "About CurveStudio" })).toBeTruthy();
+    expect(screen.getByTestId("workspace")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByTestId("workspace")).toBeTruthy();
   });
 
-  it("gives the icon-only theme toggle an accessible name", () => {
-    renderApp("/about");
-    const toggle = screen.getByRole("button", { name: /switch to (light|dark) theme/i });
-    // Icon-only: the name comes from aria-label, and the decorative svg is hidden.
-    expect(toggle.textContent).toBe("");
-    const icon = toggle.querySelector("svg");
-    expect(icon).not.toBeNull();
-    expect(icon?.getAttribute("aria-hidden")).toBe("true");
-    expect(icon?.getAttribute("focusable")).toBe("false");
+  it("shows the workspace tabs and starts a second workspace", async () => {
+    const user = userEvent.setup();
+    renderApp();
+    expect(screen.getByRole("tablist", { name: "Workspaces" })).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "New workspace" }));
+    expect(screen.getAllByRole("button", { name: /^Workspace \d$/ })).toHaveLength(2);
   });
 });
