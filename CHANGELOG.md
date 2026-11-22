@@ -2,6 +2,30 @@
 
 All notable changes are listed here. Dates are IST. Format: [Keep a Changelog](https://keepachangelog.com/); versions follow [SemVer](https://semver.org/).
 
+## [0.11.1] - 2026-11-22
+
+### Added
+- **A richer public home page**: a “Fits you can reproduce” gallery with six interactive
+  curve models (animated draw, equation, R²/RMSE and where each is met), a ΔAICc bar
+  chart, scroll reveals and count-up figures (all reduced-motion safe), and a footer with
+  the ConcreteInfo logo, the website and the other open-source projects.
+- **PDF fit report in the browser** (`@react-pdf/renderer` 4.9.0): PC Power-style A4 report
+  with the chart captured at full scale, full-precision statistics, parameters, equation and
+  the honest non-convergence banner. Dynamically loaded, so the app bundle is unchanged.
+- **Social-login setup guide** (`apps/api/OAUTH_SETUP.md`): console steps for Google,
+  Microsoft and LinkedIn, the exact redirect URIs and troubleshooting.
+
+### Changed
+- **Every chart carries a very faint “ConcreteInfo CurveStudio” watermark**: web Plotly
+  charts (and their PNG exports), the desktop chart (and its PNG/SVG exports) and every
+  matplotlib report figure.
+- **Reports carry a watermark and a disclaimer**: a faint diagonal watermark plus
+  “Results describe agreement with the sample, not compliance or engineering advice —
+  verify before use.” on every PDF page, and the same line in the XLSX print footer and
+  summary sheet.
+- The web CSP now allows WebAssembly and blob workers for the client-side PDF renderer;
+  JavaScript `eval` remains blocked.
+
 ## [0.11.0] - 2026-11-22
 
 ### Added
