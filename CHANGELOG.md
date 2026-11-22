@@ -2,6 +2,38 @@
 
 All notable changes are listed here. Dates are IST. Format: [Keep a Changelog](https://keepachangelog.com/); versions follow [SemVer](https://semver.org/).
 
+## [0.10.3] - 2026-11-22
+
+### Added
+- **The selected model's equation is captioned on the chart**, in both apps. Select a
+  ranking row (or fit a model manually) and the plot shows the model's name and its fitted
+  equation, in that model's colour, with `x^2` rather than the engine's `x**2`. Long
+  equations wrap over a few lines and end with an ellipsis (the complete text stays in the
+  details window and the reports); the caption sits clear of the axis labels and never
+  leaves the plot.
+- **Screenshots in the help**, in both apps: the workspace with the equation caption, the
+  spreadsheet paste grid, the Manual fit form and the details window (desktop); the
+  workspace and Paste data (web). Each image carries a caption, and the desktop renders
+  images from its packaged help folder (no network).
+- **About now answers the questions people actually ask.** It lists the other free
+  ConcreteInfo projects ([GitHub Desktop for Linux](https://github.com/amitwh/GitHubDesktopLinux),
+  [Markdown Converter](https://github.com/amitwh/markdown-converter),
+  [PC Power Calculator](https://pcpower.concreteinfo.co.in/)), explains why the desktop app
+  is free and AGPL-3.0 (and why that licence: a hosted modification must stay open), and
+  states plainly that the web app is free today with a possible small hosting subscription
+  later, the desktop staying free. Contact: [www.concreteinfo.in](https://www.concreteinfo.in)
+  · amit@concreteinfo.in.
+- **A disclaimer and a privacy/fair-use policy**, on the same page in both apps: a fit
+  describes agreement with your sample, not physical truth or code compliance; results are
+  not engineering advice; the software is provided as-is with the AGPL's warranties
+  disclaimed; desktop data never leaves the machine, web data is stored only to provide the
+  service (Argon2 password hashes, no third-party analytics, no sale of data), with fair-use
+  limits and a contact for access or deletion.
+
+### Changed
+- The help's last section is now "About, licence, projects and policy", mirroring the About
+  page, and the web help's search also matches screenshot captions.
+
 ## [0.10.2] - 2026-11-22
 
 ### Added
