@@ -2,6 +2,17 @@
 
 All notable changes are listed here. Dates are IST. Format: [Keep a Changelog](https://keepachangelog.com/); versions follow [SemVer](https://semver.org/).
 
+## [0.10.1] - 2026-11-22
+
+### Fixed
+- **"Open" on a ranked row now shows the curve it opened.** Opening a row loaded the
+  full result but left the previous row selected, so the chart drew the opened model in
+  the other row's colour at almost the same place — with two good fits the lines nearly
+  coincide and the button looked dead. Opening now selects the row, so the chart, its
+  rank colour and the ranking highlight all follow the model you opened.
+- Clicking the row you just opened no longer throws its result away; only selecting a
+  different row goes back to that row's stored curve.
+
 ## [0.10.0] - 2026-11-22
 
 ### Added

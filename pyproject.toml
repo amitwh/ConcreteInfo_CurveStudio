@@ -1,6 +1,6 @@
 [project]
 name = "curvestudio-workspace"
-version = "0.10.0"
+version = "0.10.1"
 description = "CurveStudio workspace root (not published)"
 requires-python = ">=3.14"
 license = "AGPL-3.0-or-later"

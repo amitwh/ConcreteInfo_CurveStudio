@@ -92,7 +92,12 @@ const FIT_SUMMARY: FitSummaryOut = {
 
 /** Only the fields the chart, default Parameters tab and History tab touch. */
 const FIT_BUNDLE = {
-  result: { status: "converged", termination_reason: "converged", parameters: [] },
+  result: {
+    status: "converged",
+    termination_reason: "converged",
+    model_id: "quadratic",
+    parameters: [],
+  },
   curve: null,
   confidence_band: null,
   prediction_band: null,
@@ -242,5 +247,108 @@ describe("WorkspacePage — layout and errors", () => {
     const results = document.querySelector(".workspace__results");
     expect(results?.textContent).toContain("the fit does not exist");
     expect(screen.getByRole("tab", { name: "History" })).toBeTruthy();
+  });
+});
+
+describe("WorkspacePage — opening a row selects it", () => {
+  it("moves the selection to the opened row so the chart, colour and ranking agree", async () => {
+    const second = {
+      ...ROW,
+      rank: 2,
+      model_id: "quadratic",
+      name: "Quadratic",
+      category: "Polynomial",
+      equation_fitted: "y = 1 + 0.5*x + 0.1*x^2",
+    } as RankedFit;
+    const twoRows = {
+      ...STORED,
+      n_candidates: 2,
+      result: { ...STORED.result, ranked: [ROW, second] },
+    } as AutofitOut;
+    request.mockImplementation((async (path: string, options?: RequestInit) =>
+      String(path) === "/autofits/af-1" ? twoRows : route(String(path), options)) as unknown as typeof api.request);
+
+    const { container } = render(
+      <ThemeProvider>
+        <AuthProvider>
+          <WorkspacePage />
+        </AuthProvider>
+      </ThemeProvider>,
+    );
+    await flush();
+    await flush();
+    fireEvent.click(screen.getByTitle("growth.csv"));
+    await flush();
+    await flush();
+
+    const rows = Array.from(container.querySelectorAll("tr.ranking-row"));
+    expect(rows).toHaveLength(2);
+    expect(rows[0]?.getAttribute("aria-selected")).toBe("true");
+    expect(rows[1]?.getAttribute("aria-selected")).toBe("false");
+
+    // Open the second row: the selection must follow it, otherwise the chart draws the
+    // opened fit in the first row's colour and nothing looks like it changed.
+    const openButtons = screen.getAllByRole("button", { name: "Open full results" });
+    fireEvent.click(openButtons[1] as HTMLButtonElement);
+    await flush();
+
+    const after = Array.from(container.querySelectorAll("tr.ranking-row"));
+    expect(after[1]?.getAttribute("aria-selected")).toBe("true");
+    expect(after[0]?.getAttribute("aria-selected")).toBe("false");
+  });
+});
+
+describe("WorkspacePage — selecting a row after opening it", () => {
+  it("keeps the opened result when its own row is clicked, and drops it for another row", async () => {
+    const second = {
+      ...ROW,
+      rank: 2,
+      model_id: "quadratic",
+      name: "Quadratic",
+      category: "Polynomial",
+      equation_fitted: "y = 1 + 0.5*x + 0.1*x^2",
+    } as RankedFit;
+    const twoRows = {
+      ...STORED,
+      n_candidates: 2,
+      result: { ...STORED.result, ranked: [ROW, second] },
+    } as AutofitOut;
+    openAsExistingFit = true; // the open answers with a ready fit, so no job polling
+    request.mockImplementation((async (path: string, options?: RequestInit) => {
+      const target = String(path);
+      if (target === "/autofits/af-1") return twoRows;
+      // Any row's Open answers with the ready fit, so no job polling is involved.
+      if (target.endsWith("/open")) return { fit_id: "fit-1", job_id: null };
+      return route(target, options);
+    }) as unknown as typeof api.request);
+
+    const { container } = render(
+      <ThemeProvider>
+        <AuthProvider>
+          <WorkspacePage />
+        </AuthProvider>
+      </ThemeProvider>,
+    );
+    await flush();
+    await flush();
+    fireEvent.click(screen.getByTitle("growth.csv"));
+    await flush();
+    await flush();
+
+    const openButtons = screen.getAllByRole("button", { name: "Open full results" });
+    fireEvent.click(openButtons[1] as HTMLButtonElement);
+    await flush();
+    expect(screen.queryByText("Parameters")).not.toBeNull();
+
+    // Clicking the row whose fit is open must not throw that fit away.
+    const rows = () => Array.from(container.querySelectorAll("tr.ranking-row"));
+    fireEvent.click(rows()[1]?.querySelector(".ranking-row__name") as HTMLElement);
+    await flush();
+    expect(screen.queryByText("Parameters")).not.toBeNull();
+
+    // Selecting a different row goes back to that row's own curve.
+    fireEvent.click(rows()[0]?.querySelector(".ranking-row__name") as HTMLElement);
+    await flush();
+    expect(screen.queryByText("Parameters")).toBeNull();
   });
 });

@@ -101,6 +101,10 @@ export function WorkspacePage(): ReactElement {
   const pendingSourceRef = useRef<BundleSource>("manual");
   const bundleSourceRef = useRef(bundleSource);
   bundleSourceRef.current = bundleSource;
+  // Which model the shown bundle is, so selecting that very row keeps it instead of
+  // dropping the opened fit the user is looking at.
+  const bundleModelRef = useRef<string | null>(null);
+  bundleModelRef.current = bundle?.result.model_id ?? null;
   const poller = useJobPolling((fitId) => {
     setFitError(null);
     setOpenRowBusy(null);
@@ -267,8 +271,9 @@ export function WorkspacePage(): ReactElement {
   const onSelectRow = useCallback((modelId: string): void => {
     setSelectedRowId(modelId);
     // A clicked row takes the chart back from an opened row's full fit to the row's own
-    // curve; a manual fit's bundle (hidden in Auto-fit mode) is left untouched.
-    if (bundleSourceRef.current === "opened-row") {
+    // curve — unless it is the row that fit belongs to, which would discard the very
+    // result the user just opened. A manual fit's bundle is left untouched.
+    if (bundleSourceRef.current === "opened-row" && bundleModelRef.current !== modelId) {
       setBundle(null);
       setActiveFitId(null);
       setBundleSource("manual");
@@ -280,6 +285,10 @@ export function WorkspacePage(): ReactElement {
       const storedId = autoState.stored?.id;
       if (selectedId === null || storedId == null) return;
       const requestedFor = selectedId;
+      // Opening a row is also choosing it. Without this the chart keeps the previously
+      // selected row's colour and position, so an opened model is drawn in another
+      // model's colour at nearly the same place — which reads as "nothing happened".
+      setSelectedRowId(candidateId);
       setOpenRowBusy(candidateId);
       setOpenRowError(null);
       try {
