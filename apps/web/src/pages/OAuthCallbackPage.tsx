@@ -52,7 +52,7 @@ export function OAuthCallbackPage(): ReactElement {
               {error}
             </p>
             <p className="muted">
-              <Link to="/login">Back to sign in</Link>
+              <Link to="/#login-card">Back to sign in</Link>
             </p>
           </>
         )}

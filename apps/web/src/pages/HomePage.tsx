@@ -36,10 +36,29 @@ import {
 } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../api/auth";
-import { ApiError } from "../api/client";
+import { api, ApiError } from "../api/client";
 import { OAuthButtons } from "../components/OAuthButtons";
 import { errorText } from "../components/States";
-import { clientSideAuthErrors } from "./LoginPage";
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+const RESEND_NOTE = "if an unverified account exists, a new verification email has been sent.";
+
+/** The API redirects failed social sign-ins back with ?oauth_error=<reason>. */
+const OAUTH_ERRORS: Record<string, string> = {
+  state: "your sign-in session expired or was opened in another tab — please try again",
+  provider: "the provider could not complete sign-in — please try again",
+};
+
+const OAUTH_ERROR_FALLBACK = "social sign-in could not be completed; try again";
+
+/** Client-side checks mirroring the server, so obvious mistakes never reach the API. */
+function clientSideAuthErrors(email: string, password: string): string | null {
+  if (!EMAIL_RE.test(email)) return "enter a valid email address";
+  if (password.length < 10 || password.length > 128)
+    return "the password must be between 10 and 128 characters";
+  return null;
+}
 
 /** The API rejects an unverified sign-in with 403 + detail.code (see openapi.json). */
 function isEmailNotVerified(error: unknown): error is ApiError {
@@ -662,11 +681,16 @@ function AiccChart(): ReactElement {
 export function HomePage(): ReactElement {
   const { login } = useAuth();
   const navigate = useNavigate();
-  const { hash } = useLocation();
+  const { hash, search } = useLocation();
+  const oauthError = new URLSearchParams(search).get("oauth_error");
+  const oauthMessage =
+    oauthError === null ? null : (OAUTH_ERRORS[oauthError] ?? OAUTH_ERROR_FALLBACK);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [unverified, setUnverified] = useState<string | null>(null);
+  const [resendNote, setResendNote] = useState<string | null>(null);
+  const [resendError, setResendError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const mainRef = useRef<HTMLElement>(null);
 
@@ -704,6 +728,8 @@ export function HomePage(): ReactElement {
     event.preventDefault();
     setError(null);
     setUnverified(null);
+    setResendNote(null);
+    setResendError(null);
     const invalid = clientSideAuthErrors(email, password);
     if (invalid !== null) {
       setError(invalid);
@@ -721,6 +747,21 @@ export function HomePage(): ReactElement {
           err instanceof ApiError ? err.message : errorText(err, "sign-in failed; try again"),
         );
       }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onResend = async (): Promise<void> => {
+    if (!EMAIL_RE.test(email)) return;
+    setResendNote(null);
+    setResendError(null);
+    setBusy(true);
+    try {
+      await api.resendVerification(email);
+      setResendNote(RESEND_NOTE);
+    } catch (err) {
+      setResendError(errorText(err, "could not resend the verification email; try again"));
     } finally {
       setBusy(false);
     }
@@ -756,6 +797,11 @@ export function HomePage(): ReactElement {
               <form className="card auth-card hp-login" onSubmit={(e) => void onSubmit(e)} noValidate>
                 <h2>Sign in</h2>
                 <p className="muted">CurveStudio: curve fitting in your browser.</p>
+                {oauthMessage !== null && (
+                  <p className="alert alert--error" role="alert">
+                    {oauthMessage}
+                  </p>
+                )}
                 {error !== null && (
                   <p className="alert alert--error" role="alert">
                     {error}
@@ -764,9 +810,16 @@ export function HomePage(): ReactElement {
                 {unverified !== null && (
                   <div className="alert alert--warning">
                     <p role="alert">{unverified}</p>
-                    <p className="muted">
-                      Verify your email, then <Link to="/login">sign in</Link>.
-                    </p>
+                    <button
+                      type="button"
+                      className="btn btn--small"
+                      disabled={busy || !EMAIL_RE.test(email)}
+                      onClick={() => void onResend()}
+                    >
+                      Resend verification email
+                    </button>
+                    {resendNote !== null && <p role="status">{resendNote}</p>}
+                    {resendError !== null && <p role="alert">{resendError}</p>}
                   </div>
                 )}
                 <div className="field">
@@ -1123,7 +1176,7 @@ export function HomePage(): ReactElement {
               <Link to="/register" className="btn btn--white btn--pill">
                 Create an account
               </Link>
-              <Link to="/login" className="btn btn--on-accent btn--pill">
+              <Link to="/#login-card" className="btn btn--on-accent btn--pill">
                 Sign in
               </Link>
             </div>

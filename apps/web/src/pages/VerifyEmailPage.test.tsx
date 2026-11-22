@@ -9,7 +9,7 @@ function renderVerify(path: string) {
     <MemoryRouter initialEntries={[path]}>
       <Routes>
         <Route path="/verify-email" element={<VerifyEmailPage />} />
-        <Route path="/login" element={<main>login page</main>} />
+        <Route path="/" element={<main>login page</main>} />
       </Routes>
     </MemoryRouter>,
   );

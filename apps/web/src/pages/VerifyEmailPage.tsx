@@ -52,7 +52,7 @@ export function VerifyEmailPage(): ReactElement {
               Your email is verified. You can sign in now.
             </p>
             <p>
-              <Link to="/login">Sign in</Link>
+              <Link to="/#login-card">Sign in</Link>
             </p>
           </>
         )}
@@ -62,7 +62,7 @@ export function VerifyEmailPage(): ReactElement {
               this verification link is missing its token
             </p>
             <p>
-              <Link to="/login">Go to sign in</Link>
+              <Link to="/#login-card">Go to sign in</Link>
             </p>
             <p className="muted">
               Need a new link? Use “Resend verification” on the sign-in page.
@@ -75,7 +75,7 @@ export function VerifyEmailPage(): ReactElement {
               {message ?? INVALID_FALLBACK}
             </p>
             <p>
-              <Link to="/login">Go to sign in</Link>
+              <Link to="/#login-card">Go to sign in</Link>
             </p>
             <p className="muted">
               Need a new link? Use “Resend verification” on the sign-in page.

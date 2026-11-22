@@ -52,7 +52,7 @@ export function ForgotPasswordPage(): ReactElement {
               If an account exists, a password reset email has been sent.
             </p>
             <p className="muted">
-              <Link to="/login">Back to sign in</Link>
+              <Link to="/#login-card">Back to sign in</Link>
             </p>
           </div>
         ) : (
@@ -81,7 +81,7 @@ export function ForgotPasswordPage(): ReactElement {
               {busy ? "Sending…" : "Send reset link"}
             </button>
             <p className="muted">
-              Remembered it? <Link to="/login">Sign in</Link>
+              Remembered it? <Link to="/#login-card">Sign in</Link>
             </p>
           </form>
         )}

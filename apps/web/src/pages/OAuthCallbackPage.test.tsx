@@ -40,7 +40,6 @@ function renderCallback(search = "?code=abc") {
         <Routes>
           <Route path="/oauth/callback" element={<OAuthCallbackPage />} />
           <Route path="/" element={<main>workspace</main>} />
-          <Route path="/login" element={<main>login page</main>} />
         </Routes>
       </MemoryRouter>
     </StrictMode>,

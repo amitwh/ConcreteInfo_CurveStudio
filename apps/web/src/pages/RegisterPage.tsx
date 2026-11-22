@@ -98,7 +98,7 @@ export function RegisterPage(): ReactElement {
             </p>
           )}
           <p className="muted">
-            <Link to="/login">Go to sign in</Link>
+            <Link to="/#login-card">Go to sign in</Link>
           </p>
         </section>
       </main>
@@ -155,7 +155,7 @@ export function RegisterPage(): ReactElement {
           {busy ? "Creating…" : "Create account"}
         </button>
         <p className="muted">
-          Already registered? <Link to="/login">Sign in</Link>
+          Already registered? <Link to="/#login-card">Sign in</Link>
         </p>
       </form>
     </main>

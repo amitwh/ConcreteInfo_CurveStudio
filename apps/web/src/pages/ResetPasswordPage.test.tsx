@@ -10,7 +10,7 @@ function renderReset(path = "/reset-password?token=tok") {
     <MemoryRouter initialEntries={[path]}>
       <Routes>
         <Route path="/reset-password" element={<ResetPasswordPage />} />
-        <Route path="/login" element={<main>login page</main>} />
+        <Route path="/" element={<main>login page</main>} />
         <Route path="/forgot-password" element={<main>forgot page</main>} />
       </Routes>
     </MemoryRouter>,

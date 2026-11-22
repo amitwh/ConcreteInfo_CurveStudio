@@ -22,13 +22,17 @@ vi.mock("../api/client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../api/client")>();
   return {
     ...actual,
-    api: { ...actual.api, oauthProviders: vi.fn(() => Promise.resolve([])) },
+    api: {
+      ...actual.api,
+      oauthProviders: vi.fn(() => Promise.resolve([])),
+      resendVerification: vi.fn(),
+    },
   };
 });
 
-function renderHome() {
+function renderHome(path = "/start") {
   return render(
-    <MemoryRouter initialEntries={["/start"]}>
+    <MemoryRouter initialEntries={[path]}>
       <Routes>
         <Route path="/start" element={<HomePage />} />
         <Route path="/" element={<main>workspace</main>} />
@@ -93,7 +97,31 @@ describe("HomePage", () => {
     expect((await screen.findByRole("alert")).textContent).toMatch(/invalid email or password/i);
   });
 
-  it("shows the verify-your-email note on 403 EMAIL_NOT_VERIFIED", async () => {
+  it("rejects a malformed email without calling the API", async () => {
+    const user = userEvent.setup();
+    renderHome();
+
+    await user.type(screen.getByLabelText("Email"), "not-an-email");
+    await user.type(screen.getByLabelText("Password"), "longenoughpass");
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+
+    expect((await screen.findByRole("alert")).textContent).toMatch(/email/i);
+    expect(loginMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects a password shorter than 10 characters", async () => {
+    const user = userEvent.setup();
+    renderHome();
+
+    await user.type(screen.getByLabelText("Email"), "a@b.co");
+    await user.type(screen.getByLabelText("Password"), "short");
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+
+    expect((await screen.findByRole("alert")).textContent).toMatch(/10/);
+    expect(loginMock).not.toHaveBeenCalled();
+  });
+
+  it("shows the verify-your-email note and a resend button on 403 EMAIL_NOT_VERIFIED", async () => {
     loginMock.mockRejectedValue(
       new ApiError(403, "FORBIDDEN", "verify your email before signing in", {
         code: "EMAIL_NOT_VERIFIED",
@@ -107,7 +135,45 @@ describe("HomePage", () => {
     await user.click(screen.getByRole("button", { name: "Sign in" }));
 
     expect((await screen.findByRole("alert")).textContent).toMatch(/verify your email/i);
-    expect(screen.getByRole("link", { name: "sign in" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Resend verification email" })).toBeTruthy();
+  });
+
+  it("resends the verification email to the address already typed", async () => {
+    loginMock.mockRejectedValue(
+      new ApiError(403, "FORBIDDEN", "verify your email before signing in", {
+        code: "EMAIL_NOT_VERIFIED",
+      }),
+    );
+    const resend = vi.mocked(api.resendVerification).mockResolvedValue({ message: "sent" });
+    const user = userEvent.setup();
+    renderHome();
+
+    await user.type(screen.getByLabelText("Email"), "a@b.co");
+    await user.type(screen.getByLabelText("Password"), "longenoughpass");
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    await user.click(await screen.findByRole("button", { name: "Resend verification email" }));
+
+    expect(resend).toHaveBeenCalledWith("a@b.co");
+    expect(
+      await screen.findByText(/if an unverified account exists, a new verification email/i),
+    ).toBeTruthy();
+  });
+
+  it("shows the OAuth error when redirected back with ?oauth_error=provider", () => {
+    renderHome("/start?oauth_error=provider");
+    expect(screen.getByRole("alert").textContent).toMatch(/provider could not complete sign-in/i);
+  });
+
+  it("shows the session-expired message for ?oauth_error=state", () => {
+    renderHome("/start?oauth_error=state");
+    expect(screen.getByRole("alert").textContent).toMatch(/session expired or was opened/i);
+  });
+
+  it("falls back to a generic message for an unknown oauth_error", () => {
+    renderHome("/start?oauth_error=something-new");
+    expect(screen.getByRole("alert").textContent).toMatch(
+      /social sign-in could not be completed/i,
+    );
   });
 
   it("hides the social buttons when no providers are configured", async () => {

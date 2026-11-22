@@ -62,7 +62,7 @@ export function ResetPasswordPage(): ReactElement {
               {INVALID_LINK}
             </p>
             <p>
-              <Link to="/login">Go to sign in</Link>
+              <Link to="/#login-card">Go to sign in</Link>
             </p>
             <p className="muted">
               Need a new link? <Link to="/forgot-password">Request a password reset</Link>.
@@ -74,7 +74,7 @@ export function ResetPasswordPage(): ReactElement {
               Your password has been reset. Sign in with the new one.
             </p>
             <p>
-              <Link to="/login">Sign in</Link>
+              <Link to="/#login-card">Sign in</Link>
             </p>
           </div>
         ) : (
@@ -112,7 +112,7 @@ export function ResetPasswordPage(): ReactElement {
               {busy ? "Resetting…" : "Reset password"}
             </button>
             <p className="muted">
-              <Link to="/login">Back to sign in</Link>
+              <Link to="/#login-card">Back to sign in</Link>
             </p>
           </form>
         )}

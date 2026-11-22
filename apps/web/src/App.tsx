@@ -21,7 +21,6 @@ import { AboutPage } from "./pages/AboutPage";
 import { HelpPage } from "./pages/HelpPage";
 import { ForgotPasswordPage } from "./pages/ForgotPasswordPage";
 import { HomePage } from "./pages/HomePage";
-import { LoginPage } from "./pages/LoginPage";
 import { OAuthCallbackPage } from "./pages/OAuthCallbackPage";
 import { RegisterPage } from "./pages/RegisterPage";
 import { ResetPasswordPage } from "./pages/ResetPasswordPage";
@@ -43,6 +42,16 @@ export function overlayFor(pathname: string): "help" | "about" | null {
   if (pathname === "/help") return "help";
   if (pathname === "/about") return "about";
   return null;
+}
+
+/**
+ * `/login` is no longer a page of its own. The home card is the only sign-in surface, so
+ * an old link (or the API's OAuth error redirect) keeps its query string and lands on
+ * that card.
+ */
+function LoginRedirect(): ReactElement {
+  const { search } = useLocation();
+  return <Navigate replace to={`/${search}#login-card`} />;
 }
 
 /** The slim white header every public page wears. */
@@ -67,7 +76,7 @@ function PublicHeader(): ReactElement {
           <Link to="/#faq">FAQ</Link>
         </nav>
         <div className="app-header__right">
-          <Link to="/login" className="btn btn--accent-outline btn--pill">
+          <Link to="/#login-card" className="btn btn--accent-outline btn--pill">
             Sign in
           </Link>
           <Link to="/register" className="btn btn--primary btn--pill">
@@ -147,7 +156,7 @@ export default function App(): ReactElement {
             <PublicHeader />
             <Routes>
               <Route path="/" element={<HomePage />} />
-              <Route path="/login" element={<LoginPage />} />
+              <Route path="/login" element={<LoginRedirect />} />
               <Route path="/register" element={<RegisterPage />} />
               <Route path="/verify-email" element={<VerifyEmailPage />} />
               <Route path="/forgot-password" element={<ForgotPasswordPage />} />

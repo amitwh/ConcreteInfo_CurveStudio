@@ -10,7 +10,7 @@ function renderForgot() {
     <MemoryRouter initialEntries={["/forgot-password"]}>
       <Routes>
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-        <Route path="/login" element={<main>login page</main>} />
+        <Route path="/" element={<main>login page</main>} />
       </Routes>
     </MemoryRouter>,
   );

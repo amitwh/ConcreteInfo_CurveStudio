@@ -1,5 +1,5 @@
-import { cleanup, render, screen } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { MemoryRouter, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 
@@ -34,9 +34,6 @@ vi.mock("./components/useInstallPrompt", () => ({
 vi.mock("./pages/HomePage", () => ({
   HomePage: () => <main data-testid="home">home</main>,
 }));
-vi.mock("./pages/LoginPage", () => ({
-  LoginPage: () => <main data-testid="login">login</main>,
-}));
 vi.mock("./pages/WorkspacePage", () => ({
   WorkspacePage: () => <div data-testid="workspace">workspace</div>,
 }));
@@ -47,10 +44,19 @@ beforeEach(() => {
   authState.status = "anon";
 });
 
+/** Reports the URL the router settled on, so redirects can be asserted. */
+function LocationProbe(): React.ReactElement {
+  const location = useLocation();
+  return (
+    <div data-testid="location">{`${location.pathname}${location.search}${location.hash}`}</div>
+  );
+}
+
 function renderApp(path: string): void {
   render(
     <MemoryRouter initialEntries={[path]}>
       <App />
+      <LocationProbe />
     </MemoryRouter>,
   );
 }
@@ -72,5 +78,29 @@ describe("App routing for visitors", () => {
     renderApp("/");
     expect(screen.getByTestId("workspace")).toBeTruthy();
     expect(screen.queryByTestId("home")).toBeNull();
+  });
+
+  it("sends a bare /login to the home sign-in card", async () => {
+    renderApp("/login");
+    await waitFor(() =>
+      expect(screen.getByTestId("location").textContent).toBe("/#login-card"),
+    );
+    expect(screen.getByTestId("home")).toBeTruthy();
+  });
+
+  it("keeps the OAuth error when redirecting /login to the home card", async () => {
+    renderApp("/login?oauth_error=provider");
+    await waitFor(() =>
+      expect(screen.getByTestId("location").textContent).toBe(
+        "/?oauth_error=provider#login-card",
+      ),
+    );
+    expect(screen.getByTestId("home")).toBeTruthy();
+  });
+
+  it("points the header's Sign in button at the home card", () => {
+    renderApp("/");
+    const signIn = screen.getByRole("link", { name: "Sign in" });
+    expect(signIn.getAttribute("href")).toBe("/#login-card");
   });
 });
