@@ -52,7 +52,7 @@ OTHER_PROJECTS: tuple[tuple[str, str, str], ...] = (
     ),
     (
         "PC Power Calculator",
-        "https://pcpower.concreteinfo.co.in/",
+        "https://pcpower.concreteinfo.net/",
         "What a PC costs to run: real component specifications, 80+ PSU efficiency curves"
         " and your own electricity tariff — computed in the browser, with no account.",
     ),

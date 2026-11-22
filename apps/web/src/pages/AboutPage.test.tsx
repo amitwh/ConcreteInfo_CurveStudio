@@ -72,7 +72,7 @@ describe("AboutPage — projects, free software and policy", () => {
     ).toBe("https://github.com/amitwh/markdown-converter");
     expect(
       screen.getByRole("link", { name: "PC Power Calculator" }).getAttribute("href"),
-    ).toBe("https://pcpower.concreteinfo.co.in/");
+    ).toBe("https://pcpower.concreteinfo.net/");
     expect(
       screen.getAllByRole("link", { name: "amit@concreteinfo.in" })[0]?.getAttribute("href"),
     ).toBe("mailto:amit@concreteinfo.in");

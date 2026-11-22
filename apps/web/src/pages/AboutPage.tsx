@@ -25,7 +25,7 @@ const PROJECTS: Array<{ name: string; url: string; blurb: string }> = [
   },
   {
     name: "PC Power Calculator",
-    url: "https://pcpower.concreteinfo.co.in/",
+    url: "https://pcpower.concreteinfo.net/",
     blurb:
       "What a PC costs to run: real component specifications, 80+ PSU efficiency curves and your own electricity tariff — computed in the browser, with no account.",
   },
