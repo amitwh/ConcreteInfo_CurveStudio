@@ -2,6 +2,44 @@
 
 All notable changes are listed here. Dates are IST. Format: [Keep a Changelog](https://keepachangelog.com/); versions follow [SemVer](https://semver.org/).
 
+## [0.10.5] - 2026-11-22
+
+### Added
+- **Multiple workspaces in the web app**, in a redesigned header. Each named workspace (the
+  tabs under the navbar) remembers its dataset and its Auto-fit/Manual mode; switching tabs
+  returns exactly where you were, and the list is stored per account. Double-click a tab to
+  rename it, the × closes one (never the last), + starts another. The navbar itself gained a
+  brand lockup, pill navigation with a current-page state, an account chip and a PWA install
+  button.
+- **Help and About open as overlays** in both the signed-in experience and the public pages:
+  the workspace stays mounted underneath (a lookup no longer costs a selection, a running
+  analysis or unsaved state), and their URLs still work for deep links. Escape, the close
+  button or the backdrop returns to the workspace.
+- **The web app is installable (PWA)**: a manifest (name, icons, shortcuts, theme colours),
+  a service worker that is network-first for navigations and cache-first for hashed assets,
+  never caches `/api/`, and an install button that appears only when the browser offers it.
+  Offline, the app shell still loads.
+- **Mobile layout**: icon-only navigation and a scrolling workspace bar on phones, stacked
+  panels, 44 px-class touch targets, 16 px form text (no iOS zoom) and full-height sheets for
+  Help/About.
+- **Desktop: one window per project.** *File → New project*, *Open project…* and *Open recent*
+  now open another window instead of replacing the project on screen (each with its own
+  controller, jobs and unsaved-changes prompt); only the first window owns the stored layout.
+- **Desktop: a real model picker.** The Manual fit model field is a searchable dropdown —
+  type any part of a name, id or category to filter 200 models, or open the list; the value
+  is always a catalogue entry (free text cannot become the model) and a chevron marks it as
+  a dropdown.
+
+### Fixed
+- **Desktop: the model picker could fit a different model from the one it displayed.** The
+  catalogue's category separators occupy item positions, so mapping an index into the model
+  list silently shifted by the number of separators: the field read "Einstein heat capacity"
+  while the form fitted `polynomial` (visible as "polynomial degree" next to that name). Items
+  now carry their model id and every lookup goes through it; every catalogue item is checked
+  against the model it names in a test.
+- Web: a model search filter no longer hides the model that is actually selected, so the
+  picker can never look empty while the panel would still fit the previous model.
+
 ## [0.10.4] - 2026-11-22
 
 ### Fixed
