@@ -213,6 +213,14 @@ def _identity(provider: str, data: dict[str, Any]) -> dict[str, Any]:
     elif verified is not True:
         raise OAuthIdentityError("the provider has not verified this e-mail address")
     email = data.get("email")
+    if provider == "microsoft" and (not isinstance(email, str) or not email.strip()):
+        # Personal Microsoft accounts often omit ``email`` from the OIDC userinfo and carry
+        # the address in ``preferred_username`` (or ``upn`` for work accounts).
+        for claim in ("preferred_username", "upn"):
+            candidate = data.get(claim)
+            if isinstance(candidate, str) and "@" in candidate:
+                email = candidate
+                break
     if not isinstance(email, str) or not email.strip():
         raise OAuthIdentityError("the provider returned no e-mail address")
     subject = data.get("sub")

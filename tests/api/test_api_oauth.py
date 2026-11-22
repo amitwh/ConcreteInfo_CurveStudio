@@ -294,6 +294,26 @@ def test_microsoft_identity_is_accepted_when_it_returns_an_email(
     assert accepted.headers["location"].startswith(f"{APP_URL}/oauth/callback?code=")
 
 
+def test_microsoft_identity_falls_back_to_preferred_username(
+    client_factory: Callable[..., TestClient],
+    settings_factory: Callable[..., Settings],
+    provider_calls: dict[str, dict[str, Any]],
+) -> None:
+    """Personal Microsoft accounts may carry the address in ``preferred_username``."""
+    client = client_factory(oauth_settings(settings_factory))
+    email = new_email()
+    provider_calls["identity"] = {
+        "sub": "microsoft-personal-sub",
+        "preferred_username": email,
+        "name": "Personal Account",
+    }
+    _, state = start(client, "microsoft")
+
+    accepted = callback(client, "microsoft", state=state)
+    assert accepted.status_code == 302
+    assert accepted.headers["location"].startswith(f"{APP_URL}/oauth/callback?code=")
+
+
 def test_start_for_a_disabled_or_unknown_provider_is_404(
     client_factory: Callable[..., TestClient],
     settings_factory: Callable[..., Settings],

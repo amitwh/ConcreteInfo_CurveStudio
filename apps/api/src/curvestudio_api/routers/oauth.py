@@ -5,6 +5,7 @@ code for the profile and redirects with a single-use code that the web app claim
 ``POST /auth/oauth/exchange``.
 """
 
+import logging
 import secrets
 from datetime import timedelta
 
@@ -24,6 +25,7 @@ from curvestudio_api.settings import Settings
 from curvestudio_api.timeutil import utcnow
 
 router = APIRouter(prefix="/auth/oauth", tags=["auth"])
+logger = logging.getLogger(__name__)
 
 COOKIE_NAME = "oauth_flow"
 COOKIE_PATH = "/api/v1/auth/oauth"
@@ -96,22 +98,32 @@ def callback(
     if provider not in oauth.configured_providers(settings):
         return _frontend_error(settings, "provider")
     if error:
+        logger.warning("oauth %s callback: provider error %r", provider, error[:120])
         return _frontend_error(settings, "provider")
     flow = request.cookies.get(COOKIE_NAME)
     if flow is None:
+        logger.warning("oauth %s callback: no flow cookie (state=%r)", provider, state[:16])
         return _frontend_error(settings, "state")
     parts = flow.split(":")
     if len(parts) != 3:
+        logger.warning("oauth %s callback: malformed flow cookie", provider)
         return _frontend_error(settings, "state")
     cookie_provider, cookie_state, verifier = parts
     if cookie_provider != provider or not code or not secrets.compare_digest(cookie_state, state):
+        logger.warning(
+            "oauth %s callback: state mismatch (cookie provider %r, code %s)",
+            provider,
+            cookie_provider,
+            "present" if code else "missing",
+        )
         return _frontend_error(settings, "state")
     try:
         token_payload = oauth.exchange_code(
             provider, settings, code, oauth.callback_url(settings, provider), verifier
         )
         identity = oauth.fetch_identity(provider, token_payload["access_token"])
-    except oauth.OAuthError:
+    except oauth.OAuthError as exc:
+        logger.warning("oauth %s callback failed: %s", provider, exc)
         return _frontend_error(settings, "provider")
 
     email = str(identity["email"]).strip().lower()
