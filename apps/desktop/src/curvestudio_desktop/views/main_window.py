@@ -9,7 +9,7 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
-from PySide6.QtCore import QByteArray, QPoint, QSettings, QSize, Qt
+from PySide6.QtCore import QByteArray, QPoint, QSettings, QSize, Qt, Signal
 from PySide6.QtGui import QAction, QActionGroup, QCloseEvent, QKeySequence
 from PySide6.QtWidgets import (
     QApplication,
@@ -55,6 +55,7 @@ from curvestudio_desktop.views.project_tree import ProjectDock, ProjectTree
 
 if TYPE_CHECKING:
     from curvestudio_desktop.views.help_dialog import HelpDialog
+    from curvestudio_desktop.windows import WindowRegistry
 
 MINIMUM_SIZE = (980, 640)
 DEFAULT_WINDOW_SIZE = (1280, 820)
@@ -91,15 +92,24 @@ _DOCK_EXTENT: dict[str, tuple[Qt.Orientation, int]] = {
 class MainWindow(QMainWindow):
     """The shell: left project tree, centre plot, right analysis, bottom data table."""
 
+    closed = Signal()
+    """The window has closed for good (the registry drops it)."""
+
     def __init__(
         self,
         controller: ProjectController,
         parent: QWidget | None = None,
         jobs: JobRunner | None = None,
         settings: QSettings | None = None,
+        registry: WindowRegistry | None = None,
+        persist_layout: bool = True,
     ) -> None:
         super().__init__(parent)
         self.controller = controller
+        # File → New/Open project opens another window when a registry is wired (the
+        # running application); a bare window keeps the single-project behaviour.
+        self.registry = registry
+        self.persist_layout = persist_layout
         self.selection = SelectionController(self)
         self.jobs = jobs if jobs is not None else JobRunner(self)
         self._settings = settings if settings is not None else QSettings()
@@ -190,12 +200,12 @@ class MainWindow(QMainWindow):
         self.action_new = self._action(
             "&New project", QKeySequence(QKeySequence.StandardKey.New), "Start a clean project"
         )
-        self.action_new.triggered.connect(lambda: self.controller.new_project())
+        self.action_new.triggered.connect(self._new_project)
 
         self.action_open = self._action(
             "&Open project…", QKeySequence(QKeySequence.StandardKey.Open), "Open a .cstudio file"
         )
-        self.action_open.triggered.connect(lambda: self._open_project_async())
+        self.action_open.triggered.connect(self._open_project)
 
         self.action_save = self._action(
             "&Save", QKeySequence(QKeySequence.StandardKey.Save), "Save the project"
@@ -649,11 +659,37 @@ class MainWindow(QMainWindow):
 
     # -- async project actions ------------------------------------------------------------------
 
-    def _open_project_async(self) -> None:
-        """Open via the file dialog, then load in the background (GUI never freezes)."""
-        path = self.controller.paths.choose_open_path()
+    def _new_project(self) -> None:
+        """File → New project: a new window, so the project on screen is never replaced."""
+        if self.registry is not None:
+            self.registry.spawn()
+        else:
+            self.controller.new_project()
+
+    def _open_project(self) -> None:
+        """File → Open project…: another window when the registry is wired."""
+        if self.registry is not None:
+            self.registry.open_from(self)
+        else:
+            self._open_project_async()
+
+    def _open_recent(self, path: Path) -> None:
+        """A recent project opens in its own window when the registry is wired."""
+        if self.registry is not None:
+            self.registry.spawn(path)
+        else:
+            self.controller.open_project(path)
+
+    def open_project_path(self, path: Path) -> None:
+        """Load ``path`` into this window (the registry opens it here, not in the caller)."""
+        self._open_project_async(path)
+
+    def _open_project_async(self, path: Path | None = None) -> None:
+        """Open via the file dialog (unless a path is given), then load in the background."""
         if path is None:
-            return
+            path = self.controller.paths.choose_open_path()
+            if path is None:
+                return
 
         def adopt(project: object) -> None:
             self.controller.adopt_opened(project, path)  # type: ignore[arg-type]
@@ -1086,7 +1122,7 @@ class MainWindow(QMainWindow):
         for path in recents[:_RECENT_LIMIT]:
             action = self._recent_menu.addAction(path.name)
             action.setToolTip(str(path))
-            action.triggered.connect(lambda *_, target=path: self.controller.open_project(target))
+            action.triggered.connect(lambda *_, target=path: self._open_recent(target))
 
     def _refresh_axis_actions(self) -> None:
         self.action_log_x.setEnabled(self.plot_view.can_log_x)
@@ -1219,6 +1255,8 @@ class MainWindow(QMainWindow):
             self._plot_candidate(row.model_id)
 
     def _save_layout(self) -> None:
+        if not self.persist_layout:
+            return  # a second project window never rewrites the remembered layout
         self._settings.setValue(
             _LAYOUT_STATE_KEY, bytes(self.saveState().toBase64().data()).decode("ascii")
         )
@@ -1435,5 +1473,6 @@ class MainWindow(QMainWindow):
             if self.help_dialog is not None:
                 self.help_dialog.close()
             event.accept()
+            self.closed.emit()
         else:
             event.ignore()

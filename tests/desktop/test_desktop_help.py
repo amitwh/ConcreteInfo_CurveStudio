@@ -43,6 +43,7 @@ INTERNAL_ICON_NAMES = {
     "collapse",
     "expand",
     "float",
+    "chevron-down",
     "close",
     "panel-project",
     "panel-analysis",

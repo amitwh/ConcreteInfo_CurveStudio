@@ -46,6 +46,7 @@ _ICONS: dict[str, str] = {
     "collapse": "minimize-2.svg",
     "expand": "maximize-2.svg",
     "float": "external-link.svg",
+    "chevron-down": "chevron-down.svg",
     "close": "x.svg",
     "panel-project": "panel-left.svg",
     "panel-analysis": "panel-right.svg",

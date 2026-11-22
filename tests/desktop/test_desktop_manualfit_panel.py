@@ -263,3 +263,94 @@ def test_cancel_button_appears_while_fitting(make_window, qtbot, write_file) -> 
     assert not view.fit_button.isEnabled()
     view.set_fitting(False)
     assert view.cancel_button.isHidden()
+
+
+# -- the model picker: searchable dropdown, id-keyed ---------------------------------------
+
+
+def test_the_picker_maps_the_displayed_model_to_the_fitted_one(make_window, write_file) -> None:
+    """Every item must resolve to the model its text names.
+
+    The picker groups the catalogue with separator items; separators occupy item indices,
+    so the old index-into-the-model-list lookup silently shifted by the separator count —
+    the field said "Einstein heat capacity" while the form fitted `polynomial`.
+    """
+    window = make_manual_window(make_window, write_file)
+    view = window.analysis_panel.manual_view
+    combo = view.model_combo
+    checked = 0
+    for index in range(combo.count()):
+        model_id = combo.itemData(index)
+        if not isinstance(model_id, str):
+            continue
+        combo.setCurrentIndex(index)
+        model = view.current_model()
+        assert model is not None and model.id == model_id, (
+            f"item {index} shows {combo.itemText(index)!r} but resolves to "
+            f"{None if model is None else model.id}"
+        )
+        assert model.name in combo.itemText(index)
+        checked += 1
+    assert checked == len(view._models), "every catalogue model must be reachable"
+
+
+def test_the_picker_cannot_hold_free_text(make_window, write_file) -> None:
+    window = make_manual_window(make_window, write_file)
+    view = window.analysis_panel.manual_view
+    combo = view.model_combo
+    from PySide6.QtWidgets import QComboBox
+
+    assert combo.insertPolicy() is QComboBox.InsertPolicy.NoInsert
+    chosen = view.current_model()
+    assert chosen is not None
+
+    editor = view.model_edit
+    editor.setText("some model nobody has heard of")
+    editor.editingFinished.emit()
+    assert view.current_model() is not None and view.current_model().id == chosen.id
+    assert combo.currentText() == combo.itemText(combo.currentIndex())
+
+
+def test_the_picker_filters_by_any_word_and_offers_the_catalogue(make_window, write_file) -> None:
+    window = make_manual_window(make_window, write_file)
+    view = window.analysis_panel.manual_view
+    combo = view.model_combo
+    completer = combo.completer()
+    assert completer is not None
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QCompleter
+
+    assert completer.filterMode() is Qt.MatchFlag.MatchContains
+    assert completer.caseSensitivity() is Qt.CaseSensitivity.CaseInsensitive
+    assert completer.completionMode() is QCompleter.CompletionMode.PopupCompletion
+
+    # use a model that this test registry actually carries
+    target = view._models[-1]
+    prefix = target.name.split()[0].lower()
+    completer.setCompletionPrefix(prefix)
+    model = completer.completionModel()
+    assert model.rowCount() >= 1
+    first = str(model.index(0, 0).data())
+    # the completion carries the id, so activating it picks the right model
+    view._on_completion(first)
+    assert view.current_model() is not None
+    assert view.current_model().id == target.id
+
+
+def test_an_anonymous_search_restores_the_chosen_model(make_window, write_file) -> None:
+    window = make_manual_window(make_window, write_file)
+    view = window.analysis_panel.manual_view
+    chosen = view.current_model()
+    assert chosen is not None
+    view.model_edit.setText("zzzz")
+    view._on_search_finished()
+    assert view.current_model() is not None and view.current_model().id == chosen.id
+
+
+def test_the_custom_entry_still_selects_custom_mode(make_window, write_file) -> None:
+    window = make_manual_window(make_window, write_file)
+    view = window.analysis_panel.manual_view
+    view.select_custom_equation()
+    assert view.current_model() is None
+    assert view._is_custom() is True
+    assert view._equation_box.isVisible() or not window.isVisible()  # shown in a live window

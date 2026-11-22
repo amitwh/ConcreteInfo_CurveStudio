@@ -16,7 +16,7 @@ desktop may import) does not expose them.
 import re
 from collections.abc import Callable
 
-from PySide6.QtCore import QStringListModel, Qt, QTimer
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -49,6 +49,7 @@ from curvestudio.workflow import (
 )
 from curvestudio_desktop.controllers.analysis import AnalysisController
 from curvestudio_desktop.theme import mono_font
+from curvestudio_desktop.views.searchable_combo import SearchableComboBox
 
 POLYNOMIAL_ID = "polynomial"
 METHODS = ("auto", "lm", "trf", "dogbox", "nelder", "powell", "bfgs", "lbfgsb")
@@ -129,24 +130,23 @@ class ManualFitView(QWidget):
     def _build_form(self, layout: QVBoxLayout) -> None:
         form = QFormLayout()
         form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
-        self.model_edit = QLineEdit()
-        self.model_combo = QComboBox()
+        self.model_combo = SearchableComboBox()
         self.model_combo.setObjectName("modelPicker")
-        self.model_combo.setEditable(True)
-        # long catalogue names must never force the dock wide: the combo shows the
-        # selected entry clipped and the completer still searches the full text
-        self.model_combo.setSizeAdjustPolicy(
-            QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
-        )
-        self.model_combo.setMinimumContentsLength(10)
         self.model_combo.setMinimumWidth(150)
-        self.model_combo.setLineEdit(self.model_edit)
+        self.model_combo.setToolTip(
+            "Type to search the catalogue, or open the list to pick a model"
+        )
+        editor = self.model_combo.lineEdit()
+        assert editor is not None  # an editable combo always has an editor
+        self.model_edit: QLineEdit = editor
         self.model_combo.currentIndexChanged.connect(lambda _index: self._on_model_changed())
         self.model_edit.textEdited.connect(lambda _text: self._schedule_validation())
         completer = self.model_combo.completer()
         if completer is not None:
             completer.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
             completer.activated.connect(self._on_completion)
+        # a picker, not a text box: an abandoned search falls back to the chosen model
+        self.model_edit.editingFinished.connect(self._on_search_finished)
         form.addRow("model", self.model_combo)
         self.degree_spin = QSpinBox()
         self.degree_spin.setRange(1, 10)
@@ -259,6 +259,9 @@ class ManualFitView(QWidget):
     # -- model catalogue ---------------------------------------------------------------------
 
     def _fill_models(self) -> None:
+        """Fill the picker. Every item carries its model **id** as data, never a position:
+        the category separators occupy item indices, so index arithmetic against the
+        catalogue list is wrong by the number of separators above the row."""
         combo = self.model_combo
         combo.blockSignals(True)
         combo.clear()
@@ -268,46 +271,50 @@ class ManualFitView(QWidget):
             if info.category != category:
                 category = info.category
                 combo.insertSeparator(combo.count())
-            combo.addItem(f"{info.name} ({info.id})")
-        combo.addItem("Custom equation…")
-        default = next(
-            (i for i, info in enumerate(self._models) if info.id == POLYNOMIAL_ID),
-            0,  # the polynomial family is the picker's default: always present, always safe
-        )
-        combo.setCurrentIndex(default)
+            combo.addItem(f"{info.name} ({info.id})", info.id)
+        # the custom entry sits last, after the catalogue, as it always has
+        combo.addItem("Custom equation…", None)
+        # the polynomial family is the picker's default: always present, always safe
+        default = combo.findData(POLYNOMIAL_ID)
+        combo.setCurrentIndex(default if default >= 0 else 0)
         combo.blockSignals(False)
-        completer = combo.completer()
-        if completer is not None:
-            completer.setModel(
-                QStringListModel(
-                    [f"{m.name} ({m.id}) {m.category} {m.equation}" for m in self._models]
-                )
-            )
+        combo.set_search_entries([f"{m.name} ({m.id}) — {m.category}" for m in self._models])
 
     def select_model(self, model_id: str) -> bool:
         """Pick the catalogue entry ``model_id`` (tests and the search path)."""
-        for index, info in enumerate(self._models):
-            if info.id == model_id:
-                self.model_combo.setCurrentIndex(index)
-                return True
-        return False
+        return self.model_combo.select_by_id(model_id)
+
+    def select_custom_equation(self) -> None:
+        """Pick the custom-equation entry (the catalogue's models are not applicable)."""
+        self.model_combo.setCurrentIndex(self.model_combo.count() - 1)
 
     def _on_completion(self, text: str) -> None:
         """A search completion: pick the model whose id the string carries."""
         match = _ID_IN_TEXT.match(text)
-        if match is None:
+        if match is not None:
+            self.select_model(match.group(1))
+
+    def _on_search_finished(self) -> None:
+        """Abandoned text never becomes the value: fall back to the chosen model."""
+        editor = self.model_edit
+        text = editor.text().strip()
+        current = self.model_combo.itemText(self.model_combo.currentIndex())
+        if text == current:
             return
-        for index, info in enumerate(self._models):
-            if info.id == match.group(1):
-                self.model_combo.setCurrentIndex(index)
-                return
+        match = _ID_IN_TEXT.match(text)
+        if match is not None and self.select_model(match.group(1)):
+            return
+        self.model_combo.restore_text()
+        self.model_edit.setCursorPosition(0)
 
     def current_model(self) -> ModelInfo | None:
-        index = self.model_combo.currentIndex()
-        return self._models[index] if 0 <= index < len(self._models) else None
+        model_id = self.model_combo.selected_id()
+        if model_id is None:
+            return None
+        return next((info for info in self._models if info.id == model_id), None)
 
     def _is_custom(self) -> bool:
-        return self.model_combo.currentIndex() >= len(self._models)
+        return self.model_combo.selected_id() is None
 
     def _is_polynomial(self) -> bool:
         model = self.current_model()

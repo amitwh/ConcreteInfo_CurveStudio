@@ -28,6 +28,7 @@ from curvestudio_desktop import APP_NAME, ORG_NAME, __version__
 if TYPE_CHECKING:
     from curvestudio.data import XY
     from curvestudio_desktop.views.main_window import MainWindow
+    from curvestudio_desktop.windows import WindowRegistry
 
 Shower = Callable[[str], None]
 
@@ -146,7 +147,12 @@ def install_crash_guard(shower: Shower | None = None) -> None:
     threading.excepthook = _thread_hook
 
 
-def build_main_window(settings: QSettings | None = None) -> MainWindow:
+def build_main_window(
+    settings: QSettings | None = None,
+    *,
+    registry: WindowRegistry | None = None,
+    persist_layout: bool = True,
+) -> MainWindow:
     """The main window wired to real (dialog-backed) providers.
 
     ``settings`` overrides where window/controller preferences live — the selftest
@@ -173,18 +179,27 @@ def build_main_window(settings: QSettings | None = None) -> MainWindow:
     )
     # the window shares the controller's settings: a split (injected controller
     # settings, default window settings) would read two different stores
-    return MainWindow(controller, settings=store)
+    return MainWindow(controller, settings=store, registry=registry, persist_layout=persist_layout)
 
 
 def run_app(argv: list[str] | None = None) -> int:
     """Start the application: theme, crash guard, main window, event loop."""
     from curvestudio_desktop.theme import apply_theme
+    from curvestudio_desktop.windows import WindowRegistry
 
     app = create_application(argv)
     apply_theme(app)
     install_crash_guard()
-    window = build_main_window()
-    window.show()
+    store = QSettings()
+    # One window per project: File → New/Open project opens another window instead of
+    # replacing the project on screen. Only the first window owns the stored layout.
+    registry = WindowRegistry(
+        lambda window_registry, persist: build_main_window(
+            store, registry=window_registry, persist_layout=persist
+        ),
+        parent=app,
+    )
+    registry.spawn()
     return int(app.exec())
 
 
