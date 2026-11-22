@@ -1,6 +1,6 @@
 [project]
 name = "curvestudio-reporting"
-version = "0.10.5"
+version = "0.10.6"
 description = "CurveStudio reports: CSV, JSON, XLSX and PDF renderings of a fit"
 readme = "README.md"
 requires-python = ">=3.14"

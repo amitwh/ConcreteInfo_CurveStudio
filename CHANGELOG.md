@@ -2,6 +2,15 @@
 
 All notable changes are listed here. Dates are IST. Format: [Keep a Changelog](https://keepachangelog.com/); versions follow [SemVer](https://semver.org/).
 
+## [0.10.6] - 2026-11-22
+
+### Changed
+- **The web navbar is one pill rail**, following the PC Power Calculator: the primary
+  links sit in a rounded tray and the current page is a raised pill inside it (brand text,
+  subtle shadow), with the active workspace keeping its accent-bordered tab below.
+- The About page's link to the PC Power Calculator points at its new address,
+  https://pcpower.concreteinfo.net/, in both apps.
+
 ## [0.10.5] - 2026-11-22
 
 ### Added
