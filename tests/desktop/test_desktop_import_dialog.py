@@ -191,3 +191,84 @@ def test_weight_remap_applies_weights(qtbot, write_file) -> None:
     outcome = dialog.outcome()
     assert outcome is not None and outcome.xy is not None
     assert outcome.xy.weights is not None
+
+
+# -- the embedded spreadsheet grid -------------------------------------------------------
+
+
+def test_grid_takes_a_whole_pasted_spreadsheet_block(qtbot) -> None:
+    from curvestudio_desktop.views.spreadsheet import SpreadsheetGrid
+
+    grid = SpreadsheetGrid()
+    qtbot.addWidget(grid)
+    pasted = grid.paste_text("x\ty\n0\t1.5\n1\t2.5\n2\t4.0\n")
+    assert pasted == 4
+    assert (grid.rowCount(), grid.columnCount()) == (4, 2)
+    assert grid.cell(0, 0) == "x" and grid.cell(0, 1) == "y"
+    assert grid.cell(2, 1) == "2.5"
+
+
+def test_grid_round_trip_keeps_quoted_cells(qtbot) -> None:
+    """A spreadsheet cell holding a comma or a tab stays one cell, not two columns."""
+    from curvestudio_desktop.views.spreadsheet import SpreadsheetGrid, parse_table
+
+    grid = SpreadsheetGrid()
+    qtbot.addWidget(grid)
+    grid.paste_text('name\tvalue\n"a,b"\t1\n"x\ty"\t2\n')
+    rows = grid.rows()
+    assert rows[1] == ["a,b", "1"]
+    assert rows[2] == ["x\ty", "2"]
+    assert parse_table(grid.to_tsv()) == rows
+
+
+def test_grid_paste_lands_at_the_current_cell_and_grows(qtbot) -> None:
+    from curvestudio_desktop.views.spreadsheet import SpreadsheetGrid
+
+    grid = SpreadsheetGrid()
+    qtbot.addWidget(grid)
+    grid.paste_text("a\tb\tc\n1\t2\t3\n", replace=True)
+
+    grid.setCurrentCell(1, 1)  # overwrite the middle cell's row
+    grid.paste_text("9\t8\n")
+    assert grid.cell(1, 0) == "1"  # untouched
+    assert grid.cell(1, 1) == "9" and grid.cell(1, 2) == "8"
+
+    grid.setCurrentCell(0, 2)  # a paste wider than the grid grows a column
+    grid.paste_text("p\tq\n")
+    assert grid.columnCount() == 4
+    assert grid.cell(0, 2) == "p" and grid.cell(0, 3) == "q"
+
+
+def test_grid_ignores_an_empty_paste(qtbot) -> None:
+    from curvestudio_desktop.views.spreadsheet import SpreadsheetGrid
+
+    grid = SpreadsheetGrid()
+    qtbot.addWidget(grid)
+    assert grid.paste_text("   \n") == 0
+    assert grid.is_blank()
+
+
+def test_clipboard_dialog_imports_a_pasted_grid(qtbot) -> None:
+    from PySide6.QtWidgets import QApplication
+
+    dialog = ClipboardImportDialog()
+    qtbot.addWidget(dialog)
+    assert dialog.ok_enabled() is False  # nothing pasted yet
+
+    QApplication.clipboard().setText("time\tload\n0\t1.2\n1\t2.3\n2\t4.4\n")
+    dialog.paste_from_clipboard()
+    outcome = dialog.outcome()
+    assert outcome is not None and outcome.xy is not None
+    assert outcome.x_column == "time" and len(outcome.xy.x) == 3
+    assert dialog.ok_enabled() is True
+
+
+def test_grid_edits_refresh_the_preview(qtbot) -> None:
+    dialog = ClipboardImportDialog(initial_text="x\ty\n1\t2.0\n2\t4.1\n3\t6.2\n")
+    qtbot.addWidget(dialog)
+    assert dialog.ok_enabled() is True
+
+    dialog.grid().set_cell(1, 1, "not a number")
+    qtbot.wait(500)  # the edit debounce, then the (synchronous) re-parse
+    assert dialog.ok_enabled() is False
+    assert any("NON_NUMERIC" in text for text in dialog.issue_texts())

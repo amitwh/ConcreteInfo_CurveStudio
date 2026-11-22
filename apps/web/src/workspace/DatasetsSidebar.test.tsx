@@ -69,3 +69,42 @@ describe("DatasetsSidebar — upload validation", () => {
     expect(upload).not.toHaveBeenCalled();
   });
 });
+
+describe("DatasetsSidebar — pasting a spreadsheet block", () => {
+  it("uploads a pasted grid as a .tsv file", async () => {
+    const upload = vi.spyOn(api, "uploadDataset").mockResolvedValue({
+      id: "ds-1",
+      name: "pasted",
+      n_rows: 2,
+      x_column: "x",
+      y_column: "y",
+      weight_column: null,
+      issues: [],
+      created_at: "2026-11-22T08:00:00+05:30",
+    } as never);
+    const user = userEvent.setup();
+    render(
+      <DatasetsSidebar
+        datasets={[]}
+        selectedId={null}
+        loading={false}
+        loadError={null}
+        onSelect={() => {}}
+        onUploaded={() => {}}
+        onDeleted={() => {}}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Paste data" }));
+    const grid = screen.getByRole("grid", { name: "Pasted data" });
+    fireEvent.paste(grid.querySelector('input[aria-label="A1"]') as HTMLElement, {
+      clipboardData: { getData: () => "x\ty\n1\t2.5\n2\t4.5\n" },
+    });
+    await user.click(screen.getByRole("button", { name: "Import paste" }));
+
+    expect(upload).toHaveBeenCalledTimes(1);
+    const file = upload.mock.calls[0]?.[0] as File;
+    expect(file.name).toBe("pasted.tsv");
+    expect(await file.text()).toBe("x\ty\n1\t2.5\n2\t4.5\n");
+  });
+});

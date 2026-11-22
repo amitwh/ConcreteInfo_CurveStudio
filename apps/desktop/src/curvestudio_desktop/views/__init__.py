@@ -12,6 +12,7 @@ from curvestudio_desktop.views.plot_view import PlotView
 from curvestudio_desktop.views.project_tree import ProjectDock, ProjectTree
 from curvestudio_desktop.views.ranking_table import RankingTableModel, RankingTableView
 from curvestudio_desktop.views.results_tabs import ResultsTabs
+from curvestudio_desktop.views.spreadsheet import SpreadsheetGrid
 
 __all__ = [
     "AnalysisPanel",
@@ -30,4 +31,5 @@ __all__ = [
     "RankingTableModel",
     "RankingTableView",
     "ResultsTabs",
+    "SpreadsheetGrid",
 ]

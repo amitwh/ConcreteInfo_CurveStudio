@@ -6,7 +6,7 @@
  */
 
 import { useRef, useState, type ChangeEvent, type DragEvent, type ReactElement } from "react";
-import { Database, Trash2, Upload } from "lucide-react";
+import { ClipboardPaste, Database, Trash2, Upload } from "lucide-react";
 import {
   ApiError,
   MAX_UPLOAD_BYTES,
@@ -16,6 +16,7 @@ import {
 } from "../api/client";
 import { ErrorBox, Loading } from "../components/States";
 import { fmtInt } from "../format";
+import { SpreadsheetPaste } from "./SpreadsheetPaste";
 
 export interface DatasetsSidebarProps {
   datasets: DatasetOut[];
@@ -71,6 +72,7 @@ export function DatasetsSidebar({
   const [columnError, setColumnError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<unknown>(null);
+  const [pasteOpen, setPasteOpen] = useState(false);
 
   const upload = async (file: File, columns?: Partial<ColumnChoice>): Promise<void> => {
     setUploadError(null);
@@ -144,6 +146,12 @@ export function DatasetsSidebar({
     event.target.value = "";
   };
 
+  /** A pasted grid travels as a small .tsv file: the same upload and column flow. */
+  const onPasted = (text: string): void => {
+    setPasteOpen(false);
+    void upload(new File([text], "pasted.tsv", { type: "text/tab-separated-values" }));
+  };
+
   const onDelete = async (id: string): Promise<void> => {
     setDeleteError(null);
     try {
@@ -187,10 +195,28 @@ export function DatasetsSidebar({
           aria-hidden="true"
           tabIndex={-1}
         />
+        <p className="muted">or paste a block of cells</p>
+        <button
+          type="button"
+          className="btn"
+          onClick={() => setPasteOpen(true)}
+          disabled={uploading}
+        >
+          <ClipboardPaste className="icon" aria-hidden="true" focusable="false" />
+          Paste data
+        </button>
         <p className="hint">
           csv, tsv, txt, xlsx or json · up to {Math.floor(MAX_UPLOAD_BYTES / MB)} MB
         </p>
       </div>
+
+      {pasteOpen && (
+        <SpreadsheetPaste
+          busy={uploading}
+          onClose={() => setPasteOpen(false)}
+          onImport={onPasted}
+        />
+      )}
 
       {uploading && (
         <div className="upload-progress" role="status">

@@ -1,4 +1,5 @@
-"""Import dialogs: file picker with column pickers and preview, and clipboard paste.
+"""Import dialogs: file picker with column pickers and preview, and an embedded
+spreadsheet grid for pasting data straight out of Excel/LibreOffice/Sheets.
 
 The source is *parsed once* — in the background through a
 :class:`~curvestudio_desktop.jobs.JobRunner` — and every later column-combo change
@@ -11,6 +12,7 @@ row gutter); any error-level issue disables OK, warnings do not.
 
 from pathlib import Path
 
+from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -21,7 +23,6 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QListWidget,
-    QPlainTextEdit,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
@@ -32,8 +33,10 @@ from PySide6.QtWidgets import (
 from curvestudio.data import DataError, Dataset, validate
 from curvestudio.workflow import ImportIssue, ImportOutcome, import_dataset
 from curvestudio_desktop.jobs import JobHandle, JobRunner
+from curvestudio_desktop.views.spreadsheet import SpreadsheetGrid
 
 PREVIEW_ROWS = 50
+_EDIT_DEBOUNCE_MS = 350
 _FILE_FILTER = "Data files (*.csv *.tsv *.txt *.json *.xlsx);;All files (*)"
 _NO_WEIGHT = "(no weights)"
 _CLIPBOARD_BASENAME = "clipboard"
@@ -355,7 +358,14 @@ class ImportDialog(_ImportForm):
 
 
 class ClipboardImportDialog(_ImportForm):
-    """Clipboard import: pasted tab- or comma-separated text via ``import_dataset``."""
+    """Clipboard import: an embedded spreadsheet grid, fed by a paste from any app.
+
+    The grid is the point: selecting a block in Excel/LibreOffice/Sheets and pressing
+    Ctrl+V here drops the whole block in (rows and columns grow as needed); cells stay
+    editable, so a typo is fixed in place rather than in a text blob. Everything the
+    grid holds is re-serialised as quoted TSV for the same ``import_dataset`` pipeline
+    the text box used.
+    """
 
     def __init__(
         self,
@@ -365,22 +375,55 @@ class ClipboardImportDialog(_ImportForm):
     ) -> None:
         super().__init__(parent, jobs=jobs)
         self.setWindowTitle("Import from clipboard")
-        self.setMinimumSize(640, 520)
-        self._text = QPlainTextEdit()
-        self._text.setPlaceholderText("Paste tab- or comma-separated data (with a header row)")
-        self._text.setPlainText(initial_text)
-        refresh = QPushButton("Refresh preview")
-        refresh.clicked.connect(self.rerun)
+        self.setMinimumSize(780, 620)
+        self._grid = SpreadsheetGrid()
+        self._grid.setToolTip(
+            "Paste a block copied from a spreadsheet (Ctrl+V), or type the cells directly"
+        )
+        toolbar = QHBoxLayout()
+        paste_button = QPushButton("Paste from clipboard")
+        paste_button.setProperty("role", "primary")
+        paste_button.clicked.connect(self.paste_from_clipboard)
+        add_row = QPushButton("+ Row")
+        add_row.clicked.connect(self._grid.add_row)
+        add_column = QPushButton("+ Column")
+        add_column.clicked.connect(self._grid.add_column)
+        clear = QPushButton("Clear")
+        clear.clicked.connect(self._grid.clear_grid)
+        for button in (add_row, add_column, clear):
+            button.setProperty("segment", "true")
+        toolbar.addWidget(paste_button)
+        toolbar.addWidget(add_row)
+        toolbar.addWidget(add_column)
+        toolbar.addWidget(clear)
+        toolbar.addStretch(1)
+        self._rerun_timer = QTimer(self)
+        self._rerun_timer.setSingleShot(True)
+        self._rerun_timer.setInterval(_EDIT_DEBOUNCE_MS)
+        self._rerun_timer.timeout.connect(self.rerun)
+        self._grid.changed.connect(self._schedule_rerun)
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("Pasted data:"))
-        layout.addWidget(self._text, 1)
-        layout.addWidget(refresh)
+        layout.addWidget(QLabel("Spreadsheet (first row is the header):"))
+        layout.addLayout(toolbar)
+        layout.addWidget(self._grid, 2)
         layout.addWidget(QLabel("Issues (rows are 1-based, excluding the header):"))
         layout.addWidget(self._issues)
         layout.addWidget(QLabel(f"Preview (first {PREVIEW_ROWS} rows):"))
         layout.addWidget(self._preview, 2)
         layout.addWidget(self._buttons)
+        if initial_text.strip():
+            self._grid.paste_text(initial_text, replace=True)
+        self._rerun_timer.stop()  # the first parse happens now, not again on the debounce
         self.rerun()
+
+    def paste_from_clipboard(self) -> None:
+        """Paste the clipboard into the grid and refresh the preview immediately."""
+        self._grid.paste_from_clipboard()
+        self._rerun_timer.stop()
+        self.rerun()
+
+    def _schedule_rerun(self) -> None:
+        self._rerun_timer.start()
 
     @classmethod
     def from_clipboard(
@@ -395,17 +438,17 @@ class ClipboardImportDialog(_ImportForm):
     # -- _ImportForm hooks ------------------------------------------------------------------
 
     def _current_source(self) -> tuple[str | None, str | None, Path | bytes | None]:
-        text = self._text.toPlainText()
-        if not text.strip():
+        if self._grid.is_blank():
             return (None, None, None)
-        # Tab-separated paste goes in as .tsv: the workflow's csv sniffer looks at
-        # comma/semicolon only, so a .csv name would collapse it to one column.
-        filename = (
-            f"{_CLIPBOARD_BASENAME}.tsv"
-            if text.count("\t") > text.count(",")
-            else f"{_CLIPBOARD_BASENAME}.csv"
-        )
-        return (text, filename, text.encode("utf-8"))
+        text = self._grid.to_tsv()
+        # Tab-separated always: the workflow's csv sniffer looks at comma/semicolon, and
+        # a cell holding a comma must not turn into a column boundary.
+        return (text, f"{_CLIPBOARD_BASENAME}.tsv", text.encode("utf-8"))
 
     def _no_source_message(self) -> str:
         return "Paste some data first."
+
+    # -- test accessors ----------------------------------------------------------------------
+
+    def grid(self) -> SpreadsheetGrid:
+        return self._grid

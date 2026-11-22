@@ -26,8 +26,12 @@ explore with.
 ## 2. Importing data
 
 - **Accepted files:** `.csv`, `.tsv`, `.txt`, `.json`, `.xlsx`.
-- **Clipboard:** *File → Import from clipboard* (Ctrl+Shift+V) accepts tab- or comma-separated
-  text, so a spreadsheet selection can be pasted directly.
+- **Spreadsheet grid:** *File → Import from clipboard* (Ctrl+Shift+V) opens an editable grid.
+  Select the cells in Excel, LibreOffice Calc or Google Sheets, copy, click the grid and press
+  Ctrl+V: the whole block lands in place (rows and columns grow to fit, a paste into an empty
+  grid replaces it). Cells can be typed over, rows and columns added, and the first row is the
+  header. Paste directly from the clipboard with the *Paste from clipboard* button, then check
+  the preview and import.
 - **Columns:** you map the columns after import. A dataset needs an **x**, a **y**, and
   optionally a **weight** column (blank means weight 1) and an **included** flag for excluding
   rows without deleting them.
