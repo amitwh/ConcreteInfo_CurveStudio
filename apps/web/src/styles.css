@@ -1666,3 +1666,31 @@ html[data-theme="dark"] .about-logo {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
+
+.about-projects {
+  margin: 0.4rem 0 0.6rem;
+  padding-left: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.92rem;
+}
+
+.help-figure {
+  margin: 1rem 0;
+}
+
+.help-figure img {
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.help-figure figcaption {
+  margin-top: 0.4rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+  text-align: center;
+}

@@ -22,7 +22,7 @@ describe("AboutPage", () => {
   it("links to the website and the help page", () => {
     renderAbout();
     expect(
-      screen.getByRole("link", { name: "www.concreteinfo.in" }).getAttribute("href"),
+      screen.getAllByRole("link", { name: "www.concreteinfo.in" })[0]?.getAttribute("href"),
     ).toBe("https://www.concreteinfo.in");
     expect(
       screen.getByRole("link", { name: "Help and documentation" }).getAttribute("href"),
@@ -32,7 +32,7 @@ describe("AboutPage", () => {
   it("keeps the version, licence and source links", () => {
     renderAbout();
     expect(screen.getByText("Version")).toBeTruthy();
-    expect(screen.getByRole("link", { name: "AGPL-3.0-or-later" })).toBeTruthy();
+    expect(screen.getAllByRole("link", { name: "AGPL-3.0-or-later" }).length).toBeGreaterThan(0);
     expect(
       screen.getByRole("link", { name: "github.com/amitwh/ConcreteInfo_CurveStudio" }),
     ).toBeTruthy();
@@ -58,5 +58,33 @@ describe("AboutPage", () => {
     ]) {
       expect(screen.getByText(licence)).toBeTruthy();
     }
+  });
+});
+
+describe("AboutPage — projects, free software and policy", () => {
+  it("links the other three free ConcreteInfo projects", () => {
+    renderAbout();
+    expect(
+      screen.getByRole("link", { name: "GitHub Desktop for Linux" }).getAttribute("href"),
+    ).toBe("https://github.com/amitwh/GitHubDesktopLinux");
+    expect(
+      screen.getByRole("link", { name: "Markdown Converter" }).getAttribute("href"),
+    ).toBe("https://github.com/amitwh/markdown-converter");
+    expect(
+      screen.getByRole("link", { name: "PC Power Calculator" }).getAttribute("href"),
+    ).toBe("https://pcpower.concreteinfo.co.in/");
+    expect(
+      screen.getAllByRole("link", { name: "amit@concreteinfo.in" })[0]?.getAttribute("href"),
+    ).toBe("mailto:amit@concreteinfo.in");
+  });
+
+  it("explains why it is free and AGPL, and states the disclaimer and policy", () => {
+    renderAbout();
+    expect(screen.getByRole("heading", { name: "Why it is free and open" })).toBeTruthy();
+    expect(screen.getByText(/the desktop app stays free/i)).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Disclaimer" })).toBeTruthy();
+    expect(screen.getByText(/fits models to data; it does not decide what the data mean/i)).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Privacy and fair-use policy" })).toBeTruthy();
+    expect(screen.getByText(/not sold, and it is not shared for advertising/i)).toBeTruthy();
   });
 });

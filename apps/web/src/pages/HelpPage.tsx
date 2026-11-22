@@ -83,6 +83,13 @@ function Block({ block }: { block: HelpBlock }): ReactElement {
           ))}
         </ol>
       );
+    case "figure":
+      return (
+        <figure className="help-figure">
+          <img src={block.src} alt={block.alt} loading="lazy" />
+          <figcaption>{block.caption}</figcaption>
+        </figure>
+      );
     case "table":
       return (
         <div className="table-wrap">

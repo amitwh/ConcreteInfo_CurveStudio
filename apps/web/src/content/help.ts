@@ -19,7 +19,8 @@ export type HelpBlock =
   | { kind: "h3"; text: string }
   | { kind: "ul"; items: Inline[][] }
   | { kind: "ol"; items: Inline[][] }
-  | { kind: "table"; headers: string[]; rows: Inline[][][] };
+  | { kind: "table"; headers: string[]; rows: Inline[][][] }
+  | { kind: "figure"; src: string; alt: string; caption: string };
 
 export interface HelpSection {
   /** Stable URL fragment: /help#keyboard-shortcuts */
@@ -73,6 +74,13 @@ export const HELP_SECTIONS: HelpSection[] = [
           code("example.csv"),
           " (age in days vs. compressive strength in MPa) is a good dataset to explore with.",
         ],
+      },
+      {
+        kind: "figure",
+        src: "/help/workspace.png",
+        alt: "The web workspace: datasets, the chart with the selected model's equation, and the Auto-fit ranking",
+        caption:
+          "The web workspace: the chart captions the selected model's fitted equation, and the ranking lists every converged model with its colour.",
       },
     ],
   },
@@ -128,6 +136,13 @@ export const HELP_SECTIONS: HelpSection[] = [
             " a row whose x or y is empty, or not a number, is reported and skipped; nothing is guessed.",
           ],
         ],
+      },
+      {
+        kind: "figure",
+        src: "/help/paste.png",
+        alt: "The Paste data grid with a pasted table of age, strength and batch columns",
+        caption:
+          "Paste data: copy a block of cells from any spreadsheet app and drop it straight into the grid.",
       },
     ],
   },
@@ -528,7 +543,7 @@ export const HELP_SECTIONS: HelpSection[] = [
   },
   {
     id: "about-licence-credits",
-    title: "About, licence and credits",
+    title: "About, licence, projects and policy",
     blocks: [
       {
         kind: "p",
@@ -537,7 +552,31 @@ export const HELP_SECTIONS: HelpSection[] = [
           strong("ConcreteInfo"),
           " — ",
           link("https://www.concreteinfo.in", "https://www.concreteinfo.in"),
-          ".",
+          " · amit@concreteinfo.in. The ",
+          link("About page", "/about"),
+          " also lists the other free ConcreteInfo projects (GitHub Desktop for Linux,",
+          " Markdown Converter, PC Power Calculator), explains why the desktop app is free",
+          " and AGPL, and carries the disclaimer and the privacy/fair-use policy in full.",
+        ],
+      },
+      {
+        kind: "ul",
+        items: [
+          [
+            "The desktop app is free software under AGPL-3.0-or-later; the web app is free today",
+            " and a small hosting subscription may be added later — the desktop stays free.",
+          ],
+          [
+            "A fit describes agreement with ",
+            strong("your"),
+            " sample. It is not proof of a physical law, code compliance or safety — verify",
+            " anything that matters against the standard and a second method.",
+          ],
+          [
+            "Desktop data stays on your machine. On the web your datasets and fits are stored",
+            " in your account only to provide the service; deleting a dataset, a fit or your",
+            " account removes them.",
+          ],
         ],
       },
       {
@@ -575,6 +614,8 @@ export function sectionSearchText(section: HelpSection): string {
     else if (block.kind === "h3") parts.push(block.text);
     else if (block.kind === "ul" || block.kind === "ol") {
       for (const item of block.items) parts.push(...item.map(inlineText));
+    } else if (block.kind === "figure") {
+      parts.push(block.alt, block.caption);
     } else {
       parts.push(...block.headers);
       for (const row of block.rows) {

@@ -30,10 +30,14 @@ GEOMETRY_KEY = "help/geometry"
 TITLE = "Help contents"
 MINIMUM_SIZE = (640, 420)
 DEFAULT_SIZE = (940, 660)
+_IMAGE_WIDTH = 700
+"""Screenshots are rendered at 1440 px wide; the help pane is ~700 px."""
 
 _HEADING = re.compile(r"^##\s+(?P<title>.+?)\s*$", re.MULTILINE)
 _UNORDERED = re.compile(r"^\s*[-*]\s+")
 _ORDERED = re.compile(r"^\s*\d+\.\s+")
+#: A block-level screenshot: ``![caption](images/name.png)`` — the caption doubles as alt.
+_IMAGE = re.compile(r"^!\[(?P<caption>[^\]]*)\]\((?P<src>[^)]+)\)$")
 _SEPARATOR_CELL = re.compile(r"^:?-{3,}:?$")
 _INLINE = re.compile(
     r"`(?P<code>[^`]+)`"
@@ -44,6 +48,9 @@ _INLINE = re.compile(
 )
 _BROWSER_CSS = """
 code { font-family: 'JetBrains Mono', monospace; }
+.figure { text-align: center; margin: 8px 0; }
+.figure img { border: 1px solid #999999; border-radius: 4px; }
+.figure .caption { color: #6e6c6c; font-size: 8.5pt; }
 table { border-collapse: collapse; }
 th, td { border: 1px solid #999999; padding: 4px 8px; }
 th { font-weight: 600; }
@@ -136,6 +143,7 @@ def _starts_block(line: str) -> bool:
         or stripped.startswith("#")
         or stripped.startswith("|")
         or stripped.startswith("---")
+        or _IMAGE.match(stripped) is not None
         or _UNORDERED.match(line) is not None
         or _ORDERED.match(line) is not None
     )
@@ -177,6 +185,18 @@ def markdown_to_html(markdown: str) -> str:
         line = raw.strip()
         if not line:
             flush_paragraph()
+            index += 1
+            continue
+        image = _IMAGE.match(line)
+        if image is not None:
+            flush_paragraph()
+            src = _escape_attribute(image.group("src"))
+            caption = _inline(image.group("caption"))
+            blocks.append(
+                f'<div class="figure"><img src="{src}" width="{_IMAGE_WIDTH}" '
+                f'alt="{_escape_attribute(image.group("caption"))}"/>'
+                f'<br/><span class="caption">{caption}</span></div>'
+            )
             index += 1
             continue
         if line.startswith("---"):
@@ -272,6 +292,9 @@ class HelpDialog(QDialog):
         self.browser = QTextBrowser()
         self.browser.setObjectName("helpBrowser")
         self.browser.setOpenExternalLinks(True)
+        # relative image sources resolve against the packaged help folder
+        help_root = resources.files("curvestudio_desktop") / "resources" / "help"
+        self.browser.setSearchPaths([str(help_root)])
         self.browser.document().setDefaultStyleSheet(_BROWSER_CSS)
 
         splitter = QSplitter(Qt.Orientation.Horizontal)

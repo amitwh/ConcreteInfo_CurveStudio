@@ -125,7 +125,7 @@ def test_help_dialog_lists_the_eleven_canonical_sections_in_order(qtbot, setting
     assert titles == canonical_section_titles()
     assert [dialog.section_list.item(i).text() for i in range(11)] == list(titles)
     assert titles[0] == "1. Getting started"
-    assert titles[-1] == "11. About, licence and credits"
+    assert titles[-1] == "11. About, licence, projects and policy"
 
 
 def test_markdown_renders_tables_lists_bold_links_and_inline_code() -> None:
@@ -150,7 +150,7 @@ def test_markdown_renders_tables_lists_bold_links_and_inline_code() -> None:
     steps = markdown_to_html(sections["1. Getting started"].body)
     assert "<ol>" in steps and steps.count("<li>") >= 5
 
-    about = markdown_to_html(sections["11. About, licence and credits"].body)
+    about = markdown_to_html(sections["11. About, licence, projects and policy"].body)
     assert '<a href="https://www.concreteinfo.in">' in about
     assert "<em>" in about or "<strong>" in about
 
@@ -330,3 +330,85 @@ def test_full_text_keeps_the_existing_licence_and_version_contract(qtbot) -> Non
     assert __version__ in text
     assert "AGPL" in text
     assert "PySide6" in text and qVersion()[:3] in text
+
+
+# -- screenshots in the help ------------------------------------------------------------------
+
+
+def test_markdown_renders_a_screenshot_with_its_caption() -> None:
+    from curvestudio_desktop.views.help_dialog import markdown_to_html
+
+    html = markdown_to_html("![The workspace](images/workspace.png)\n\nAfter the image.")
+    assert '<img src="images/workspace.png" width="700"' in html
+    assert 'alt="The workspace"' in html
+    assert "The workspace</span>" in html  # the caption is visible, not only the alt text
+    assert "<p>After the image.</p>" in html
+
+
+def test_every_screenshot_the_help_references_is_packaged() -> None:
+    import re
+
+    from curvestudio_desktop.views.help_dialog import help_markdown
+
+    references = re.findall(r"!\[[^\]]*\]\((images/[^)]+)\)", help_markdown())
+    assert references, "the help references no screenshots at all"
+    help_root = resources.files("curvestudio_desktop") / "resources" / "help"
+    for reference in references:
+        asset = help_root / reference
+        assert asset.is_file(), f"{reference} is referenced but not packaged"
+        assert asset.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n", f"{reference} is not a PNG"
+
+
+def test_the_help_browser_resolves_relative_image_sources(qtbot, settings) -> None:
+    from curvestudio_desktop.views.help_dialog import HelpDialog
+
+    dialog = HelpDialog(settings=settings)
+    qtbot.addWidget(dialog)
+    search_paths = dialog.browser.searchPaths()
+    assert search_paths
+    assert Path(search_paths[0]).name == "help"
+    assert (Path(search_paths[0]) / "images").is_dir()
+
+
+def test_about_lists_the_other_projects_and_contact(qtbot) -> None:
+    from curvestudio_desktop.views.dialogs import CONTACT_EMAIL, OTHER_PROJECTS, AboutDialog
+
+    dialog = AboutDialog()
+    qtbot.addWidget(dialog)
+    html = dialog.sections.toHtml()
+    for name, url, _description in OTHER_PROJECTS:
+        assert name in html, name
+        assert url in html, url
+    assert CONTACT_EMAIL in html
+    assert "https://www.concreteinfo.in" in html
+    assert "GitHub Desktop for Linux" in OTHER_PROJECTS[0][0]
+    # the same facts are in the copyable text, not only the widget
+    text = dialog.full_text()
+    assert "PC Power Calculator" in text and CONTACT_EMAIL in text
+
+
+def test_about_explains_the_licence_and_free_use(qtbot) -> None:
+    from curvestudio_desktop.views.dialogs import AboutDialog
+
+    dialog = AboutDialog()
+    qtbot.addWidget(dialog)
+    html = dialog.sections.toHtml()
+    assert "AGPL-3.0-or-later" in html
+    assert "desktop app stays free" in html
+    assert "hosted service" in html
+
+
+def test_about_carries_the_disclaimer_and_the_policy(qtbot) -> None:
+    from curvestudio_desktop.views.dialogs import AboutDialog
+
+    dialog = AboutDialog()
+    qtbot.addWidget(dialog)
+    html = dialog.sections.toHtml()
+    # the disclaimer's three load-bearing claims, and the policy's two halves
+    assert "does not decide what the data mean" in html
+    assert "not evidence that the model is physically right" in html
+    assert "provided “as is”, without warranty" in html or "provided &quot;as is&quot;" in html
+    assert "Privacy and fair-use policy" in html
+    assert "not sold, and it is not shared for advertising" in html
+    assert "Argon2" in html
+    assert "no telemetry" in html

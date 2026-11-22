@@ -15,7 +15,7 @@ const SECTION_TITLES = [
   "Exports",
   "Keyboard shortcuts (desktop)",
   "Troubleshooting",
-  "About, licence and credits",
+  "About, licence, projects and policy",
 ];
 
 function renderHelp() {
@@ -75,5 +75,21 @@ describe("HelpPage", () => {
 
     expect(screen.getByRole("status").textContent).toMatch(/no section matches/i);
     expect(screen.queryByRole("navigation", { name: "Sections" })).toBeNull();
+  });
+});
+
+describe("HelpPage screenshots", () => {
+  it("renders the workspace and paste screenshots with captions", () => {
+    renderHelp();
+    const images = Array.from(document.querySelectorAll(".help-figure img"));
+    expect(images.map((image) => image.getAttribute("src"))).toEqual([
+      "/help/workspace.png",
+      "/help/paste.png",
+    ]);
+    for (const image of images) {
+      expect(image.getAttribute("alt")).toBeTruthy();
+    }
+    expect(screen.getByText(/the chart captions the selected model's fitted equation/i)).toBeTruthy();
+    expect(screen.getByText(/drop it straight into the grid/i)).toBeTruthy();
   });
 });

@@ -23,6 +23,8 @@ It is the same engine on the web and on the desktop, so a fit made in one matche
 The bundled `example.csv` (age in days vs. compressive strength in MPa) is a good dataset to
 explore with.
 
+![The desktop workspace: plot, equation caption, ranking and data table](images/workspace.png)
+
 ## 2. Importing data
 
 - **Accepted files:** `.csv`, `.tsv`, `.txt`, `.json`, `.xlsx`.
@@ -35,6 +37,8 @@ explore with.
 - **Columns:** you map the columns after import. A dataset needs an **x**, a **y**, and
   optionally a **weight** column (blank means weight 1) and an **included** flag for excluding
   rows without deleting them.
+
+![The spreadsheet grid: paste a block of cells, fix a typo, check the preview](images/paste-grid.png)
 - **Refused input:** x and y must be different columns; a file with fewer than three usable
   rows cannot be fitted, and the import says so rather than producing a curve from nothing.
 - **Missing values:** a row whose x or y is empty, or not a number, is reported and skipped;
@@ -79,6 +83,8 @@ whether a simpler model already explains the data.
 
 ## 4. Manual fit and custom equations
 
+![Manual fit: choose a model or write an equation, set bounds, then Fit](images/manual-fit.png)
+
 Choose a model from the catalogue, or write an equation.
 
 **Custom equation grammar**
@@ -104,6 +110,8 @@ Choose a model from the catalogue, or write an equation.
   is refused with a message saying there is nothing to fit.
 
 ## 5. Understanding the numbers
+
+![The details window: equation, parameters, statistics, diagnostics, prediction](images/details.png)
 
 - **Parameter table:** estimate, standard error and 95% confidence interval. `n/a` means the fit
   could not determine the value (hovering the cell says so); it is never shown as zero.
@@ -169,9 +177,19 @@ closed. *View → Reset layout* restores the default arrangement.
   in full — there is no account and no upload.
 - **Web:** fitting needs a connection to the server. The desktop app is the offline story.
 
-## 11. About, licence and credits
+## 11. About, licence, projects and policy
 
-CurveStudio is built by **ConcreteInfo** — <https://www.concreteinfo.in>.
+CurveStudio is built by **ConcreteInfo** — <https://www.concreteinfo.in> · amit@concreteinfo.in.
+The About window also lists the other free ConcreteInfo projects (GitHub Desktop for Linux,
+Markdown Converter, PC Power Calculator), explains why the desktop app is free and AGPL, and
+carries the disclaimer and the privacy/fair-use policy in full. In short:
+
+- The desktop app is free software under AGPL-3.0-or-later; the web app is free today and may
+  gain a small hosting subscription later (the desktop stays free).
+- A fit describes agreement with *your* sample. It is not proof of a physical law, code
+  compliance or safety — verify anything that matters against the standard and a second method.
+- Desktop data stays on your machine. On the web your datasets and fits are stored in your
+  account only to provide the service; deleting a dataset, a fit or your account removes them.
 
 - CurveStudio: AGPL-3.0-or-later.
 - Qt / PySide6 (desktop): LGPL-3.0.
