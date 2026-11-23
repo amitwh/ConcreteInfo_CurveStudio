@@ -194,6 +194,96 @@ describe("401 refresh handling", () => {
   });
 });
 
+describe("a renewal's late answer (it belongs to the session that asked for it)", () => {
+  /** A fresh pair, as /auth/refresh issues one. */
+  const PAIR = { access_token: "a2", refresh_token: "r2", expires_in: 900, token_type: "bearer" };
+  /** /auth/refresh refusing the token. A body can be read once, so each call gets its own. */
+  const refusal = (): Response =>
+    jsonResponse(401, { error: "UNAUTHORIZED", message: "revoked", detail: {} });
+
+  /**
+   * A fetch that keeps `/auth/refresh` waiting until the test calls what it returns; every
+   * other request is answered 204 at once, the server's answer to /auth/logout.
+   */
+  function pendingRefresh(): (response: Response) => void {
+    let answer: (response: Response) => void = () => undefined;
+    fetchMock.mockImplementation((input: RequestInfo | URL) => {
+      if (String(input).endsWith("/auth/refresh")) {
+        return new Promise<Response>((resolve) => {
+          answer = resolve;
+        });
+      }
+      return Promise.resolve(new Response(null, { status: 204 }));
+    });
+    return (response) => answer(response);
+  }
+
+  /** The Authorization header of the one request that reached `path`. */
+  function bearerSentTo(path: string): string | null {
+    const calls = fetchMock.mock.calls.filter(([url]) => String(url) === `${API_BASE}${path}`);
+    expect(calls).toHaveLength(1);
+    return bearer(calls[0]?.[1]);
+  }
+
+  it("a renewal that completes after signing out is not adopted", async () => {
+    const onAuthFailure = vi.fn();
+    api.onAuthFailure = onAuthFailure;
+    api.setTokens("a1", "r1");
+    const answer = pendingRefresh();
+    const renewal = api.refreshNow();
+
+    // Signed out while the renewal is away; the server's new pair arrives only afterwards.
+    await api.logout();
+    answer(jsonResponse(200, PAIR));
+
+    const adopted = await renewal;
+    expect(localStorage.getItem("curvestudio.refresh")).toBeNull();
+    // No access token survived the sign-out either: the next request is anonymous.
+    await api.request("/datasets");
+    expect(bearerSentTo("/datasets")).toBeNull();
+    expect(onAuthFailure).not.toHaveBeenCalled();
+    expect(adopted).toBe(false);
+  });
+
+  it("a renewal refused after signing out does not call the failure handler", async () => {
+    const onAuthFailure = vi.fn();
+    api.onAuthFailure = onAuthFailure;
+    api.setTokens("a1", "r1");
+    const answer = pendingRefresh();
+    const renewal = api.refreshNow();
+
+    await api.logout();
+    answer(refusal());
+
+    await expect(renewal).resolves.toBe(false);
+    expect(onAuthFailure).not.toHaveBeenCalled();
+    expect(localStorage.getItem("curvestudio.refresh")).toBeNull();
+  });
+
+  it.each([
+    ["does not overwrite", (): Response => jsonResponse(200, PAIR)],
+    ["does not end", refusal],
+  ])("a renewal asked for by one session %s the next", async (_, reply) => {
+    const onAuthFailure = vi.fn();
+    api.onAuthFailure = onAuthFailure;
+    api.setTokens("a1", "r1");
+    const answer = pendingRefresh();
+    const renewal = api.refreshNow();
+
+    // Signed in as someone else without a reload, as the sign-in page does.
+    api.setTokens("b1", "r9");
+    answer(reply());
+
+    const adopted = await renewal;
+    expect(localStorage.getItem("curvestudio.refresh")).toBe("r9");
+    // The next session's access token is the one still held: the next request carries it.
+    await api.request("/datasets");
+    expect(bearerSentTo("/datasets")).toBe("Bearer b1");
+    expect(onAuthFailure).not.toHaveBeenCalled();
+    expect(adopted).toBe(false);
+  });
+});
+
 describe("login and register store tokens (the register → login → me flow)", () => {
   /**
    * The mock mirrors the server's auth contract, not just happy-path responses:

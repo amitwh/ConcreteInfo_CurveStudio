@@ -222,13 +222,18 @@ class ApiClient {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ refresh_token: refreshToken }),
       });
-      if (!response.ok) {
+      // The body is read first, so that the check below is the last step before a token changes.
+      const tokens = response.ok ? ((await response.json()) as TokenOut) : null;
+      // The answer belongs to the session that asked, named by the token it sent. Signed out
+      // or replaced by another sign-in while the request was away, it is dropped: the pair
+      // is not stored, and a refusal must not end the session that took its place.
+      if (this.refreshToken !== refreshToken) return false;
+      if (tokens === null) {
         // A rejected refresh token means the session is over (revoked or reused).
         this.clearTokens();
         this.onAuthFailure?.();
         return false;
       }
-      const tokens = (await response.json()) as TokenOut;
       this.setTokens(tokens.access_token, tokens.refresh_token);
       return true;
     } catch {
