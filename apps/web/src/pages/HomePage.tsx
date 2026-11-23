@@ -1413,7 +1413,7 @@ export function HomePage(): ReactElement {
         </div>
         <div className="hp-wrap hp-footer__legal">
           <p>© {new Date().getFullYear()} ConcreteInfo. CurveStudio is AGPL-3.0 licensed.</p>
-          <p>Built for engineers who need a defensible fit.</p>
+          <p>Built for the analysis behind a paper, a thesis or a lab report.</p>
         </div>
       </footer>
     </>
