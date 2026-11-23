@@ -22,7 +22,9 @@ vi.mock("../api/auth", () => ({
 // The pages are stand-ins with their real heading: the shell's job is who may see it, the
 // layout and the routing between them.
 vi.mock("./OverviewPage", () => ({ OverviewPage: () => <h2>Overview</h2> }));
+vi.mock("./UsersPage", () => ({ UsersPage: () => <h2>Accounts</h2> }));
 vi.mock("./InstallsPage", () => ({ InstallsPage: () => <h2>Installs</h2> }));
+vi.mock("./ErrorsPage", () => ({ ErrorsPage: () => <h2>Errors</h2> }));
 vi.mock("./AuditPage", () => ({ AuditPage: () => <h2>Audit</h2> }));
 vi.mock("./SystemPage", () => ({ SystemPage: () => <h2>System</h2> }));
 vi.mock("./PlansPage", () => ({ PlansPage: () => <h2>Plans</h2> }));
@@ -51,7 +53,17 @@ function renderConsole(path: string): void {
   );
 }
 
-const PAGES = ["Overview", "Installs", "Audit", "System", "Plans"] as const;
+/** Every page, in the order the navigation lists them: its heading and its path. */
+const PAGES = [
+  ["Overview", "/admin"],
+  ["Accounts", "/admin/users"],
+  ["Installs", "/admin/installs"],
+  ["Errors", "/admin/errors"],
+  ["Audit", "/admin/audit"],
+  ["System", "/admin/system"],
+  ["Plans", "/admin/plans"],
+] as const;
+const LABELS = PAGES.map(([label]) => label);
 
 describe("AdminConsole — who may see it", () => {
   it("sends a member back to the workspace", () => {
@@ -79,20 +91,12 @@ describe("AdminConsole — layout", () => {
     expect(screen.queryByRole("tablist", { name: "Workspaces" })).toBeNull();
   });
 
-  it("lists the five pages in order, marks the current one, and names no page that does not exist", () => {
+  it("lists the seven pages in order, marks the current one, and names no page that does not exist", () => {
     renderConsole("/admin");
     const nav = screen.getByRole("navigation", { name: "Admin" });
     const links = within(nav).getAllByRole("link");
-    expect(links.map((link) => link.textContent)).toEqual([...PAGES]);
-    expect(links.map((link) => link.getAttribute("href"))).toEqual([
-      "/admin",
-      "/admin/installs",
-      "/admin/audit",
-      "/admin/system",
-      "/admin/plans",
-    ]);
-    expect(within(nav).queryByRole("link", { name: /accounts/i })).toBeNull();
-    expect(within(nav).queryByRole("link", { name: /errors/i })).toBeNull();
+    expect(links.map((link) => link.textContent)).toEqual(LABELS);
+    expect(links.map((link) => link.getAttribute("href"))).toEqual(PAGES.map(([, path]) => path));
     expect(within(nav).getByRole("link", { name: "Overview" }).getAttribute("aria-current")).toBe(
       "page",
     );
@@ -101,13 +105,7 @@ describe("AdminConsole — layout", () => {
 });
 
 describe("AdminConsole — routing", () => {
-  it.each([
-    ["/admin", "Overview"],
-    ["/admin/installs", "Installs"],
-    ["/admin/audit", "Audit"],
-    ["/admin/system", "System"],
-    ["/admin/plans", "Plans"],
-  ])("%s shows the %s page", (path, page) => {
+  it.each(PAGES.map(([label, path]) => [path, label]))("%s shows the %s page", (path, page) => {
     renderConsole(path);
     expect(screen.getByRole("heading", { level: 2, name: page })).toBeTruthy();
     expect(screen.getAllByRole("heading", { level: 2 })).toHaveLength(1);
@@ -117,15 +115,17 @@ describe("AdminConsole — routing", () => {
   it("renders each page's heading as its navigation link is followed", async () => {
     const user = userEvent.setup();
     renderConsole("/admin");
-    for (const page of PAGES) {
+    for (const [page, path] of PAGES) {
       await user.click(within(screen.getByRole("navigation", { name: "Admin" })).getByRole("link", { name: page }));
       expect(screen.getByRole("heading", { level: 2, name: page })).toBeTruthy();
+      expect(screen.getAllByRole("heading", { level: 2 })).toHaveLength(1);
       expect(within(screen.getByRole("navigation", { name: "Admin" })).getByRole("link", { name: page }).getAttribute("aria-current")).toBe("page");
-      expect(screen.getByTestId("location").textContent).toBe(page === "Overview" ? "/admin" : `/admin/${page.toLowerCase()}`);
+      expect(screen.getByTestId("location").textContent).toBe(path);
     }
   });
 
-  it.each([["/admin/nope"], ["/admin/installs/extra"], ["/admin/accounts"]])(
+  // "/admin/accounts" is the name in the navigation; the page itself lives at /admin/users.
+  it.each([["/admin/nope"], ["/admin/installs/extra"], ["/admin/errors/extra"], ["/admin/accounts"], ["/admin/users/extra"]])(
     "redirects %s, which is not a page, to the overview",
     (path) => {
       renderConsole(path);

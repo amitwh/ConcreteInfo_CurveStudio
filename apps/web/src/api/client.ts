@@ -176,11 +176,12 @@ class ApiClient {
     localStorage.removeItem(REFRESH_KEY);
   }
 
-  /** Test-only: detach listeners and forget tokens between tests. */
+  /** Test-only: detach listeners and forget tokens and any refresh still in flight, between tests. */
   resetForTests(): void {
     this.clearTokens();
     this.onAuthFailure = null;
     this.onServerError = null;
+    this.refreshInFlight = null;
   }
 
   /** Hand a 5xx answer to the error reporter; the body is not its business. */
@@ -196,36 +197,69 @@ class ApiClient {
   /** Exchange the stored refresh token for a fresh pair; single-flight. */
   async refreshNow(): Promise<boolean> {
     if (this.refreshInFlight !== null) return this.refreshInFlight;
-    this.refreshInFlight = (async () => {
-      const refreshToken = localStorage.getItem(REFRESH_KEY);
-      if (refreshToken === null) return false;
-      try {
-        const response = await fetch(`${API_BASE}/auth/refresh`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ refresh_token: refreshToken }),
-        });
-        if (!response.ok) {
-          // A rejected refresh token means the session is over (revoked or reused).
-          this.clearTokens();
-          this.onAuthFailure?.();
-          return false;
-        }
-        const tokens = (await response.json()) as TokenOut;
-        this.setTokens(tokens.access_token, tokens.refresh_token);
-        return true;
-      } catch {
-        // Network trouble is not a logout: keep the token, let the caller surface the 401.
+    // Asked before any flight is opened, so it leaves nothing behind: nothing to refresh
+    // with is not a logout, and the 401 is the caller's to surface.
+    const refreshToken = localStorage.getItem(REFRESH_KEY);
+    if (refreshToken === null) return false;
+    const flight = this.exchangeRefreshToken(refreshToken);
+    this.refreshInFlight = flight;
+    try {
+      return await flight;
+    } finally {
+      // Only its own: resetForTests may have forgotten it, or a later flight replaced it.
+      if (this.refreshInFlight === flight) this.refreshInFlight = null;
+    }
+  }
+
+  /**
+   * One refresh call. Its first step awaits, so `refreshNow` records it as in flight before
+   * it can finish.
+   */
+  private async exchangeRefreshToken(refreshToken: string): Promise<boolean> {
+    try {
+      const response = await fetch(`${API_BASE}/auth/refresh`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ refresh_token: refreshToken }),
+      });
+      if (!response.ok) {
+        // A rejected refresh token means the session is over (revoked or reused).
+        this.clearTokens();
+        this.onAuthFailure?.();
         return false;
-      } finally {
-        this.refreshInFlight = null;
       }
-    })();
-    return this.refreshInFlight;
+      const tokens = (await response.json()) as TokenOut;
+      this.setTokens(tokens.access_token, tokens.refresh_token);
+      return true;
+    } catch {
+      // Network trouble is not a logout: keep the token, let the caller surface the 401.
+      return false;
+    }
   }
 
   async request<T>(path: string, init?: RequestInit, options?: RequestOptions): Promise<T> {
-    const useAuth = options?.auth !== false;
+    return this.send(path, init, options?.auth !== false, async (response) => {
+      if (response.status === 204) return undefined as T;
+      return (await response.json()) as T;
+    });
+  }
+
+  /**
+   * The same request as `request` — bearer token, one refresh on a 401, the same errors —
+   * for the one endpoint whose body is a document rather than JSON: the body comes back
+   * as text, unparsed. It holds no state of its own, so `resetForTests` covers it.
+   */
+  async text<T extends string = string>(path: string, init?: RequestInit): Promise<T> {
+    return this.send(path, init, true, async (response) => (await response.text()) as T);
+  }
+
+  /** What `request` and `text` share: everything but how a successful body is read. */
+  private async send<T>(
+    path: string,
+    init: RequestInit | undefined,
+    useAuth: boolean,
+    read: (response: Response) => Promise<T>,
+  ): Promise<T> {
     const call = async (retried: boolean): Promise<T> => {
       const headers = new Headers(init?.headers);
       if (!headers.has("content-type") && init?.body != null) {
@@ -252,8 +286,7 @@ class ApiClient {
         path,
       );
       if (!response.ok) throw await toApiError(response);
-      if (response.status === 204) return undefined as T;
-      return (await response.json()) as T;
+      return read(response);
     };
     return call(false);
   }

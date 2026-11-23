@@ -3,21 +3,25 @@
  * server refuses a member on every call, so the check here only spares one the error page.
  *
  * The navigation lists the pages that exist and no others: a link that leads nowhere is
- * worse than none. Accounts and Errors join this list in the same change that adds them.
+ * worse than none. Accounts lives at /admin/users, under the API's name for them.
  */
 
 import type { ReactElement } from "react";
 import { Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { useAuth } from "../api/auth";
 import { AuditPage } from "./AuditPage";
+import { ErrorsPage } from "./ErrorsPage";
 import { InstallsPage } from "./InstallsPage";
 import { OverviewPage } from "./OverviewPage";
 import { PlansPage } from "./PlansPage";
 import { SystemPage } from "./SystemPage";
+import { UsersPage } from "./UsersPage";
 
 const SECTIONS = [
   { path: "/admin", label: "Overview" },
+  { path: "/admin/users", label: "Accounts" },
   { path: "/admin/installs", label: "Installs" },
+  { path: "/admin/errors", label: "Errors" },
   { path: "/admin/audit", label: "Audit" },
   { path: "/admin/system", label: "System" },
   { path: "/admin/plans", label: "Plans" },
@@ -58,7 +62,9 @@ export default function AdminConsole(): ReactElement {
         <main className="admin__content">
           <Routes>
             <Route index element={<OverviewPage />} />
+            <Route path="users" element={<UsersPage />} />
             <Route path="installs" element={<InstallsPage />} />
+            <Route path="errors" element={<ErrorsPage />} />
             <Route path="audit" element={<AuditPage />} />
             <Route path="system" element={<SystemPage />} />
             <Route path="plans" element={<PlansPage />} />

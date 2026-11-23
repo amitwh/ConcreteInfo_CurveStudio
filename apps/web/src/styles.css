@@ -1530,6 +1530,24 @@ li.dataset:hover .dataset__delete,
   box-shadow: inset 0 -2px 0 var(--accent);
 }
 
+/* A keyboard focus on a tab: `all: unset` above unsets the global focus outline too. */
+.tab:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+
+/* A tab's count (how many events a status holds): only the current tab has one. */
+.tab__count {
+  margin-left: 0.4rem;
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.tab--active .tab__count {
+  color: var(--accent);
+}
+
 /* The PDF report action sits at the far end of the tab strip. */
 .tabs__export {
   margin-left: auto;
@@ -3979,6 +3997,147 @@ html[data-theme="dark"] .about-logo {
 
 .admin-plan .alert--success {
   margin: 0.6rem 0 0;
+}
+
+/* The total of a list, said above the table ("128 accounts"). */
+.admin-count {
+  margin: 0;
+}
+
+/* What can be done to one row: small buttons that wrap, in two lines, rather than widen
+   the table (wide enough for three of them on the first line). */
+.row-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  max-width: 16rem;
+}
+
+/* A note under a cell's value: an address that was never confirmed. */
+.admin-cell-note {
+  display: block;
+  font-size: 0.78rem;
+}
+
+/* One account or one event, opened below the list. It takes the focus as it opens, and
+   sits clear of the sticky header when the browser scrolls it into view. */
+.admin-detail {
+  scroll-margin-top: 4.5rem;
+}
+
+.admin-detail:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.admin-detail__head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.5rem 0.8rem;
+}
+
+.admin-detail__head h3 {
+  margin: 0;
+  font-size: 1.05rem;
+  overflow-wrap: anywhere;
+}
+
+.admin-detail__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.6rem;
+  margin: 0.15rem 0 0;
+}
+
+.admin-detail__plan {
+  margin: 0.6rem 0 0;
+}
+
+.admin-detail h4 {
+  margin: 0.9rem 0 0.15rem;
+  font-size: 0.9rem;
+}
+
+.admin-detail__actions {
+  margin: 0.7rem 0 0.2rem;
+}
+
+/* A record's fields: each name, then its value, which may be long. */
+.admin-kv {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.3rem 1rem;
+  margin: 0.8rem 0 0;
+}
+
+.admin-kv dt {
+  font-size: 0.84rem;
+  color: var(--muted);
+}
+
+.admin-kv dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* A stack, a context or console lines: a block that scrolls both ways, and takes the
+   focus so that a keyboard can scroll it. */
+.admin-code {
+  margin: 0;
+  max-height: 22rem;
+  overflow: auto;
+  padding: 0.6rem 0.7rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.admin-code pre {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+/* A visitor's note is prose the visitor typed, not an error type and not code. */
+.admin-note__text {
+  margin: 0.8rem 0 0.2rem;
+  font-size: 0.95rem;
+}
+
+.admin-note__about {
+  margin: 0.2rem 0 0;
+}
+
+/* The Markdown document when the clipboard is refused: shown in a block of its own. */
+.admin-bundle {
+  margin-top: 0.6rem;
+}
+
+.admin-bundle p {
+  margin: 0;
+}
+
+.admin-bundle textarea {
+  margin: 0.4rem 0;
+  font-size: 0.8rem;
+}
+
+/* The small forms that change an account's plan or role, inside a panel. */
+.admin-change .field {
+  margin: 0.6rem 0;
+}
+
+.admin-change .alert {
+  margin: 0.6rem 0;
+}
+
+.admin-change .check {
+  margin-right: 1.2rem;
 }
 
 /* The tones the console's statuses and roles need. */

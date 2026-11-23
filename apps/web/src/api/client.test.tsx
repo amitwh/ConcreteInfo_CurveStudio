@@ -146,6 +146,52 @@ describe("401 refresh handling", () => {
     const calls = fetchMock.mock.calls.map(([u]) => String(u));
     expect(calls).toEqual([`${API_BASE}/auth/refresh`]);
   });
+
+  it("a 401 with no stored refresh token does not block the next refresh in the same tab", async () => {
+    // Signed out, a late request is refused: there is nothing to refresh with.
+    fetchMock.mockResolvedValue(
+      jsonResponse(401, { error: "UNAUTHORIZED", message: "not authenticated", detail: {} }),
+    );
+    await expect(api.request("/me")).rejects.toMatchObject({ status: 401 });
+
+    // Signed in again without a reload; the access token then expires.
+    api.setTokens("a1", "r1");
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith("/auth/refresh")) {
+        return jsonResponse(200, { access_token: "a2", refresh_token: "r2" });
+      }
+      if (bearer(init) === "Bearer a2") return jsonResponse(200, []);
+      return jsonResponse(401, { error: "UNAUTHORIZED", message: "expired", detail: {} });
+    });
+    await expect(api.request("/datasets")).resolves.toEqual([]);
+  });
+
+  it("resetForTests forgets a refresh still in flight", async () => {
+    const UNAUTHORIZED = { error: "UNAUTHORIZED", message: "expired", detail: {} };
+    api.setTokens("a1", "r1");
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      // The first session's refresh never answers.
+      if (String(input).endsWith("/auth/refresh")) return new Promise<Response>(() => {});
+      return jsonResponse(401, UNAUTHORIZED);
+    });
+    void api.request("/datasets").catch(() => undefined);
+    await vi.waitFor(() =>
+      expect(fetchMock.mock.calls.filter(([u]) => String(u).endsWith("/auth/refresh"))).toHaveLength(1),
+    );
+
+    api.resetForTests();
+    api.setTokens("b1", "r9");
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith("/auth/refresh")) {
+        return jsonResponse(200, { access_token: "b2", refresh_token: "r10" });
+      }
+      if (bearer(init) === "Bearer b2") return jsonResponse(200, ["fresh"]);
+      return jsonResponse(401, UNAUTHORIZED);
+    });
+    // The next session's 401 starts a refresh of its own instead of waiting on the old one.
+    await expect(api.request("/models")).resolves.toEqual(["fresh"]);
+    expect(localStorage.getItem("curvestudio.refresh")).toBe("r10");
+  });
 });
 
 describe("login and register store tokens (the register → login → me flow)", () => {
@@ -485,5 +531,116 @@ describe("onServerError (a 5xx is handed to the error reporter before the error 
       { status: 500, url, requestId: "req-dl" },
       "/fits/f1/export",
     );
+  });
+});
+
+describe("api.text (a body that is a document, not JSON)", () => {
+  const BUNDLE = "/admin/errors/e1/bundle";
+  const DOCUMENT = "# Error event\n\n| Field | Value |\n| --- | --- |\n| Id | e1 |\n";
+
+  function textResponse(status: number, body: string): Response {
+    return new Response(body, { status, headers: { "content-type": "text/markdown" } });
+  }
+
+  /** The method and bearer of the requests that reached `path`. */
+  function sentTo(path: string): Array<{ method: string; auth: string | null }> {
+    return fetchMock.mock.calls
+      .filter(([url]) => String(url) === `${API_BASE}${path}`)
+      .map(([, init]) => ({ method: init?.method ?? "GET", auth: bearer(init) }));
+  }
+
+  it("returns the body as text, unparsed", async () => {
+    fetchMock.mockResolvedValue(textResponse(200, DOCUMENT));
+    await expect(api.text(BUNDLE)).resolves.toBe(DOCUMENT);
+    expect(sentTo(BUNDLE)).toEqual([{ method: "GET", auth: null }]);
+  });
+
+  it("sends the bearer token", async () => {
+    api.setTokens("a1", "r1");
+    fetchMock.mockResolvedValue(textResponse(200, DOCUMENT));
+    await api.text(BUNDLE);
+    expect(sentTo(BUNDLE)).toEqual([{ method: "GET", auth: "Bearer a1" }]);
+  });
+
+  it("refreshes once on a 401 and then returns the text", async () => {
+    api.setTokens("a1", "r1");
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/auth/refresh")) {
+        return jsonResponse(200, { access_token: "a2", refresh_token: "r2" });
+      }
+      if (bearer(init) === "Bearer a2") return textResponse(200, DOCUMENT);
+      return jsonResponse(401, { error: "UNAUTHORIZED", message: "expired", detail: {} });
+    });
+    await expect(api.text(BUNDLE)).resolves.toBe(DOCUMENT);
+    const refreshes = fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/auth/refresh"));
+    expect(refreshes).toHaveLength(1);
+    expect(sentTo(BUNDLE)).toEqual([
+      { method: "GET", auth: "Bearer a1" },
+      { method: "GET", auth: "Bearer a2" },
+    ]);
+  });
+
+  it("throws the 401 when the refresh token is rejected", async () => {
+    api.setTokens("a1", "r1");
+    fetchMock.mockResolvedValue(
+      jsonResponse(401, { error: "UNAUTHORIZED", message: "revoked", detail: {} }),
+    );
+    const err = await api.text(BUNDLE).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err).toMatchObject({ status: 401, code: "UNAUTHORIZED", message: "revoked" });
+    expect(localStorage.getItem("curvestudio.refresh")).toBeNull();
+  });
+
+  it("throws the usual ApiError for other failures", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(404, {
+        error: "NOT_FOUND",
+        message: "error event not found",
+        detail: { code: "NOT_FOUND" },
+      }),
+    );
+    const err = await api.text("/admin/errors/nope/bundle").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err).toMatchObject({
+      status: 404,
+      code: "NOT_FOUND",
+      message: "error event not found",
+      detail: { code: "NOT_FOUND" },
+    });
+  });
+
+  it("reports a network failure as NETWORK, like request", async () => {
+    fetchMock.mockRejectedValue(new TypeError("fetch failed"));
+    const err = await api.text(BUNDLE).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err).toMatchObject({ status: 0, code: "NETWORK" });
+  });
+
+  it("hands a 5xx to the error reporter before the error is thrown", async () => {
+    const onServerError = vi.fn();
+    api.onServerError = onServerError;
+    const url = `${API_BASE}${BUNDLE}`;
+    const answer = jsonResponse(500, {
+      error: "INTERNAL_ERROR",
+      message: "the server tripped",
+      detail: {},
+    });
+    Object.defineProperty(answer, "url", { value: url });
+    fetchMock.mockResolvedValue(answer);
+    await expect(api.text(BUNDLE)).rejects.toMatchObject({ status: 500 });
+    expect(onServerError).toHaveBeenCalledWith({ status: 500, url, requestId: null }, BUNDLE);
+  });
+
+  it("resetForTests leaves nothing behind: the next call carries no token", async () => {
+    api.setTokens("a1", "r1");
+    // A body can be read once, so each call gets a Response of its own.
+    fetchMock.mockImplementation(async () => textResponse(200, DOCUMENT));
+    await api.text(BUNDLE);
+    api.resetForTests();
+    fetchMock.mockClear();
+    await api.text(BUNDLE);
+    expect(sentTo(BUNDLE)).toEqual([{ method: "GET", auth: null }]);
+    expect(api.refreshToken).toBeNull();
   });
 });
