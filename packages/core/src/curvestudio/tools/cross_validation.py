@@ -17,6 +17,7 @@ from curvestudio.statistics import (
     k_fold_cv,
     loo_cv,
 )
+from curvestudio.tools._common import require_matching_spec
 from curvestudio.tools._errors import ToolError
 from curvestudio.workflow import FitBundle, FitSpec, WorkflowError, fitter_for, snapshot_xy
 
@@ -59,14 +60,16 @@ def cross_validate(
         each fold and the pooled one, with every failed fold counted and named.
 
     Raises:
-        ToolError: ``FIT_NOT_CONVERGED_INPUT`` for a fit that did not converge;
-            ``DATA_REQUIRED`` for a compact bundle without ``data``; ``INVALID_FOLDS`` for
-            a count below 2 or above the number of active points, or for ``"loo"`` above
-            ``LOO_MAX_N``; and, with its own code, anything the workflow refuses in the
-            specification (``INVALID_SPEC``, ``UNKNOWN_MODEL``, ...) or the core in the
-            settings (``INVALID_SEED``, ...).
+        ToolError: ``MODEL_MISMATCH`` for a specification that is not the one the fit was
+            computed with (it is checked before anything else); ``FIT_NOT_CONVERGED_INPUT``
+            for a fit that did not converge; ``DATA_REQUIRED`` for a compact bundle without
+            ``data``; ``INVALID_FOLDS`` for a count below 2 or above the number of active
+            points, or for ``"loo"`` above ``LOO_MAX_N``; and, with its own code, anything
+            the workflow refuses in the specification (``INVALID_SPEC``, ``UNKNOWN_MODEL``,
+            ...) or the core in the settings (``INVALID_SEED``, ...).
     """
     result = bundle.result
+    require_matching_spec(result, spec)
     if result.status is not FitStatus.CONVERGED:
         raise ToolError(
             "FIT_NOT_CONVERGED_INPUT",

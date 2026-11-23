@@ -26,6 +26,7 @@ from curvestudio.workflow import (
     RegisteredRef,
     WorkflowError,
     bundle_for_candidate,
+    check_spec,
     fit_dataset,
     fit_view,
     fitter_for,
@@ -257,12 +258,48 @@ def test_fitter_for_gives_a_polynomial_through_the_origin_its_own_fitter() -> No
     assert k_fold_cv(data, fitter).status == "ok"
 
 
-def test_the_bridge_is_exported() -> None:
-    from curvestudio.workflow import fit_view, fitter_for, snapshot_xy
+def test_check_spec_raises_what_predict_raises_for_a_mismatched_spec() -> None:
+    refusals = [
+        (bundle, spec) for code, _, bundle, spec, _ in _refusals() if code == "MODEL_MISMATCH"
+    ]
+    assert len(refusals) == 2
+    for bundle, spec in refusals:
+        with pytest.raises(WorkflowError) as refused:
+            predict(bundle, spec, [1.0])
+        with pytest.raises(WorkflowError) as checked:
+            check_spec(bundle.result, spec)
+        assert (checked.value.code, checked.value.message) == (
+            refused.value.code,
+            refused.value.message,
+        )
 
-    assert (fitter_for, fit_view, snapshot_xy) == (
+    # the fit's own specification gives the model the fit used: none for a polynomial
+    polynomial = fit_dataset(quadratic_xy(), poly_spec(2)).result
+    assert check_spec(polynomial, poly_spec(2)) is None
+    exponential = fit_dataset(exponential_xy(), EXPONENTIAL).result
+    model = check_spec(exponential, EXPONENTIAL)
+    assert model is not None and model.id == "exp_growth"
+
+    # a specification that cannot be resolved is the workflow's own refusal, not a mismatch
+    with pytest.raises(WorkflowError) as caught:
+        check_spec(exponential, FitSpec(model=RegisteredRef(id="no_such_model")))
+    assert caught.value.code == "UNKNOWN_MODEL"
+
+    # a polynomial through the origin is a polynomial of its degree to a specification
+    origin, _ = _origin_bundle()
+    assert check_spec(origin.result, poly_spec(2)) is None
+    with pytest.raises(WorkflowError) as caught:
+        check_spec(origin.result, poly_spec(3))
+    assert caught.value.code == "MODEL_MISMATCH"
+
+
+def test_the_bridge_is_exported() -> None:
+    from curvestudio.workflow import check_spec, fit_view, fitter_for, snapshot_xy
+
+    assert (check_spec, fitter_for, fit_view, snapshot_xy) == (
+        service.check_spec,
         service.fitter_for,
         service.fit_view,
         service.snapshot_xy,
     )
-    assert {"fitter_for", "fit_view", "snapshot_xy"} <= set(workflow.__all__)
+    assert {"check_spec", "fitter_for", "fit_view", "snapshot_xy"} <= set(workflow.__all__)

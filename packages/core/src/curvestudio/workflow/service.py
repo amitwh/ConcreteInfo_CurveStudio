@@ -1,7 +1,8 @@
 """``fit_dataset`` and ``predict``: the numbers both the desktop app and the API show.
 
-``snapshot_xy``, ``fit_view`` and ``fitter_for`` open a stored fit to the tools layer
-(``curvestudio.tools``): its data, its view and the fitter that refits it.
+``snapshot_xy``, ``fit_view``, ``fitter_for`` and ``check_spec`` open a stored fit to the
+tools layer (``curvestudio.tools``): its data, its view, the fitter that refits it, and the
+check that a specification is the one it was computed with.
 
 Configuration mistakes (unknown model, impossible method/loss/bounds, a bad equation)
 raise :class:`WorkflowError`. Numerical outcomes never raise: a fit that does not
@@ -448,7 +449,18 @@ def _bands(view: FitView, grid: FloatArray) -> tuple[Band | None, Band | None, s
 # -- prediction ------------------------------------------------------------------------------------
 
 
-def _check_spec_matches(result: FitResult, spec: FitSpec) -> ModelSpec | None:
+def check_spec(result: FitResult, spec: FitSpec) -> ModelSpec | None:
+    """Check that ``spec`` is the specification ``result`` was computed with.
+
+    Returns the model the fit used, or ``None`` for a polynomial. A polynomial through the
+    origin (Auto-fit's ``polyN_origin``) matches a polynomial of its degree: a specification
+    cannot ask for one, and the stored fit is what says so.
+
+    Raises:
+        WorkflowError: ``MODEL_MISMATCH`` when the fit is another model than ``spec`` asks
+            for; ``UNKNOWN_MODEL`` / ``INVALID_EQUATION`` for a ``spec`` that cannot be
+            resolved.
+    """
     ref = spec.model
     is_polynomial_result = _POLYNOMIAL_ID.fullmatch(result.model_id) is not None
     if isinstance(ref, PolynomialRef):
@@ -502,7 +514,7 @@ def _view_of(result: FitResult, spec: FitSpec, xy: XY) -> FitView:
             "FIT_NOT_CONVERGED",
             f"cannot predict from a {result.status.value} fit ({result.termination_reason})",
         )
-    model = _check_spec_matches(result, spec)
+    model = check_spec(result, spec)
     try:
         return build_view(xy, result, model)
     except StatisticsError as exc:

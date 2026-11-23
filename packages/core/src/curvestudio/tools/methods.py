@@ -20,7 +20,7 @@ from pydantic import BaseModel, ConfigDict
 
 import curvestudio
 from curvestudio.fitting import FitResult, FitStatus
-from curvestudio.tools._common import split_rows
+from curvestudio.tools._common import require_matching_spec, split_rows
 from curvestudio.tools._errors import ToolError
 from curvestudio.tools._methods_numbers import (
     VALUE_DIGITS,
@@ -437,11 +437,14 @@ def methods_text(
         and what is missing.
 
     Raises:
-        ToolError: ``FIT_NOT_CONVERGED_INPUT`` for a fit that did not converge: there are no
-            estimates to report. ``INVALID_LEVEL`` for a ``level`` outside 0 and 1, and
-            ``NO_STATISTICS`` for a fit that carries none.
+        ToolError: ``MODEL_MISMATCH`` for a specification that is not the one the fit was
+            computed with (it is checked before anything else). ``FIT_NOT_CONVERGED_INPUT``
+            for a fit that did not converge: there are no estimates to report.
+            ``INVALID_LEVEL`` for a ``level`` outside 0 and 1, and ``NO_STATISTICS`` for a
+            fit that carries none.
     """
     result = bundle.result
+    require_matching_spec(result, spec)
     if result.status is not FitStatus.CONVERGED:
         raise ToolError(
             "FIT_NOT_CONVERGED_INPUT",

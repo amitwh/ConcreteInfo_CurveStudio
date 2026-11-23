@@ -16,6 +16,7 @@ from curvestudio.statistics import PolynomialFitter, k_fold_cv, loo_cv
 from curvestudio.tools import ToolError, Verdict, audit_fit, cross_validate
 from curvestudio.tools import cross_validation as cross_validation_module
 from curvestudio.workflow import (
+    CustomRef,
     FitBundle,
     FitSpec,
     PolynomialRef,
@@ -29,6 +30,9 @@ from curvestudio.workflow.bundle import COMPACT_MAX_POINTS
 QUADRATIC = FitSpec(model=PolynomialRef(degree=2))
 LINE = FitSpec(model=PolynomialRef(degree=1))
 NINTH = FitSpec(model=PolynomialRef(degree=9))
+GROWTH = FitSpec(model=RegisteredRef(id="exp_growth"))
+UNIDENTIFIABLE = FitSpec(model=CustomRef(equation="a*x + b*x", parameters=["a", "b"]))
+"""The specification of ``Scenarios.non_converged``, which the fit recorded."""
 
 
 def _xy(
@@ -158,10 +162,42 @@ def test_cross_validation_is_reproducible_and_loo_runs(scenarios) -> None:
     assert cross_validate(bundle, spec, seed=5) == k_fold_cv(data, fitter, folds=5, seed=5)
 
 
+def test_cross_validation_refuses_a_specification_that_is_not_the_fit_s(scenarios) -> None:
+    xy = scenarios.quadratic_xy(40, seed=0)
+    bundle = fit_dataset(xy, QUADRATIC)
+    x = np.linspace(0.0, 3.0, 30)
+    noise = np.random.default_rng(0).normal(0.0, 0.05, 30)
+    grown = fit_dataset(_xy(x, 2.0 * np.exp(0.4 * x) + noise, tag="growth"), GROWTH)
+    assert grown.result.status.value == "converged"
+    for fitted, foreign in (
+        (bundle, FitSpec(model=PolynomialRef(degree=3))),
+        (grown, FitSpec(model=RegisteredRef(id="gaussian"))),
+    ):
+        with pytest.raises(ToolError) as caught:
+            cross_validate(fitted, foreign)
+        assert caught.value.code == "MODEL_MISMATCH"
+        assert "MODEL_MISMATCH" in str(caught.value)
+    # its own specification is accepted
+    assert cross_validate(grown, GROWTH).status == "ok"
+
+    # the check comes first: a fit that did not converge is refused for its own specification
+    # only, and for a foreign one as a mismatch
+    with pytest.raises(ToolError) as caught:
+        cross_validate(scenarios.non_converged(), QUADRATIC)
+    assert caught.value.code == "MODEL_MISMATCH"
+    with pytest.raises(ToolError) as caught:
+        cross_validate(scenarios.non_converged(), UNIDENTIFIABLE)
+    assert caught.value.code == "FIT_NOT_CONVERGED_INPUT"
+
+    # a polynomial through the origin is a polynomial of its degree to a specification
+    origin, _ = _origin_bundle()
+    assert cross_validate(origin, QUADRATIC).status == "ok"
+
+
 def test_cross_validation_refuses_what_it_cannot_use(scenarios, monkeypatch) -> None:
     # a fit that did not converge has no model to refit
     with pytest.raises(ToolError) as caught:
-        cross_validate(scenarios.non_converged(), LINE)
+        cross_validate(scenarios.non_converged(), UNIDENTIFIABLE)
     assert caught.value.code == "FIT_NOT_CONVERGED_INPUT"
 
     # a compact bundle holds a subsample: it needs the full data, and then gives the same

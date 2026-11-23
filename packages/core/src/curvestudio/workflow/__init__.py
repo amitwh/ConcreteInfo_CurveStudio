@@ -25,7 +25,14 @@ from curvestudio.workflow.dataset_import import (
     import_dataset,
 )
 from curvestudio.workflow.errors import WorkflowError
-from curvestudio.workflow.service import fit_dataset, fit_view, fitter_for, predict, snapshot_xy
+from curvestudio.workflow.service import (
+    check_spec,
+    fit_dataset,
+    fit_view,
+    fitter_for,
+    predict,
+    snapshot_xy,
+)
 from curvestudio.workflow.spec import CustomRef, FitSpec, ModelRef, PolynomialRef, RegisteredRef
 
 __all__ = [
@@ -47,6 +54,7 @@ __all__ = [
     "RegisteredRef",
     "WorkflowError",
     "bundle_for_candidate",
+    "check_spec",
     "fit_dataset",
     "fit_view",
     "fitter_for",

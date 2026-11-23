@@ -1,7 +1,8 @@
 """What the checks share: what they read, the record that runs one, and readers of numbers.
 
 The readers look up what the fitting core already computed (a diagnostic test, the summary's
-reason for being absent, the rows a fit used) so that no check recomputes it.
+reason for being absent, the rows a fit used) so that no check recomputes it. The tools also
+share here the refusal of a specification that is not the one the fit was computed with.
 """
 
 import math
@@ -12,10 +13,11 @@ from curvestudio.diagnostics import DiagnosticTest, FitReport
 from curvestudio.discovery import AutoFitResult, RankedFit
 from curvestudio.fitting import FitResult
 from curvestudio.statistics import CrossValidation
+from curvestudio.tools._errors import ToolError
 from curvestudio.tools._thresholds import EXACT_FIT_RATIO, OFFSET_FLOOR_RATIO
 from curvestudio.tools._types import AuditCheck, ExcludedRow, Verdict
 from curvestudio.tools._wording import capped
-from curvestudio.workflow import DataSnapshot, FitBundle, FitSpec
+from curvestudio.workflow import DataSnapshot, FitBundle, FitSpec, WorkflowError, check_spec
 
 
 @dataclass(frozen=True)
@@ -153,3 +155,22 @@ def split_rows(data: DataSnapshot) -> tuple[tuple[ExcludedRow, ...], list[int]]:
         else:
             active.append(row)
     return tuple(excluded), active
+
+
+def require_matching_spec(result: FitResult, spec: FitSpec | None) -> None:
+    """Refuse a specification that is not the one ``result`` was computed with.
+
+    Does nothing without a specification. The rule is the workflow's own
+    (:func:`~curvestudio.workflow.check_spec`), the one :func:`~curvestudio.workflow.predict`
+    holds every specification to.
+
+    Raises:
+        ToolError: the workflow's code (``MODEL_MISMATCH``, ``UNKNOWN_MODEL``,
+            ``INVALID_EQUATION``) with its message.
+    """
+    if spec is None:
+        return
+    try:
+        check_spec(result, spec)
+    except WorkflowError as exc:
+        raise ToolError(exc.code, exc.message) from exc

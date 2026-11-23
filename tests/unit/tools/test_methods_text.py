@@ -507,6 +507,31 @@ def test_the_methods_text_names_what_the_author_must_complete() -> None:
         text.paragraph = "changed"  # type: ignore[misc]
 
 
+def test_methods_text_refuses_a_specification_that_is_not_the_fit_s() -> None:
+    clean = fit_dataset(quadratic_xy(), QUADRATIC)
+    grown = fit_dataset(growth_xy(), GROWTH)
+    for bundle, foreign in (
+        (clean, FitSpec(model=PolynomialRef(degree=3))),
+        (grown, FitSpec(model=RegisteredRef(id="gaussian"))),
+    ):
+        for write in (methods_text, all_methods_texts):
+            with pytest.raises(ToolError) as caught:
+                write(bundle, spec=foreign)
+            assert caught.value.code == "MODEL_MISMATCH"
+            assert "MODEL_MISMATCH" in str(caught.value)
+
+    # without a specification nothing is compared: the text is what it was
+    unannotated = methods_text(clean)
+    assert "A polynomial of degree 2 was fitted" in unannotated.paragraph
+    assert codes(unannotated) == ["NO_SPEC"]
+
+    # a polynomial through the origin is a polynomial of its degree to a specification
+    origin, _ = _origin_bundle()
+    assert methods_text(origin, spec=QUADRATIC).paragraph.startswith(
+        "A polynomial of degree 2 through the origin was fitted"
+    )
+
+
 def test_a_fit_that_did_not_converge_is_refused(scenarios) -> None:
     bundle = scenarios.non_converged()
     for call in (methods_text, all_methods_texts):
