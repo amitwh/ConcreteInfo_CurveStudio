@@ -117,7 +117,8 @@ research ones" test; each maps to families that exist in the catalogue today.
 
 ## Claims that are not yet fully backed
 
-- "~200 models" and "174 candidates" have no pinning test today; Task 3 adds the
+- "174 candidates" is the gallery demo run's candidate count and has no pinning test;
+- "~200 models" is pinned by tests/api/test_api_platform.py::test_catalogue_size_backs_the_home_page_claim,
   catalogue and candidate-count tests in `apps/web/src/api` and this file should then
   point at them instead of this note.
 - "6 export formats", the requirements row "Publish and archive" and the FAQ export
