@@ -25,6 +25,8 @@ export interface FitReportMeta {
   version: string;
   /** One timestamp for the page and the file name (tests pass a fixed value). */
   generatedAt?: Date;
+  /** Who prepared the report: printed as "Prepared by …" and stored as the PDF's author. */
+  byline?: string | null;
 }
 
 function isDefined(value: number | null | undefined): value is number {
@@ -159,6 +161,7 @@ export function reportModel(bundle: FitBundle, meta: FitReportMeta): FitReportMo
   return {
     title: "Fit report",
     subtitle: `${datasetName} — ${result.model_id}`,
+    byline: meta.byline?.trim() || null,
     statusLabel: statusLabel(result.status),
     converged,
     generatedAt: istTimestamp(meta.generatedAt ?? new Date()),

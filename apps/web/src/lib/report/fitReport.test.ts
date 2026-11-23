@@ -184,6 +184,19 @@ describe("reportModel — metadata fallbacks", () => {
   });
 });
 
+describe("reportModel — prepared-by line", () => {
+  it("passes a byline through, trimmed", () => {
+    expect(reportModel(convergedBundle(), { ...META, byline: "  Alice  " }).byline).toBe("Alice");
+  });
+
+  it("treats a missing or blank byline as none", () => {
+    expect(reportModel(convergedBundle(), META).byline).toBeNull();
+    for (const byline of [null, "", "   "]) {
+      expect(reportModel(convergedBundle(), { ...META, byline }).byline).toBeNull();
+    }
+  });
+});
+
 describe("report file name", () => {
   it("is a sanitised model id plus an IST timestamp", () => {
     expect(reportFileName("Exp Decay/v2", new Date("2026-11-22T08:35:00Z"))).toBe(

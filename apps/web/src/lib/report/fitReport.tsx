@@ -32,6 +32,8 @@ export interface ReportParameter {
 export interface FitReportModel {
   title: string;
   subtitle: string;
+  /** Who prepared the report: printed as "Prepared by …" and stored as the author. */
+  byline: string | null;
   statusLabel: string;
   converged: boolean;
   generatedAt: string;
@@ -171,6 +173,11 @@ const styles = StyleSheet.create({
     fontSize: 9.5,
     color: MUTED,
     marginTop: 5,
+  },
+  byline: {
+    fontSize: 9.5,
+    color: MUTED,
+    marginTop: 4,
   },
   generated: {
     fontSize: 7.5,
@@ -387,7 +394,7 @@ export function FitReport({
   return (
     <Document
       title={`${report.title} — ${report.subtitle}`}
-      author="CurveStudio (ConcreteInfo)"
+      author={report.byline ?? "CurveStudio (ConcreteInfo)"}
       creator="CurveStudio"
       subject="Curve fit report: equation, parameters, statistics and chart"
       keywords="curve fit, regression, parameters, statistics, CurveStudio"
@@ -413,6 +420,9 @@ export function FitReport({
         <View fixed style={styles.headerRule} />
 
         <Text style={styles.title}>{report.title}</Text>
+        {report.byline !== null && (
+          <Text style={styles.byline}>Prepared by {report.byline}</Text>
+        )}
         <Text style={styles.subtitle}>{report.subtitle}</Text>
         <Text style={styles.generated}>
           {`Generated ${report.generatedAt} IST · CurveStudio v${report.version}`}
