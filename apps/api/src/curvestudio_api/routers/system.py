@@ -91,8 +91,14 @@ def _me_out(db: Session, ctx: Ctx, user: User) -> MeOut:
             report_byline=preferences["report_byline"],
         ),
         last_login_at=user.last_login_at,
-        plan=PlanOut(name=plan.name, **asdict(limits)),
-        usage=UsageOut(**asdict(used)),
+        plan=PlanOut(
+            name=plan.name,
+            **asdict(limits),
+            max_autofits_per_day=quotas.autofits_per_day_limit(
+                db, ctx.settings, user.plan_override
+            ),
+        ),
+        usage=UsageOut(**asdict(used), autofits_today=quotas.autofit_runs_today(db, user.id)),
     )
 
 

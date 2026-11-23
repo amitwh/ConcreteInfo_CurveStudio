@@ -199,12 +199,17 @@ class PlanOut(BaseModel):
     max_datasets: int
     max_dataset_bytes: int
     max_fits: int
+    # Reported beside the three limits above, which come from the plan row; this one also
+    # comes from a setting, so the handler fills it in.
+    max_autofits_per_day: int
 
 
 class UsageOut(BaseModel):
     datasets: int
     dataset_bytes: int
     fits: int
+    # Auto-fit runs started today (IST), the count the daily allowance is compared with.
+    autofits_today: int
 
 
 class PreferencesOut(BaseModel):

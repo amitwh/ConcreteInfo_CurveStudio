@@ -148,6 +148,29 @@ def autofits_per_day_limit(db: Session, settings: Settings, override: str | None
     return value if isinstance(value, int) and value > 0 else DEFAULT_MAX_AUTOFITS_PER_DAY
 
 
+def autofit_runs_today(db: Session, user_id: uuid.UUID, now: datetime | None = None) -> int:
+    """Auto-fit runs the user has started in the IST calendar day.
+
+    This is the number ``check_autofit_runs`` compares with the allowance, so a page that shows
+    it beside the limit never disagrees with the refusal. Every run counts, including
+    cancelled and failed ones.
+    """
+    current = (now or utcnow()).astimezone(IST)
+    day_start = current.replace(hour=0, minute=0, second=0, microsecond=0)
+    # Audit rows, not Job rows: deleting a dataset cascades its jobs away, which would
+    # otherwise reset the day's allowance.
+    return int(
+        db.scalar(
+            select(func.count(AuditLog.id)).where(
+                AuditLog.user_id == user_id,
+                AuditLog.action == "autofit.submit",
+                AuditLog.created_at >= day_start,
+            )
+        )
+        or 0
+    )
+
+
 def check_autofit_runs(
     db: Session, settings: Settings, user_id: uuid.UUID, now: datetime | None = None
 ) -> None:
@@ -162,18 +185,7 @@ def check_autofit_runs(
     current = (now or utcnow()).astimezone(IST)
     day_start = current.replace(hour=0, minute=0, second=0, microsecond=0)
     limit = autofits_per_day_limit(db, settings, _plan_override(db, user_id))
-    used = (
-        db.scalar(
-            # Audit rows, not Job rows: deleting a dataset cascades its jobs away, which
-            # would otherwise reset the day's allowance.
-            select(func.count(AuditLog.id)).where(
-                AuditLog.user_id == user_id,
-                AuditLog.action == "autofit.submit",
-                AuditLog.created_at >= day_start,
-            )
-        )
-        or 0
-    )
+    used = autofit_runs_today(db, user_id, now)
     if used + 1 > limit:
         retry_after = max(1, int((day_start + timedelta(days=1) - current).total_seconds()))
         raise ApiError(

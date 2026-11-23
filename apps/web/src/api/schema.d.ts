@@ -1838,6 +1838,8 @@ export interface components {
         };
         /** PlanOut */
         PlanOut: {
+            /** Max Autofits Per Day */
+            max_autofits_per_day: number;
             /** Max Dataset Bytes */
             max_dataset_bytes: number;
             /** Max Datasets */
@@ -2217,6 +2219,8 @@ export interface components {
         };
         /** UsageOut */
         UsageOut: {
+            /** Autofits Today */
+            autofits_today: number;
             /** Dataset Bytes */
             dataset_bytes: number;
             /** Datasets */

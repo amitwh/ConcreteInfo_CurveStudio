@@ -20,6 +20,7 @@ from curvestudio_api.housekeeping import purge
 from curvestudio_api.migrations import _config, upgrade_to_head
 from curvestudio_api.orm import AuditLog, Dataset, Fit, Job, Plan, RefreshToken, User
 from curvestudio_api.quotas import autofits_per_day_limit, resolve_plan, set_plan_override
+from curvestudio_api.settings import Settings
 from curvestudio_api.timeutil import utcnow
 
 API = "/api/v1"
@@ -38,13 +39,39 @@ def test_me_reports_the_plan_and_usage(shared_client: TestClient) -> None:
         "max_datasets": 200,
         "max_dataset_bytes": 500_000_000,
         "max_fits": 2000,
+        "max_autofits_per_day": 100,
     }
-    assert empty["usage"] == {"datasets": 0, "dataset_bytes": 0, "fits": 0}
+    assert empty["usage"] == {"datasets": 0, "dataset_bytes": 0, "fits": 0, "autofits_today": 0}
     upload(shared_client, headers, linear_csv(30))
     used = shared_client.get(f"{API}/me", headers=headers).json()["usage"]
     assert used["datasets"] == 1
     assert used["dataset_bytes"] > 100
     assert used["fits"] == 0
+
+
+def test_me_counts_the_days_autofit_runs_against_the_plan_limit(
+    client_factory: Callable[..., TestClient], settings_factory: Callable[..., Settings]
+) -> None:
+    """The profile shows today's Auto-fit runs beside the plan's daily allowance: the same
+    count the endpoint that refuses a run compares, and only today's (IST) rows."""
+    client = client_factory(settings_factory(quota_max_autofits_per_day=3))
+    headers = signup(client)
+    account_id = user_id(client, headers)
+    with client.app.state.ctx.session_factory() as db:  # type: ignore[attr-defined]
+        for started_at in (utcnow(), utcnow(), utcnow() - timedelta(days=1)):
+            db.add(
+                AuditLog(
+                    user_id=account_id,
+                    action="autofit.submit",
+                    entity="job",
+                    created_at=started_at,
+                )
+            )
+        db.commit()
+
+    body = client.get(f"{API}/me", headers=headers).json()
+    assert body["plan"]["max_autofits_per_day"] == 3
+    assert body["usage"]["autofits_today"] == 2
 
 
 def test_dataset_count_quota(

@@ -2665,6 +2665,10 @@
       },
       "PlanOut": {
         "properties": {
+          "max_autofits_per_day": {
+            "title": "Max Autofits Per Day",
+            "type": "integer"
+          },
           "max_dataset_bytes": {
             "title": "Max Dataset Bytes",
             "type": "integer"
@@ -2686,7 +2690,8 @@
           "name",
           "max_datasets",
           "max_dataset_bytes",
-          "max_fits"
+          "max_fits",
+          "max_autofits_per_day"
         ],
         "title": "PlanOut",
         "type": "object"
@@ -3632,6 +3637,10 @@
       },
       "UsageOut": {
         "properties": {
+          "autofits_today": {
+            "title": "Autofits Today",
+            "type": "integer"
+          },
           "dataset_bytes": {
             "title": "Dataset Bytes",
             "type": "integer"
@@ -3648,7 +3657,8 @@
         "required": [
           "datasets",
           "dataset_bytes",
-          "fits"
+          "fits",
+          "autofits_today"
         ],
         "title": "UsageOut",
         "type": "object"
