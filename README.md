@@ -1,14 +1,14 @@
 # CurveStudio
 
-**Free, open-source curve fitting and engineering analysis. An alternative to CurveExpert.**
+**Free and open-source curve fitting and statistics for research. An alternative to CurveExpert.**
 
 [![CI](https://github.com/amitwh/ConcreteInfo_CurveStudio/actions/workflows/ci.yml/badge.svg)](https://github.com/amitwh/ConcreteInfo_CurveStudio/actions/workflows/ci.yml)
 [![Licence: AGPL v3+](https://img.shields.io/badge/licence-AGPL--3.0--or--later-blue.svg)](LICENSE)
 
-CurveStudio fits mathematical models to experimental data, ranks the candidates from best to worst with their equations and R², and reports the statistics you need to judge a fit. It is built for researchers, engineers, laboratories and students, with a particular focus on civil and concrete-materials engineering.
+CurveStudio fits mathematical models to experimental data, ranks the candidates from best to worst with their equations and R², and reports the statistics you need to judge a fit. It is built for researchers, laboratory analysts, engineers, lecturers and students.
 
 > [!NOTE]
-> **Status: public beta (v0.9).** The web app is live at **https://curvestudio.concreteinfo.cloud** and the desktop app builds from this repository. Auto-fit, the 190+ model library (including concrete and civil-engineering models), custom equations, statistics and diagnostics, `.cstudio` projects and PDF/XLSX/CSV/JSON reports are implemented and tested. It has not yet been used for real analyses by many people, so check important results independently.
+> **Status: public beta (v0.11.1).** The web app is live at **https://curvestudio.concreteinfo.cloud** and the desktop app builds from this repository. Auto-fit, the 200-model library, custom equations, e-mail and social sign-in, statistics and diagnostics, `.cstudio` projects and PDF/XLSX/CSV/JSON reports are implemented and tested. It has not yet been used for real analyses by many people, so check important results independently.
 >
 > **Numerical validation:** nonlinear single-start fits against the 12 NIST problems converge correctly on 23 of 24 starts (the other, MGH09 start 1, reports NOT_CONVERGED rather than a wrong answer), with zero wrong-but-CONVERGED results; linear problems pass 5/5; every library model recovers its own parameters from noiseless data. Full tables: [`tests/numerical/VALIDATION.md`](tests/numerical/VALIDATION.md), [`tests/numerical/LIBRARY.md`](tests/numerical/LIBRARY.md) and [`tests/numerical/AUTOFIT.md`](tests/numerical/AUTOFIT.md).
 
@@ -16,7 +16,7 @@ CurveStudio fits mathematical models to experimental data, ranks the candidates 
 
 - **Auto-fit.** One click fits every applicable model and lists the converged fits from best to worst, each with its equation (fitted numbers substituted), R², adjusted R², RMSE, AICc, BIC and cross-validation error. You choose the ordering: our recommended "Best overall" (which guards against overfitting) or plain R².
 - **Honest fitting.** A fit that does not converge is reported as failed, never replaced by a plausible-looking result. Results are checked against NIST certified reference datasets.
-- **Large model library.** 150+ named models plus generated families (polynomial, rational, sums of exponentials and peaks, and more), and a growing set of concrete and civil-engineering models.
+- **Large model library.** 200 named models plus generated families (polynomial, rational, sums of exponentials and peaks, and more), including a set of engineering models.
 - **Custom equations.** Type your own equation. It is parsed into a restricted expression tree, never run through `eval`.
 - **Full statistics.** Parameter standard errors and confidence intervals, confidence and prediction bands, residual diagnostics and bootstrap uncertainty.
 - **Reproducible projects.** Portable `.cstudio` files record the original data, every cleaning step, the fit settings, random seeds and software versions.
@@ -33,7 +33,8 @@ CurveStudio fits mathematical models to experimental data, ranks the candidates 
 | Model library (190+ ids, 30+ engineering), custom equations, Auto-fit engine and CLI | Done |
 | Web app (React) and API (FastAPI) with accounts, jobs, quotas; live at curvestudio.concreteinfo.cloud | Done |
 | Desktop app (PySide6) with Auto-fit-first analysis and report export | Done; packaged builds via the release workflow |
-| Billing, OAuth login, multivariable fitting, optimisation studio | Not started |
+| OAuth sign-in (e-mail, Google, Microsoft) | Done |
+| Billing, multivariable fitting, optimisation studio | Planned |
 
 ## Free, and self-hostable
 

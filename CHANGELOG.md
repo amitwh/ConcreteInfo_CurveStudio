@@ -5,9 +5,22 @@ All notable changes are listed here. Dates are IST. Format: [Keep a Changelog](h
 ## [Unreleased]
 
 ### Changed
+- **The public surface presents CurveStudio as a scientific, research and statistical
+  tool**: the home page states who it is for, carries a research-requirements table,
+  links the owner's other open-source projects and commercial software, and drops the
+  concrete-industry framing; the README, page metadata and installed-app manifest match.
+- **The project list lives in one file** (`docs/other-projects.json`), shared by the
+  home page, both About surfaces and the footer, pinned by tests.
 - **The canonical address is https://curvestudio.concreteinfo.cloud**: the old addresses
   redirect there (see `deploy/redirect/`), and `apps/api/OAUTH_SETUP.md` gains a Microsoft
   error-code table.
+
+### Added
+- **XLSX fit reports and SVG plots on the web**: the fit export route serves
+  `format=xlsx` (reporting package, plot sheet included) and the chart panel gains
+  SVG beside PNG.
+- **Two more example datasets** beside the bundled one: a first-order decay and an
+  enzyme-kinetics set.
 
 ### Fixed
 - **The OAuth callback log names the sign-in provider's error code** (Microsoft's AADSTS
