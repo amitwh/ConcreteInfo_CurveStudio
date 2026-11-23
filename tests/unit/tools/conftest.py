@@ -155,6 +155,12 @@ class Scenarios:
         noise = np.random.default_rng(0).exponential(1.0, 40) - 1.0
         return fit(make_xy(X, CURVE + noise), self.QUADRATIC)
 
+    def large_quadratic(self, points: int = 600) -> FitBundle:
+        """A clean quadratic on many points: the core's 4/n flag then marks dozens of them."""
+        x = np.linspace(0.0, 10.0, points)
+        noise = np.random.default_rng(0).normal(0.0, 0.1, points)
+        return fit(make_xy(x, 1.0 + 0.5 * x - 0.03 * x**2 + noise), self.QUADRATIC)
+
     def heteroscedastic(self) -> FitBundle:
         noise = np.random.default_rng(0).normal(0.0, 1.0, 40) * (0.01 + 0.3 * X)
         return fit(make_xy(X, CURVE + noise), self.QUADRATIC)
@@ -256,6 +262,7 @@ class Scenarios:
             "without_summary": audit_fit(self.without_summary()),
             "skewed": audit_fit(self.skewed()),
             "heteroscedastic": audit_fit(self.heteroscedastic()),
+            "many_flagged_points": audit_fit(self.large_quadratic()),
             "one_outlier": audit_fit(self.outliers([30])),
             "three_outliers": audit_fit(self.outliers([30, 12, 25])),
             "curve_fitted_by_line": audit_fit(self.curve_fitted_by_line()),

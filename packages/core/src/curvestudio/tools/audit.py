@@ -92,6 +92,9 @@ _TREND_MIN_POINTS = 8
 """The residual-trend F test needs this many points for its denominator ``n - 3`` to say
 anything."""
 _AT_BOUND = "PARAMETER_AT_BOUND: "
+_LISTED_MAX = 8
+"""The evidence names at most this many flagged points; beyond that it gives the count of the
+rest, so a sentence stays readable however many points are flagged."""
 _POLYNOMIAL_ID = re.compile(r"poly(\d+)(_origin)?")
 """Model ids ``fit_polynomial`` writes (``poly2``, ``poly2_origin``); a polynomial has no
 bounds."""
@@ -368,14 +371,21 @@ def _is_exact(inp: _Inputs) -> bool:
     return scale > 0.0 and stats.rmse <= _EXACT_FIT_RATIO * scale
 
 
+def _capped(numbers: Sequence[str], noun: str) -> str:
+    """``rows 7 and 13``, or the first ``_LISTED_MAX`` of a longer list and how many follow."""
+    if len(numbers) <= _LISTED_MAX:
+        return _listing(numbers, noun)
+    return f"{_listing(numbers[:_LISTED_MAX], noun)}, and {len(numbers) - _LISTED_MAX} more"
+
+
 def _where(inp: _Inputs, positions: Sequence[int], points: int) -> str:
     """Where flagged points are: rows of the data when the data are the points, else positions."""
     if len(inp.active_rows) == points:
         rows = [str(inp.active_rows[position] + 1) for position in positions]
-        return _listing(rows, "row")
+        return _capped(rows, "row")
     counted = [str(position + 1) for position in positions]
     return (
-        f"{_listing(counted, 'point')}, counted from 1 among the points the fit used, in data order"
+        f"{_capped(counted, 'point')}, counted from 1 among the points the fit used, in data order"
     )
 
 

@@ -335,6 +335,23 @@ def test_zero_weight_rows_are_excluded_and_listed(scenarios) -> None:
     assert len(audit.excluded) == 6
 
 
+def test_many_flagged_points_are_counted_but_only_the_first_eight_are_listed(scenarios) -> None:
+    bundle = scenarios.large_quadratic()
+    assert bundle.summary is not None
+    flagged = bundle.summary.residuals.flagged_high_influence
+    assert len(flagged) > 8
+
+    check = _check(audit_fit(bundle), "influential_points")
+
+    assert check.verdict is Verdict.FAIL
+    assert check.evidence.startswith(f"{len(flagged)} points have a Cook's distance")
+    listed, rest = check.evidence.split(": rows ")[1].split(", and ")
+    assert len(listed.split(", ")) == 7  # "a, b, c, d, e, f, g and h": eight rows in all
+    assert rest.startswith(f"{len(flagged) - 8} more.")
+    assert check.next_step is not None
+    assert f", and {len(flagged) - 8} more. Refit without them" in check.next_step
+
+
 def test_the_audit_is_a_pure_function(scenarios) -> None:
     bundle = scenarios.clean()
     before = bundle.model_dump_json()
