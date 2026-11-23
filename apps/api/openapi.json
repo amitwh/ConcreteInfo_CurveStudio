@@ -1996,6 +1996,63 @@
         "title": "InformationCriteria",
         "type": "object"
       },
+      "InstallRecordIn": {
+        "additionalProperties": false,
+        "description": "One report from a desktop installation.",
+        "properties": {
+          "app_version": {
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "App Version",
+            "type": "string"
+          },
+          "arch": {
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Arch",
+            "type": "string"
+          },
+          "install_id": {
+            "format": "uuid",
+            "title": "Install Id",
+            "type": "string"
+          },
+          "os_name": {
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Os Name",
+            "type": "string"
+          },
+          "os_version": {
+            "maxLength": 40,
+            "title": "Os Version",
+            "type": "string"
+          },
+          "package": {
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Package",
+            "type": "string"
+          },
+          "session": {
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Session",
+            "type": "string"
+          }
+        },
+        "required": [
+          "install_id",
+          "app_version",
+          "os_version",
+          "os_name",
+          "arch",
+          "package",
+          "session"
+        ],
+        "title": "InstallRecordIn",
+        "type": "object"
+      },
       "IssueOut": {
         "properties": {
           "code": {
@@ -5134,6 +5191,41 @@
         "summary": "Health",
         "tags": [
           "system"
+        ]
+      }
+    },
+    "/api/v1/installs": {
+      "post": {
+        "description": "Store one report from a desktop installation.\n\nAnonymous: no account is looked up and no audit row is written, because the report names\nnobody and changes no account. Twenty an hour per address. The reply is always the same\nempty 204, so nothing tells whether the installation was already known.",
+        "operationId": "report_install_api_v1_installs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InstallRecordIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Report Install",
+        "tags": [
+          "installs"
         ]
       }
     },

@@ -25,6 +25,7 @@ from curvestudio_api.logging_setup import configure_logging, get_logger
 from curvestudio_api.middleware import BodyLimitMiddleware, RequestContextMiddleware
 from curvestudio_api.migrations import upgrade_to_head
 from curvestudio_api.modules import register_models
+from curvestudio_api.modules.installs import router as installs
 from curvestudio_api.ratelimit import DailyCap, SlidingWindowLimiter
 from curvestudio_api.routers import auth, autofits, datasets, fits, oauth, system
 from curvestudio_api.security import JwtKeys
@@ -119,7 +120,7 @@ def create_app(
     install_error_handlers(app)
 
     api = APIRouter(prefix=API_PREFIX)
-    for module in (system, auth, oauth, datasets, fits, autofits):
+    for module in (system, auth, oauth, datasets, fits, autofits, installs):
         api.include_router(module.router)
     app.include_router(api)
     if settings.web_dist is not None:

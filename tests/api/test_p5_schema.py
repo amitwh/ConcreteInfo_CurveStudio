@@ -255,10 +255,11 @@ def test_a_body_over_two_kilobytes_to_the_installs_route_is_refused_before_any_h
     client = client_factory()
     _assert_refused_by(_post(client, f"{API}/installs", 3 * 1024), 2048)
 
-    # No handler exists on the path yet, so a body within the limit reaches routing: a 404.
+    # A body within the limit passes the middleware and reaches the handler: this one is not a
+    # valid install report, so validation answers 422 where the limit would have said 413.
     allowed = _post(client, f"{API}/installs", 2048)
-    assert allowed.status_code == 404
-    assert allowed.json()["error"] == "NOT_FOUND"
+    assert allowed.status_code == 422
+    assert allowed.json()["error"] == "VALIDATION_ERROR"
 
 
 def test_a_body_over_sixty_four_kilobytes_to_the_errors_route_is_refused(

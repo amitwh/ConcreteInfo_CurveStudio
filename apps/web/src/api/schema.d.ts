@@ -487,6 +487,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/installs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Report Install
+         * @description Store one report from a desktop installation.
+         *
+         *     Anonymous: no account is looked up and no audit row is written, because the report names
+         *     nobody and changes no account. Twenty an hour per address. The reply is always the same
+         *     empty 204, so nothing tells whether the installation was already known.
+         */
+        post: operations["report_install_api_v1_installs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/jobs/{job_id}": {
         parameters: {
             query?: never;
@@ -1563,6 +1587,29 @@ export interface components {
             n: number;
             /** Sse */
             sse: number;
+        };
+        /**
+         * InstallRecordIn
+         * @description One report from a desktop installation.
+         */
+        InstallRecordIn: {
+            /** App Version */
+            app_version: string;
+            /** Arch */
+            arch: string;
+            /**
+             * Install Id
+             * Format: uuid
+             */
+            install_id: string;
+            /** Os Name */
+            os_name: string;
+            /** Os Version */
+            os_version: string;
+            /** Package */
+            package: string;
+            /** Session */
+            session: string;
         };
         /** IssueOut */
         IssueOut: {
@@ -3172,6 +3219,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HealthOut"];
+                };
+            };
+        };
+    };
+    report_install_api_v1_installs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InstallRecordIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
