@@ -50,6 +50,9 @@ NO_SOURCE = {
 """What ``citation_model`` says for a model that has no reference to cite."""
 
 NOT_DETERMINED = "not determined"
+CLOSED_FORM = frozenset({"ols", "wls"})
+"""The methods of a polynomial, solved in closed form: no solver runs, and the seed its
+result records plays no part."""
 NO_STANDARD_ERROR_TEXT = "(standard error not determined)"
 
 LOSSES = {"soft_l1": "soft L1", "huber": "Huber", "cauchy": "Cauchy", "arctan": "arctan"}
@@ -133,10 +136,8 @@ def _weighting(
     specification. A nonlinear result does not record it, so the specification is asked; with
     neither, weights in the data leave it unknown.
     """
-    if result.method == "wls":
-        return "weighted"
-    if result.method == "ols":
-        return "ordinary"
+    if result.method in CLOSED_FORM:
+        return "weighted" if result.method == "wls" else "ordinary"
     if spec is not None:
         return "weighted" if spec.use_weights and carries_weights else "ordinary"
     return "ordinary" if not carries_weights else ""
@@ -301,10 +302,8 @@ def _paragraph(
         sentences.append(left_out)
     sentences.append(_estimates_sentence(shown, percent, missing))
     version = _version(bundle, missing)
-    sentences.append(
-        f"The fit was made with CurveStudio {version} ({MAKER}, {ADDRESS}), with random "
-        f"seed {result.provenance.seed}."
-    )
+    seed = "" if result.method in CLOSED_FORM else f", with random seed {result.provenance.seed}"
+    sentences.append(f"The fit was made with CurveStudio {version} ({MAKER}, {ADDRESS}){seed}.")
     if model.assumptions:
         closing = model.assumptions.strip()
         closing += "" if closing.endswith(".") else "."

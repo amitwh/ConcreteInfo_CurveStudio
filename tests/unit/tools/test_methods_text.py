@@ -165,7 +165,7 @@ def test_methods_text_states_only_what_is_true() -> None:
         "A polynomial of degree 2 was fitted to 40 observations by ordinary least squares. "
         "The estimates are given with their standard errors and 95 % confidence intervals in "
         f"the equation and table below. The fit was made with CurveStudio {version_of(plain)} "
-        f"(ConcreteInfo, {ADDRESS}), with random seed 0."
+        f"(ConcreteInfo, {ADDRESS})."
     )
     assert text.citation_curvestudio == f"CurveStudio {version_of(plain)}. ConcreteInfo. {ADDRESS}"
     assert text.citation_model == (NO_SOURCE["polynomial"],)
@@ -220,6 +220,29 @@ def test_methods_text_states_only_what_is_true() -> None:
     latex = methods_text(custom, spec=CUSTOM_LINE, style="latex")
     # the display's third line: \[, \begin{aligned}, then the model
     assert latex.equation.splitlines()[2] == r"y &= \text{a*x + b} \\"
+
+
+def test_the_seed_is_stated_only_where_it_plays_a_part() -> None:
+    # a polynomial is solved in closed form: the seed its result records played no part
+    for bundle, spec in (
+        (fit_dataset(quadratic_xy(), QUADRATIC), QUADRATIC),
+        (weighted_quadratic(), USED),
+    ):
+        assert bundle.result.method in ("ols", "wls")
+        assert bundle.result.provenance.seed == 0
+        for style in STYLES:
+            assert "seed" not in methods_text(bundle, spec=spec, style=style).paragraph
+
+    # an iterative fit depends on it, so it is stated, zero included
+    x = np.linspace(0.0, 3.0, 30)
+    noise = np.random.default_rng(0).normal(0.0, 0.05, 30)
+    plain = fit_dataset(
+        _xy(x, 2.0 * np.exp(0.4 * x) + noise), FitSpec(model=RegisteredRef(id="exp_growth"))
+    )
+    assert plain.result.provenance.seed == 0
+    assert "with random seed 0." in methods_text(plain, spec=None).paragraph
+    grown = fit_dataset(growth_xy(), GROWTH)
+    assert "with random seed 3." in methods_text(grown, spec=GROWTH).paragraph
 
 
 def test_the_paragraph_states_the_bounds_the_specification_set() -> None:
