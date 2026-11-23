@@ -8,7 +8,7 @@
 CurveStudio fits mathematical models to experimental data, ranks the candidates from best to worst with their equations and R², and reports the statistics you need to judge a fit. It is built for researchers, engineers, laboratories and students, with a particular focus on civil and concrete-materials engineering.
 
 > [!NOTE]
-> **Status: public beta (v0.9).** The web app is live at **https://curvestudio.concreteinfo.net** and the desktop app builds from this repository. Auto-fit, the 190+ model library (including concrete and civil-engineering models), custom equations, statistics and diagnostics, `.cstudio` projects and PDF/XLSX/CSV/JSON reports are implemented and tested. It has not yet been used for real analyses by many people, so check important results independently.
+> **Status: public beta (v0.9).** The web app is live at **https://curvestudio.concreteinfo.cloud** and the desktop app builds from this repository. Auto-fit, the 190+ model library (including concrete and civil-engineering models), custom equations, statistics and diagnostics, `.cstudio` projects and PDF/XLSX/CSV/JSON reports are implemented and tested. It has not yet been used for real analyses by many people, so check important results independently.
 >
 > **Numerical validation:** nonlinear single-start fits against the 12 NIST problems converge correctly on 23 of 24 starts (the other, MGH09 start 1, reports NOT_CONVERGED rather than a wrong answer), with zero wrong-but-CONVERGED results; linear problems pass 5/5; every library model recovers its own parameters from noiseless data. Full tables: [`tests/numerical/VALIDATION.md`](tests/numerical/VALIDATION.md), [`tests/numerical/LIBRARY.md`](tests/numerical/LIBRARY.md) and [`tests/numerical/AUTOFIT.md`](tests/numerical/AUTOFIT.md).
 
@@ -31,7 +31,7 @@ CurveStudio fits mathematical models to experimental data, ranks the candidates 
 | Fitting core: linear, polynomial, nonlinear least squares, robust loss, NIST validation | Done |
 | Statistics: bands, information criteria, diagnostics, cross-validation, bootstrap | Done |
 | Model library (190+ ids, 30+ engineering), custom equations, Auto-fit engine and CLI | Done |
-| Web app (React) and API (FastAPI) with accounts, jobs, quotas; live at curvestudio.concreteinfo.net | Done |
+| Web app (React) and API (FastAPI) with accounts, jobs, quotas; live at curvestudio.concreteinfo.cloud | Done |
 | Desktop app (PySide6) with Auto-fit-first analysis and report export | Done; packaged builds via the release workflow |
 | Billing, OAuth login, multivariable fitting, optimisation studio | Not started |
 
@@ -75,7 +75,7 @@ Design principles:
 
 ## Use it
 
-- **Web:** open https://curvestudio.concreteinfo.net, create an account, upload a CSV/XLSX; Auto-fit starts by itself and ranks every applicable model. Choose *Manual fit* only if you want to pick a model yourself.
+- **Web:** open https://curvestudio.concreteinfo.cloud, create an account, upload a CSV/XLSX; Auto-fit starts by itself and ranks every applicable model. Choose *Manual fit* only if you want to pick a model yourself.
 - **Desktop:** `uv run curvestudio-desktop` from a checkout, or download a packaged build from the Releases page (see [`apps/desktop/README.md`](apps/desktop/README.md)).
 - **Command line:** `uv run curvestudio autofit data.csv` (below).
 

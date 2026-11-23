@@ -2,6 +2,19 @@
 
 All notable changes are listed here. Dates are IST. Format: [Keep a Changelog](https://keepachangelog.com/); versions follow [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+- **The canonical address is https://curvestudio.concreteinfo.cloud**: the old addresses
+  redirect there (see `deploy/redirect/`), and `apps/api/OAUTH_SETUP.md` gains a Microsoft
+  error-code table.
+
+### Fixed
+- **The OAuth callback log names the sign-in provider's error code** (Microsoft's AADSTS
+  text), so a failed social sign-in says why.
+- **Microsoft sign-in requests only the `openid`, `email` and `profile` scopes**: the
+  profile read is unaffected and the consent screen is smaller.
+
 ## [0.11.1] - 2026-11-22
 
 ### Added
