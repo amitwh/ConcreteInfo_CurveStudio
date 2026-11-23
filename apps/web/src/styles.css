@@ -566,6 +566,8 @@ textarea {
   font: inherit;
   font-size: 0.9rem;
   cursor: pointer;
+  /* A link styled as a button must not keep the browser's anchor underline. */
+  text-decoration: none;
 }
 
 .btn:hover:not(:disabled) {

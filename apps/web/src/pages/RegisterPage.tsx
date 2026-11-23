@@ -11,6 +11,7 @@ import { useState, type ReactElement, type SubmitEvent } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../api/auth";
 import { api, ApiError } from "../api/client";
+import { OAuthButtons } from "../components/OAuthButtons";
 import { errorText } from "../components/States";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -157,6 +158,7 @@ export function RegisterPage(): ReactElement {
         <p className="muted">
           Already registered? <Link to="/#login-card">Sign in</Link>
         </p>
+        <OAuthButtons />
       </form>
     </main>
   );

@@ -1,9 +1,9 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthProvider } from "../api/auth";
-import { api, ApiError } from "../api/client";
+import { API_BASE, api, ApiError } from "../api/client";
 import { RegisterPage } from "./RegisterPage";
 
 const USER = {
@@ -34,6 +34,15 @@ async function submitValid(user: ReturnType<typeof userEvent.setup>): Promise<vo
 }
 
 describe("RegisterPage", () => {
+  // The page asks the API which social providers are configured as soon as it mounts.
+  beforeEach(() => {
+    vi.spyOn(api, "oauthProviders").mockResolvedValue([]);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it("shows the check-your-inbox panel and does not navigate", async () => {
     vi.spyOn(api, "register").mockResolvedValue(USER);
     renderRegister();
@@ -91,5 +100,30 @@ describe("RegisterPage", () => {
     await submitValid(user);
     await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
     expect(screen.getByRole("button", { name: "Create account" })).toBeTruthy();
+  });
+
+  it("offers the configured social providers and starts the flow when one is picked", async () => {
+    vi.mocked(api.oauthProviders).mockResolvedValue(["google", "microsoft"]);
+    // jsdom will not let `location.assign` be replaced, so stand in a whole `location`
+    // to capture where the button would send the visitor.
+    const assign = vi.fn();
+    vi.stubGlobal("location", { assign });
+    renderRegister();
+    const user = userEvent.setup();
+    expect(await screen.findByRole("button", { name: "Continue with Google" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Continue with Microsoft" })).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Continue with Google" }));
+    expect(assign).toHaveBeenCalledWith(`${API_BASE}/auth/oauth/google/start`);
+  });
+
+  it("renders only the form when no social providers are configured", async () => {
+    renderRegister();
+    // Let the (empty) discovery settle before asserting on what is absent.
+    await waitFor(() => expect(api.oauthProviders).toHaveBeenCalled());
+    expect(screen.queryByRole("button", { name: /continue with/i })).toBeNull();
+    expect(document.querySelector(".oauth-block")).toBeNull();
+    const main = screen.getByRole("main");
+    expect(main.children).toHaveLength(1);
+    expect(main.firstElementChild?.tagName).toBe("FORM");
   });
 });
