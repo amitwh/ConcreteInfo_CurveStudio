@@ -33,7 +33,7 @@ All notable changes are listed here. Dates are IST. Format: [Keep a Changelog](h
   Nothing set, nothing changes.
 - **Administrator accounts**: an address listed in `CURVESTUDIO_ADMIN_EMAILS` becomes an
   administrator at its next sign-in, and the change is audited. The API refuses every
-  admin route to everyone else. The console that uses this ships separately.
+  admin route to everyone else. The admin console is open to this role.
 - **Anonymous error reports from the web app**: when something goes wrong, the browser can
   send an anonymous report (the error, where it happened, and which browser) so it can be
   fixed, and a failed screen shows a recovery page with a reference. Reports never include
@@ -42,12 +42,20 @@ All notable changes are listed here. Dates are IST. Format: [Keep a Changelog](h
   failures in background work, with credentials and e-mail addresses blanked.
 - **The administrator API**: what the admin console reads, open to administrators only:
   accounts, desktop installs, error events, the audit trail, system figures, latency per
-  route and plan limits. The console pages ship separately.
-- **The admin console, first half**, at `/admin` for administrators; the account menu gains
-  "Admin console" for them. Overview (accounts, active users, desktop installs, open errors,
-  Auto-fit runs, and a 90-day chart), Installs, Audit, System (version, uptime, jobs, database
-  and latency per route) and Plans with editable limits. The Accounts and Errors pages ship
-  separately.
+  route and plan limits. The admin console reads it.
+- **The admin console**, at `/admin` for administrators; the account menu gains "Admin
+  console" for them. Overview (accounts, active users, desktop installs, open errors, Auto-fit
+  runs, and a 90-day chart), Accounts, Installs, Errors, Audit, System (version, uptime, jobs,
+  database and latency per route) and Plans with editable limits.
+- **The console's Accounts page**: filter by name, plan, role and status; open an account
+  for its usage against its plan's limits and its last fifty actions; change its plan or its
+  role; deactivate, reactivate or delete it, where deleting asks for the address to be typed.
+  An administrator's own account opens only. A plan override is shown whether or not it is
+  the plan in force.
+- **The console's Errors page**: error events by status and category, each open in full with
+  its stack, context and console lines; acknowledge, resolve, ignore or reopen; copy the
+  event as a Markdown document. What a visitor typed on the recovery screen is shown as a
+  note on the error it belongs to, never as an error type. No event names an account.
 - **Desktop install records and a local crash log**: on first launch, and again after an
   upgrade, the desktop app sends one anonymous record (version, operating system, package
   type); switch it off under Edit → Preferences → Privacy. A crash is appended to `crash.log`
@@ -62,6 +70,9 @@ All notable changes are listed here. Dates are IST. Format: [Keep a Changelog](h
   profile read is unaffected and the consent screen is smaller.
 - **The register page offers the same Google, Microsoft and LinkedIn buttons as the
   sign-in card**, and links styled as buttons are no longer underlined.
+- **A session renewed its access token again after signing in a second time without a
+  reload**: a renewal attempted with no stored refresh token left a finished renewal behind,
+  and every later one in that tab answered with its result.
 
 ## [0.11.1] - 2026-11-22
 
