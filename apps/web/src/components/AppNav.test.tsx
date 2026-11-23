@@ -237,12 +237,59 @@ describe("AppNav account menu", () => {
     expect(document.activeElement).toBe(signOut);
   });
 
-  it("never offers an Admin console item, not even to an admin", async () => {
+  it("never offers an Admin console item to a member", async () => {
     const user = userEvent.setup();
-    authState.user = { ...authState.user, name: "The Admin", role: "admin" };
     renderNav();
     const menu = await openMenu(user);
     expect(within(menu).queryByRole("menuitem", { name: /admin/i })).toBeNull();
     expect(within(menu).getAllByRole("menuitem")).toHaveLength(2);
+  });
+
+  it("offers an administrator Admin console between Profile and Sign out", async () => {
+    const user = userEvent.setup();
+    authState.user = { ...authState.user, name: "The Admin", role: "admin" };
+    renderNav();
+    const menu = await openMenu(user);
+    expect(within(menu).getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
+      "Profile",
+      "Admin console",
+      "Sign out",
+    ]);
+    expect(within(menu).getByRole("menuitem", { name: "Admin console" }).getAttribute("href")).toBe(
+      "/admin",
+    );
+  });
+
+  it("moves across the three items with the arrow keys for an administrator", async () => {
+    const user = userEvent.setup();
+    authState.user = { ...authState.user, role: "admin" };
+    renderNav();
+    const menu = await openMenu(user);
+    const [profile, admin, signOut] = within(menu).getAllByRole("menuitem");
+    expect(document.activeElement).toBe(profile);
+
+    await user.keyboard("{ArrowDown}");
+    expect(document.activeElement).toBe(admin);
+    await user.keyboard("{ArrowDown}");
+    expect(document.activeElement).toBe(signOut);
+    await user.keyboard("{ArrowDown}");
+    expect(document.activeElement).toBe(profile);
+    await user.keyboard("{ArrowUp}");
+    expect(document.activeElement).toBe(signOut);
+    await user.keyboard("{End}");
+    expect(document.activeElement).toBe(signOut);
+    await user.keyboard("{Home}");
+    expect(document.activeElement).toBe(profile);
+  });
+
+  it("Admin console is a link to /admin and the menu closes behind it", async () => {
+    const user = userEvent.setup();
+    authState.user = { ...authState.user, role: "admin" };
+    renderNav();
+    const menu = await openMenu(user);
+    await user.click(within(menu).getByRole("menuitem", { name: "Admin console" }));
+    expect(screen.getByTestId("location").textContent).toBe("/admin");
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(authState.logout).not.toHaveBeenCalled();
   });
 });

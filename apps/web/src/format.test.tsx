@@ -1,5 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { fmtBytes, fmtCI, fmtDate, fmtEquation, fmtInt, fmtNumber, fmtPValue } from "./format";
+import {
+  fmtBytes,
+  fmtCI,
+  fmtDate,
+  fmtDateTime,
+  fmtEquation,
+  fmtInt,
+  fmtNumber,
+  fmtPercent,
+  fmtPValue,
+  fmtUptime,
+  fromIstDateInput,
+  toIstDateInput,
+} from "./format";
 
 describe("fmtNumber — 'not defined' is n/a, never 0 or NaN", () => {
   it("renders null and undefined as n/a", () => {
@@ -117,5 +130,100 @@ describe("fmtBytes — a size in the largest unit below 1000", () => {
     expect(fmtBytes(undefined)).toBe("n/a");
     expect(fmtBytes(Number.NaN)).toBe("n/a");
     expect(fmtBytes(-5)).toBe("0 B");
+  });
+});
+
+describe("fmtDateTime — DD/MM/YYYY HH:mm in IST, 24-hour", () => {
+  it("formats an ISO timestamp as date and time in Asia/Kolkata", () => {
+    expect(fmtDateTime("2026-11-17T06:00:00+00:00")).toBe("17/11/2026 11:30");
+    expect(fmtDateTime("2026-11-17T14:05:00+05:30")).toBe("17/11/2026 14:05");
+  });
+
+  it("never prints a 12-hour clock or a meridian", () => {
+    expect(fmtDateTime("2026-11-17T00:05:00Z")).toBe("17/11/2026 05:35");
+    expect(fmtDateTime("2026-11-17T12:00:00Z")).toBe("17/11/2026 17:30");
+    expect(fmtDateTime("2026-11-17T18:30:00Z")).not.toMatch(/am|pm/i);
+  });
+
+  it("moves to the next IST day at IST midnight, not a second sooner", () => {
+    // IST is UTC+05:30, so its midnight is 18:30 UTC
+    expect(fmtDateTime("2026-11-17T18:29:59Z")).toBe("17/11/2026 23:59");
+    expect(fmtDateTime("2026-11-17T18:30:00Z")).toBe("18/11/2026 00:00");
+  });
+
+  it("renders n/a for a missing or invalid timestamp", () => {
+    expect(fmtDateTime(null)).toBe("n/a");
+    expect(fmtDateTime(undefined)).toBe("n/a");
+    expect(fmtDateTime("")).toBe("n/a");
+    expect(fmtDateTime("yesterday")).toBe("n/a");
+  });
+});
+
+describe("fmtPercent — a fraction as a whole percentage", () => {
+  it("rounds a fraction to a whole percent", () => {
+    expect(fmtPercent(0.58)).toBe("58%");
+    expect(fmtPercent(0)).toBe("0%");
+    expect(fmtPercent(1)).toBe("100%");
+    expect(fmtPercent(0.996)).toBe("100%");
+  });
+
+  it("keeps a decimal rather than report a real share as 0%", () => {
+    expect(fmtPercent(0.004)).toBe("0.4%");
+    expect(fmtPercent(0.0001)).toBe("0%");
+  });
+
+  it("renders an en dash when the share is not defined", () => {
+    expect(fmtPercent(null)).toBe("–");
+    expect(fmtPercent(undefined)).toBe("–");
+    expect(fmtPercent(Number.NaN)).toBe("–");
+  });
+});
+
+describe("fmtUptime — a duration in hours and minutes", () => {
+  it("renders hours and minutes, dropping the hours under one hour", () => {
+    expect(fmtUptime(11520)).toBe("3 h 12 min");
+    expect(fmtUptime(3600)).toBe("1 h 0 min");
+    expect(fmtUptime(720)).toBe("12 min");
+    expect(fmtUptime(25)).toBe("0 min");
+  });
+
+  it("counts hours past a day as hours, and rounds a float down", () => {
+    expect(fmtUptime(180180)).toBe("50 h 3 min");
+    expect(fmtUptime(119.9)).toBe("1 min");
+  });
+
+  it("renders n/a when the duration is missing or negative", () => {
+    expect(fmtUptime(null)).toBe("n/a");
+    expect(fmtUptime(undefined)).toBe("n/a");
+    expect(fmtUptime(-1)).toBe("n/a");
+    expect(fmtUptime(Number.POSITIVE_INFINITY)).toBe("n/a");
+  });
+});
+
+describe("IST date inputs — YYYY-MM-DD of the IST calendar day, and back", () => {
+  it("gives the IST day of an instant as a date input's YYYY-MM-DD", () => {
+    expect(toIstDateInput(new Date("2026-11-17T06:00:00Z"))).toBe("2026-11-17");
+    expect(toIstDateInput(new Date("2026-11-17T18:29:59Z"))).toBe("2026-11-17");
+    // the instant IST midnight begins is already the next day
+    expect(toIstDateInput(new Date("2026-11-17T18:30:00Z"))).toBe("2026-11-18");
+  });
+
+  it("reads a date input's YYYY-MM-DD as the instant that day starts in IST", () => {
+    expect(fromIstDateInput("2026-11-18")?.getTime()).toBe(Date.UTC(2026, 10, 17, 18, 30));
+    expect(fromIstDateInput("2026-01-01")?.getTime()).toBe(Date.UTC(2025, 11, 31, 18, 30));
+  });
+
+  it("round-trips a day", () => {
+    const start = fromIstDateInput("2026-11-18") as Date;
+    expect(toIstDateInput(start)).toBe("2026-11-18");
+    expect(toIstDateInput(new Date(start.getTime() + 86_399_000))).toBe("2026-11-18");
+    expect(toIstDateInput(new Date(start.getTime() + 86_400_000))).toBe("2026-11-19");
+  });
+
+  it("returns null for an empty, malformed or impossible date", () => {
+    expect(fromIstDateInput("")).toBeNull();
+    expect(fromIstDateInput("18/11/2026")).toBeNull();
+    expect(fromIstDateInput("2026-11-18T00:00")).toBeNull();
+    expect(fromIstDateInput("2026-02-30")).toBeNull();
   });
 });

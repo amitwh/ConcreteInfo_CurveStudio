@@ -29,6 +29,7 @@ import {
   MonitorDown,
   Moon,
   Plus,
+  ShieldCheck,
   Sun,
   User,
   X,
@@ -139,10 +140,11 @@ function WorkspaceTab({
 }
 
 /**
- * The account chip and the menu it opens: the account as a header, Profile, Sign out. The
- * chip is the only way to either, so on narrow screens it shrinks to the avatar and is
- * never hidden. Opening moves focus to the first item; the arrow keys move between items;
- * Escape closes and returns focus to the chip; a press anywhere outside closes it too.
+ * The account chip and the menu it opens: the account as a header, Profile, Admin console
+ * (administrators only), Sign out. The chip is the only way to any of them, so on narrow
+ * screens it shrinks to the avatar and is never hidden. Opening moves focus to the first
+ * item; the arrow keys move between items; Escape closes and returns focus to the chip; a
+ * press anywhere outside closes it too.
  */
 function AccountMenu({ user, onSignOut }: { user: MeOut; onSignOut: () => void }): ReactElement {
   const [open, setOpen] = useState(false);
@@ -250,6 +252,17 @@ function AccountMenu({ user, onSignOut }: { user: MeOut; onSignOut: () => void }
               <User className="icon" aria-hidden="true" focusable="false" />
               Profile
             </Link>
+            {user.role === "admin" && (
+              <Link
+                role="menuitem"
+                className="account-menu__item"
+                to="/admin"
+                onClick={() => close(true)}
+              >
+                <ShieldCheck className="icon" aria-hidden="true" focusable="false" />
+                Admin console
+              </Link>
+            )}
             <button
               type="button"
               role="menuitem"

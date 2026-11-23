@@ -3,15 +3,16 @@
  *
  * Signed in, everything lives under one splat route so the workspace stays mounted while
  * Help, About or the profile is open — those three open as overlays over the workspace,
- * and their URLs still work for deep links and the back button. Signed out, Help and About
- * stay ordinary pages behind a slim brand header (the profile needs a session, so a
- * visitor who opens its URL lands on the home page).
+ * and their URLs still work for deep links and the back button. The admin console (/admin)
+ * is the one exception: a page of its own ahead of the splat, loaded on demand. Signed
+ * out, Help and About stay ordinary pages behind a slim brand header (the profile needs a
+ * session, so a visitor who opens its URL lands on the home page).
  *
  * Workspaces (the named tabs under the header) are held here: each remembers the dataset
  * it shows and its analysis mode, so switching tabs returns to exactly where you were.
  */
 
-import { useCallback, useEffect, useState, type ReactElement } from "react";
+import { lazy, Suspense, useCallback, useEffect, useState, type ReactElement } from "react";
 import { Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "./api/auth";
 import { AppNav, type Overlay } from "./components/AppNav";
@@ -38,6 +39,12 @@ import {
   saveWorkspaces,
   updateWorkspace,
 } from "./workspace/workspaces";
+
+/**
+ * The admin console is loaded only when an administrator opens it: none of its code, the
+ * table library included, belongs in the bundle every visitor downloads.
+ */
+const AdminConsole = lazy(() => import("./admin/AdminConsole"));
 
 /** Which overlay the URL asks for (Help, About and the profile open over the workspace). */
 export function overlayFor(pathname: string): Overlay {
@@ -156,6 +163,15 @@ export default function App(): ReactElement {
           <Loading label="Restoring session…" />
         ) : status === "authed" ? (
           <Routes>
+            {/* A page of its own before the splat: nothing of the workspace mounts under /admin. */}
+            <Route
+              path="/admin/*"
+              element={
+                <Suspense fallback={<Loading label="Opening the admin console…" />}>
+                  <AdminConsole />
+                </Suspense>
+              }
+            />
             {/* One splat route: opening /help, /about or /profile must not remount the workspace. */}
             <Route path="*" element={<AuthenticatedApp />} />
           </Routes>

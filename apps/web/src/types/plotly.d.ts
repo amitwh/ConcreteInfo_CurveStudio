@@ -15,7 +15,8 @@ declare module "plotly.js-dist-min" {
     type?: string;
     mode?: string;
     name?: string;
-    x?: ReadonlyArray<number | null>;
+    /** Numbers, or the strings a date or category axis takes (YYYY-MM-DD for a date axis). */
+    x?: ReadonlyArray<number | null | string>;
     y?: ReadonlyArray<number | null>;
     width?: ReadonlyArray<number>;
     text?: string;
@@ -53,7 +54,7 @@ declare module "plotly.js-dist-min" {
     margin?: { t?: number; r?: number; b?: number; l?: number };
     xaxis?: {
       title?: { text: string };
-      type?: "linear" | "log";
+      type?: "linear" | "log" | "date" | "category";
       zeroline?: boolean;
       gridcolor?: string;
       [key: string]: unknown;

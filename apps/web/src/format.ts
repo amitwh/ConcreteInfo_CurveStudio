@@ -96,3 +96,89 @@ export function fmtDate(iso: string | null | undefined): string {
     timeZone: "Asia/Kolkata",
   }).format(date);
 }
+
+const IST = "Asia/Kolkata";
+/** IST is UTC+05:30 all year. */
+const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+
+/** The time of day as HH:mm on a 24-hour clock. */
+const IST_TIME = new Intl.DateTimeFormat("en-IN", {
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+  timeZone: IST,
+});
+
+/** ISO-8601 timestamp → DD/MM/YYYY HH:mm in IST on a 24-hour clock, "n/a" when absent. */
+export function fmtDateTime(iso: string | null | undefined): string {
+  if (!iso) return NA;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return NA;
+  const { year, month, day } = istDayParts(date);
+  const padded = (part: number): string => String(part).padStart(2, "0");
+  return `${padded(day)}/${padded(month)}/${year} ${IST_TIME.format(date)}`;
+}
+
+/** A share held as a fraction, as a whole percentage ("58%" for 0.58); "–" when not defined. */
+export function fmtPercent(fraction: number | null | undefined): string {
+  if (!isDefined(fraction)) return "–";
+  const percent = fraction * 100;
+  const whole = Math.round(percent);
+  // A share that exists is never shown as 0%: under half a percent keeps one decimal.
+  const shown =
+    whole === 0 && percent !== 0
+      ? percent.toLocaleString("en-IN", { maximumFractionDigits: 1 })
+      : fmtInt(whole);
+  return `${shown}%`;
+}
+
+/** A duration in seconds as "3 h 12 min", or "12 min" under an hour; "n/a" when not a duration. */
+export function fmtUptime(seconds: number | null | undefined): string {
+  if (!isDefined(seconds) || seconds < 0) return NA;
+  const totalMinutes = Math.floor(seconds / 60);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return hours > 0 ? `${fmtInt(hours)} h ${minutes} min` : `${minutes} min`;
+}
+
+/** An IST calendar day, read part by part so the output never depends on the locale. */
+const IST_DAY = new Intl.DateTimeFormat("en-CA", {
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  timeZone: IST,
+});
+
+/** An instant's IST calendar day, as the parts a date input's YYYY-MM-DD is made of. */
+function istDayParts(date: Date): { year: number; month: number; day: number } {
+  const parts = IST_DAY.formatToParts(date);
+  const read = (type: Intl.DateTimeFormatPartTypes): number =>
+    Number(parts.find((part) => part.type === type)?.value);
+  return { year: read("year"), month: read("month"), day: read("day") };
+}
+
+/** An instant → the IST day it falls on, as the YYYY-MM-DD a date input holds. */
+export function toIstDateInput(date: Date): string {
+  const { year, month, day } = istDayParts(date);
+  return `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+/**
+ * A date input's YYYY-MM-DD → the instant that IST day starts; null unless it is a real
+ * day. Dates are IST calendar days everywhere in the app, never UTC ones.
+ */
+export function fromIstDateInput(value: string): Date | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (match === null) return null;
+  const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])];
+  // Date.UTC folds an impossible day into the next month, so the day is read back.
+  const noon = new Date(Date.UTC(year, month - 1, day, 12));
+  if (
+    noon.getUTCFullYear() !== year ||
+    noon.getUTCMonth() !== month - 1 ||
+    noon.getUTCDate() !== day
+  ) {
+    return null;
+  }
+  return new Date(Date.UTC(year, month - 1, day) - IST_OFFSET_MS);
+}
