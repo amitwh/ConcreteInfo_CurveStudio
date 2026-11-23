@@ -13,6 +13,7 @@ import type {
   PlotlyLayout,
   PlotlyTrace,
 } from "plotly.js-dist-min";
+import { saveBlob } from "../api/client";
 
 type PlotlyLib = (typeof import("plotly.js-dist-min"))["default"];
 
@@ -192,6 +193,19 @@ export function downloadPlotPng(root: HTMLElement | null, filename: string): voi
   if (root === null) return;
   void loadPlotly().then((Plotly) => {
     void Plotly.downloadImage(root, { format: "png", filename, scale: 2 });
+  });
+}
+
+/** Download the current graph as an SVG document, named like the PNG but .svg: Plotly
+ *  serialises the live graph to a data URL and the bytes are saved as a blob download. */
+export function downloadPlotSvg(root: HTMLElement | null, filename: string): void {
+  if (root === null) return;
+  void loadPlotly().then(async (Plotly) => {
+    const dataUrl = await Plotly.toImage(root, { format: "svg", scale: 2 });
+    const bytes = Uint8Array.from(atob(dataUrl.slice(dataUrl.indexOf(",") + 1)), (char) =>
+      char.charCodeAt(0),
+    );
+    saveBlob(new Blob([bytes], { type: "image/svg+xml" }), `${filename}.svg`);
   });
 }
 

@@ -41,6 +41,86 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/oauth/exchange": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Exchange
+         * @description Claim a single-use exchange code and return an access/refresh pair.
+         */
+        post: operations["exchange_api_v1_auth_oauth_exchange_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/oauth/providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Providers
+         * @description The providers a client may offer; configured ones only (public).
+         */
+        get: operations["providers_api_v1_auth_oauth_providers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/oauth/{provider}/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Callback
+         * @description Validate the flow, sign the user in, and redirect with a single-use exchange code.
+         */
+        get: operations["callback_api_v1_auth_oauth__provider__callback_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/oauth/{provider}/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Start
+         * @description Send the browser to the provider with a fresh state, PKCE verifier and flow cookie.
+         */
+        get: operations["start_api_v1_auth_oauth__provider__start_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/password/forgot": {
         parameters: {
             query?: never;
@@ -355,7 +435,8 @@ export interface paths {
         };
         /**
          * Export Fit
-         * @description Download a fit as JSON (the bundle) or CSV (parameters, then fitted values per row).
+         * @description Download a fit as JSON (the bundle), CSV (parameters, then fitted values per row)
+         *     or XLSX (the Excel workbook, with its plot sheet).
          */
         get: operations["export_fit_api_v1_fits__fit_id__export_get"];
         put?: never;
@@ -1531,6 +1612,16 @@ export interface components {
             /** Variables */
             variables: string[];
         };
+        /** OAuthExchangeIn */
+        OAuthExchangeIn: {
+            /** Code */
+            code: string;
+        };
+        /** OAuthProvidersOut */
+        OAuthProvidersOut: {
+            /** Providers */
+            providers: string[];
+        };
         /**
          * OpenRowOut
          * @description ``fit_id`` is set when the row was opened before: the fit already exists.
@@ -2100,6 +2191,125 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    exchange_api_v1_auth_oauth_exchange_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OAuthExchangeIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    providers_api_v1_auth_oauth_providers_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OAuthProvidersOut"];
+                };
+            };
+        };
+    };
+    callback_api_v1_auth_oauth__provider__callback_get: {
+        parameters: {
+            query?: {
+                code?: string;
+                state?: string;
+                error?: string;
+            };
+            header?: never;
+            path: {
+                provider: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_api_v1_auth_oauth__provider__start_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
             };
             /** @description Validation Error */
             422: {
@@ -2749,7 +2959,7 @@ export interface operations {
     export_fit_api_v1_fits__fit_id__export_get: {
         parameters: {
             query?: {
-                format?: "json" | "csv";
+                format?: "json" | "csv" | "xlsx";
             };
             header?: never;
             path: {

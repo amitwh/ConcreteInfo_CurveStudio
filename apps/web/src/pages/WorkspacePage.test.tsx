@@ -10,6 +10,7 @@ import { WorkspacePage } from "./WorkspacePage";
 vi.mock("../components/PlotChart", () => ({
   PlotChart: () => <div data-testid="plot" />,
   downloadPlotPng: () => {},
+  downloadPlotSvg: () => {},
   exportPlotPngDataUrl: async () => null,
 }));
 

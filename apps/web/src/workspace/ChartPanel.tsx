@@ -6,7 +6,7 @@
 
 import { useMemo, useRef, useState, type ReactElement, type RefObject } from "react";
 import { Database, Download } from "lucide-react";
-import { PlotChart, downloadPlotPng } from "../components/PlotChart";
+import { PlotChart, downloadPlotPng, downloadPlotSvg } from "../components/PlotChart";
 import type { DatasetDetailOut, FitBundle, RankedFit, RowCurve } from "../api/client";
 import {
   buildTraces,
@@ -190,6 +190,15 @@ export function ChartPanel({
           >
             <Download className="icon" aria-hidden="true" focusable="false" />
             Download PNG
+          </button>
+          <button
+            type="button"
+            className="btn btn--small"
+            disabled={points === null}
+            onClick={() => downloadPlotSvg(chartRootRef.current, dataset?.name ?? "chart")}
+          >
+            <Download className="icon" aria-hidden="true" focusable="false" />
+            Download SVG
           </button>
         </div>
       </div>

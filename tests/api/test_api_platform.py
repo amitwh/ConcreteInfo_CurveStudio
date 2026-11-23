@@ -23,6 +23,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from starlette.types import Message
 
 from conftest import linear_csv, make_settings, new_email, signup, upload
+from curvestudio.workflow import list_models
 from curvestudio_api.app import create_app
 from curvestudio_api.db import make_session_factory
 from curvestudio_api.errors import ApiError
@@ -438,6 +439,16 @@ def test_openapi_covers_the_documented_endpoints() -> None:
         "/api/v1/fits/{fit_id}/export",
     }
     assert expected <= set(paths)
+
+
+# -- Model catalogue ---------------------------------------------------------------------------
+
+
+@pytest.mark.real_plugins
+def test_catalogue_size_backs_the_home_page_claim() -> None:
+    """The home page advertises '~250 models'; the served catalogue must stay in that
+    range, so the claim cannot go stale silently."""
+    assert 200 <= len(list_models()) < 300
 
 
 # -- single-page app -------------------------------------------------------------------------------

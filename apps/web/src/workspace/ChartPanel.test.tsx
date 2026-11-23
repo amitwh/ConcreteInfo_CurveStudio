@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { components } from "../api/schema";
 import { ChartPanel } from "./ChartPanel";
 import { modelColor } from "./traces";
@@ -13,6 +13,8 @@ type Trace = { mode?: string; fill?: string; name?: string; line?: { color?: str
 const captured = vi.hoisted(() => ({
   traces: [] as Trace[],
   layout: {} as Record<string, unknown>,
+  pngCalls: [] as Array<[unknown, string]>,
+  svgCalls: [] as Array<[unknown, string]>,
 }));
 
 // jsdom cannot host a real Plotly graph; capture the traces the panel builds.
@@ -22,7 +24,12 @@ vi.mock("../components/PlotChart", () => ({
     captured.layout = layout;
     return <div data-testid="plot" />;
   },
-  downloadPlotPng: () => {},
+  downloadPlotPng: (...args: [unknown, string]) => {
+    captured.pngCalls.push(args);
+  },
+  downloadPlotSvg: (...args: [unknown, string]) => {
+    captured.svgCalls.push(args);
+  },
 }));
 
 const dataset = {
@@ -189,6 +196,44 @@ describe("ChartPanel banners for problem fits", () => {
     render(<ChartPanel dataset={dataset} bundle={bundle} dark={false} />);
     const warning = screen.getByText(/no curve could be sampled/);
     expect(warning.textContent).toContain("the fit range lies outside the data");
+  });
+});
+
+describe("ChartPanel export menu", () => {
+  beforeEach(() => {
+    captured.pngCalls = [];
+    captured.svgCalls = [];
+  });
+
+  it("lists SVG beside PNG and hands the chart root and dataset name to the SVG export", async () => {
+    const bundle = {
+      result: { status: "converged" },
+      curve: { x: [0, 1], y: [2, 1] },
+      confidence_band: null,
+      prediction_band: null,
+    } as unknown as FitBundle;
+    render(<ChartPanel dataset={dataset} bundle={bundle} dark={false} />);
+    expect(screen.getByRole("button", { name: "Download PNG" })).toBeTruthy();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Download SVG" }));
+    expect(captured.svgCalls).toHaveLength(1);
+    expect(captured.svgCalls[0]?.[1]).toBe("growth.csv");
+    expect(captured.pngCalls).toEqual([]);
+  });
+
+  it("leaves the PNG export working as before", async () => {
+    const bundle = {
+      result: { status: "converged" },
+      curve: { x: [0, 1], y: [2, 1] },
+      confidence_band: null,
+      prediction_band: null,
+    } as unknown as FitBundle;
+    render(<ChartPanel dataset={dataset} bundle={bundle} dark={false} />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Download PNG" }));
+    expect(captured.pngCalls).toHaveLength(1);
+    expect(captured.pngCalls[0]?.[1]).toBe("growth.csv");
+    expect(captured.svgCalls).toEqual([]);
   });
 });
 

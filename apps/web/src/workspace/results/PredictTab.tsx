@@ -1,6 +1,6 @@
 /**
  * Prediction: enter x values, get ŷ with an optional confidence or prediction band,
- * plus CSV/JSON export of the whole stored fit.
+ * plus CSV/JSON/XLSX export of the whole stored fit.
  */
 
 import { useState, type ReactElement, type SubmitEvent } from "react";
@@ -59,7 +59,7 @@ export function PredictTab({
     }
   };
 
-  const onExport = async (format: "csv" | "json"): Promise<void> => {
+  const onExport = async (format: "csv" | "json" | "xlsx"): Promise<void> => {
     setExportError(null);
     try {
       const { blob, filename } = await api.download(`/fits/${fitId}/export?format=${format}`);
@@ -156,6 +156,10 @@ export function PredictTab({
         <button type="button" className="btn" onClick={() => void onExport("json")}>
           <Download className="icon" aria-hidden="true" focusable="false" />
           Download JSON
+        </button>
+        <button type="button" className="btn" onClick={() => void onExport("xlsx")}>
+          <Download className="icon" aria-hidden="true" focusable="false" />
+          Download Excel workbook
         </button>
       </p>
       {exportError !== null && <ErrorBox error={exportError} />}

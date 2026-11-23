@@ -1,5 +1,6 @@
-"""CSV export of a fit (a parameters table, then one row per observation with fitted values)
-and of an Auto-fit run (one table of candidates).
+"""Export of a fit and of an Auto-fit run: the CSV writers here, and the XLSX workbook
+(a parameters table, one row per observation with fitted values, statistics and a plot
+sheet) through ``curvestudio_reporting``.
 
 Undefined values are empty cells; in a fit export the ``note`` column says which cells are
 empty and why.
@@ -12,6 +13,9 @@ from collections.abc import Iterator
 from curvestudio.data import XY
 from curvestudio.discovery import AutoFitResult, RankBy
 from curvestudio.workflow import FitBundle
+from curvestudio_reporting import fit_to_xlsx
+
+XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 CHUNK_ROWS = 5000
 _FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
@@ -29,6 +33,14 @@ def _number(value: float | None) -> str:
 def _lines(rows: list[list[str]]) -> str:
     buffer = io.StringIO()
     csv.writer(buffer, lineterminator="\n").writerows(rows)
+    return buffer.getvalue()
+
+
+def xlsx_bytes(bundle: FitBundle) -> bytes:
+    """The fit as an Excel workbook (summary, parameters, observations, statistics, plot),
+    written into memory and ready to stream."""
+    buffer = io.BytesIO()
+    fit_to_xlsx(bundle, buffer)
     return buffer.getvalue()
 
 

@@ -15,7 +15,7 @@ from curvestudio.workflow import FitBundle, FitSpec, Prediction, WorkflowError, 
 from curvestudio_api import audit, quotas
 from curvestudio_api.deps import Context, Ctx, CurrentUser, Db, own_dataset, own_fit, own_job
 from curvestudio_api.errors import ApiError
-from curvestudio_api.export import csv_chunks
+from curvestudio_api.export import XLSX_MEDIA_TYPE, csv_chunks, xlsx_bytes
 from curvestudio_api.jobs import ACTIVE, Task
 from curvestudio_api.logging_setup import request_id_var
 from curvestudio_api.orm import Dataset, Fit, Job, User
@@ -206,9 +206,10 @@ def export_fit(
     fit_id: uuid.UUID,
     user: CurrentUser,
     db: Db,
-    format: Annotated[Literal["json", "csv"], Query()] = "json",
+    format: Annotated[Literal["json", "csv", "xlsx"], Query()] = "json",
 ) -> Response:
-    """Download a fit as JSON (the bundle) or CSV (parameters, then fitted values per row)."""
+    """Download a fit as JSON (the bundle), CSV (parameters, then fitted values per row)
+    or XLSX (the Excel workbook, with its plot sheet)."""
     fit = own_fit(db, user, fit_id)
     disposition = {"Content-Disposition": f'attachment; filename="fit-{fit.id}.{format}"'}
     if format == "json":
@@ -217,7 +218,13 @@ def export_fit(
             media_type="application/json",
             headers=disposition,
         )
-    dataset = own_dataset(db, user, fit.dataset_id)
     bundle = FitBundle.model_validate(fit.bundle)
+    if format == "xlsx":
+        return StreamingResponse(
+            iter([xlsx_bytes(bundle)]),
+            media_type=XLSX_MEDIA_TYPE,
+            headers=disposition,
+        )
+    dataset = own_dataset(db, user, fit.dataset_id)
     chunks = csv_chunks(bundle, _stored_xy(dataset))
     return StreamingResponse(chunks, media_type="text/csv; charset=utf-8", headers=disposition)
