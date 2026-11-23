@@ -149,6 +149,34 @@ def _estimator(result: FitResult, weighting: str) -> str:
     return " ".join(word for word in words if word)
 
 
+def _setting(value: float) -> str:
+    """A number the specification set, shown as it was given (``0.0`` -> ``0``, ``0.5`` as is)."""
+    return f"{value:.15g}"
+
+
+def _bounds_sentence(spec: FitSpec | None) -> str:
+    """The bounds the specification set on the parameters; ``""`` when it set none.
+
+    An open end (``None``) is left out, so a parameter with one end free reads ``a > 0`` or
+    ``b < 10``, and one with both free is not named. The bounds a registered model declares
+    are the model's, not the specification's, and are not spoken of here.
+    """
+    if spec is None:
+        return ""
+    bounded: list[str] = []
+    for name, (lower, upper) in spec.bounds.items():
+        if lower is None:
+            if upper is not None:
+                bounded.append(f"{name} < {_setting(upper)}")
+        elif upper is None:
+            bounded.append(f"{name} > {_setting(lower)}")
+        else:
+            bounded.append(f"{name} in ({_setting(lower)}, {_setting(upper)})")
+    if not bounded:
+        return ""
+    return f"The parameters were bounded: {', '.join(bounded)}."
+
+
 def _left_out(bundle: FitBundle, missing: _Missing) -> str:
     """The observations that took no part, each count with its reason."""
     data = bundle.data
@@ -265,6 +293,9 @@ def _paragraph(
         f"{model.description[0].upper()}{model.description[1:]} was fitted to {n} "
         f"observations by {_estimator(result, weighting)}{solver}."
     ]
+    bounded = _bounds_sentence(spec)
+    if bounded:
+        sentences.append(bounded)
     left_out = _left_out(bundle, missing)
     if left_out:
         sentences.append(left_out)

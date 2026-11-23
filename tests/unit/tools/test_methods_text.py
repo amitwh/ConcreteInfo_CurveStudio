@@ -32,6 +32,7 @@ LINE = FitSpec(model=PolynomialRef(degree=1))
 CUSTOM_LINE = FitSpec(model=CustomRef(equation="a*x + b", parameters=["a", "b"]))
 HUBER_LINE = CUSTOM_LINE.model_copy(update={"loss": "huber"})
 SOFT_L1_LINE = CUSTOM_LINE.model_copy(update={"loss": "soft_l1"})
+BOUNDED_LINE = CUSTOM_LINE.model_copy(update={"bounds": {"a": (0.0, 5.0), "b": (None, 10.0)}})
 GROWTH = FitSpec(model=RegisteredRef(id="exp_growth"), seed=3)
 ADDRESS = "https://curvestudio.concreteinfo.cloud"
 TO_COMPLETE = (
@@ -219,6 +220,41 @@ def test_methods_text_states_only_what_is_true() -> None:
     latex = methods_text(custom, spec=CUSTOM_LINE, style="latex")
     # the display's third line: \[, \begin{aligned}, then the model
     assert latex.equation.splitlines()[2] == r"y &= \text{a*x + b} \\"
+
+
+def test_the_paragraph_states_the_bounds_the_specification_set() -> None:
+    data = line_xy()
+    one_parameter = FitSpec(
+        model=CustomRef(equation="k*x", parameters=["k"]), bounds={"k": (0.0, 5.0)}
+    )
+    lower_only = CUSTOM_LINE.model_copy(update={"bounds": {"a": (0.0, None)}})
+    for spec, sentence in (
+        (one_parameter, "The parameters were bounded: k in (0, 5)."),
+        (BOUNDED_LINE, "The parameters were bounded: a in (0, 5), b < 10."),
+        (lower_only, "The parameters were bounded: a > 0."),
+    ):
+        bundle = fit_dataset(data, spec)
+        assert bundle.result.status.value == "converged"
+        for style in STYLES:
+            paragraph = methods_text(bundle, spec=spec, style=style).paragraph
+            # straight after the sentence that says what was fitted and how
+            assert paragraph.split(". ")[1] + "." == sentence
+
+    # no bounds, both ends open, a registered model's bounds that are only declared (its
+    # decay rate may not go below 0), weights without bounds: nothing is said
+    open_both = CUSTOM_LINE.model_copy(update={"bounds": {"a": (None, None)}})
+    declared = FitSpec(model=RegisteredRef(id="exp_decay_offset"))
+    t = np.linspace(0.0, 6.0, 40)
+    decay = _xy(t, 3.0 * np.exp(-0.8 * t) + 1.0 + np.random.default_rng(0).normal(0.0, 0.05, 40))
+    for bundle, spec in (
+        (fit_dataset(data, CUSTOM_LINE), CUSTOM_LINE),
+        (fit_dataset(data, open_both), open_both),
+        (fit_dataset(decay, declared), declared),
+        (weighted_quadratic(), USED),
+    ):
+        assert bundle.result.status.value == "converged"
+        assert "bounded" not in methods_text(bundle, spec=spec).paragraph
+        assert "bounded" not in methods_text(bundle).paragraph
 
 
 def test_a_parameter_without_a_standard_error_is_said_to_have_none() -> None:
@@ -409,6 +445,7 @@ def test_every_number_in_the_methods_text_comes_from_the_result() -> None:
         (fit_dataset(growth_xy(), GROWTH), GROWTH, None),
         (fit_dataset(line_xy(), CUSTOM_LINE), CUSTOM_LINE, None),
         (fit_dataset(line_xy(), SOFT_L1_LINE), SOFT_L1_LINE, None),
+        (fit_dataset(line_xy(), BOUNDED_LINE), BOUNDED_LINE, None),
         (origin, QUADRATIC, 2),
         (big, LINE, 1),
     ]
@@ -432,6 +469,12 @@ def test_every_number_in_the_methods_text_comes_from_the_result() -> None:
                 str(bundle.data.n_total),
             }
             | {str(len(names)), str(without)}  # counts of parameters
+            | {  # the bounds the specification set, as it gave them
+                f"{end:.15g}"
+                for lower, upper in (spec.bounds.values() if spec is not None else ())
+                for end in (lower, upper)
+                if end is not None
+            }
         )
         if degree is not None:  # the polynomial degree, and the powers 1 up to it
             allowed |= {str(degree), *(str(power) for power in range(1, degree + 1))}
