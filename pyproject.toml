@@ -285,6 +285,41 @@ source_modules = ["curvestudio"]
 forbidden_modules = ["curvestudio_desktop"]
 allow_indirect_imports = true
 
+[[tool.importlinter.contracts]]
+name = "Nothing in the core imports the tools layer"
+type = "forbidden"
+source_modules = [
+    "curvestudio.data",
+    "curvestudio.fitting",
+    "curvestudio.models",
+    "curvestudio.expressions",
+    "curvestudio.testing",
+    "curvestudio.statistics",
+    "curvestudio.diagnostics",
+    "curvestudio.workflow",
+    "curvestudio.discovery",
+    "curvestudio.project",
+]
+forbidden_modules = ["curvestudio.tools"]
+
+[[tool.importlinter.contracts]]
+name = "The tools layer imports only NumPy, SciPy and the core layers below it"
+type = "allowed"
+source_modules = ["curvestudio.tools"]
+allowed_modules = [
+    "curvestudio.tools",
+    "curvestudio.data",
+    "curvestudio.fitting",
+    "curvestudio.models",
+    "curvestudio.statistics",
+    "curvestudio.diagnostics",
+    "curvestudio.discovery",
+    "curvestudio.workflow",
+    "numpy",
+    "scipy",
+    "pydantic",
+]
+
 # scipy.odr (deprecated) cannot be a contract here: import-linter rejects subpackages of
 # external packages. tests/unit/test_architecture.py::test_forbidden_odr_import enforces it.
 
