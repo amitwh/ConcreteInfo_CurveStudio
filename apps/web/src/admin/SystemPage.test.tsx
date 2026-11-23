@@ -104,6 +104,16 @@ describe("SystemPage", () => {
     ).toBeTruthy();
   });
 
+  it("reads a single worker and a single queue slot in the singular", async () => {
+    spyRequest().mockResolvedValue({
+      ...SYSTEM,
+      jobs: { running: true, workers: 1, queue_depth: 0, queue_max: 1 },
+    });
+    renderWithQuery(<SystemPage />);
+    await screen.findByRole("group", { name: "Jobs" });
+    expect(within(group("Jobs")).getByText("1 worker; 0 of 1 queue slot used.")).toBeTruthy();
+  });
+
   it("tables the last day's latency per route, and switches periods on request", async () => {
     const user = userEvent.setup();
     const spy = serve({

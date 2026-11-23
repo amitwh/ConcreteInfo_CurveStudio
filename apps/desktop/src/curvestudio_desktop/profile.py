@@ -1,8 +1,8 @@
 """The report identity: who an exported report says it was prepared by.
 
-The desktop app is offline and has no accounts, so the identity on a report is two
-settings the user typed in Edit → Preferences: kept in QSettings under
-``profile/report_name`` and ``profile/report_organisation`` and read by every export.
+The desktop app has no accounts, so the identity on a report is two settings the user
+typed in Edit → Preferences: kept in QSettings under ``profile/report_name`` and
+``profile/report_organisation`` and read by every export.
 The exports pass the identity text on (``"Alice"``, ``"Lab"`` or ``"Alice, Lab"``); each
 report adds the "Prepared by" words itself, as the web report does. The settings exist
 only on this computer; nothing in the app sends them anywhere.

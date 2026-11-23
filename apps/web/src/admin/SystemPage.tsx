@@ -120,7 +120,7 @@ function SystemTiles({ figures }: { figures: SystemOut }): ReactElement {
       <StatTile
         label="Jobs"
         value={figures.jobs.running ? "Running" : "Stopped"}
-        explanation={`${fmtInt(figures.jobs.workers)} workers; ${fmtInt(figures.jobs.queue_depth)} of ${fmtInt(figures.jobs.queue_max)} queue slots used.`}
+        explanation={`${fmtInt(figures.jobs.workers)} ${figures.jobs.workers === 1 ? "worker" : "workers"}; ${fmtInt(figures.jobs.queue_depth)} of ${fmtInt(figures.jobs.queue_max)} queue ${figures.jobs.queue_max === 1 ? "slot" : "slots"} used.`}
       />
       <StatTile
         label="Database"
