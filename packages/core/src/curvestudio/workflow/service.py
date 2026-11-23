@@ -268,7 +268,7 @@ def fit_dataset(xy: XY, spec: FitSpec, *, compact: bool = False) -> FitBundle:
     return _assemble(data, result, model, warnings, compact)
 
 
-def fitter_for(spec: FitSpec, xy: XY) -> tuple[Fitter, XY]:
+def fitter_for(spec: FitSpec, xy: XY, *, result: FitResult | None = None) -> tuple[Fitter, XY]:
     """The fitter the workflow itself uses for ``spec``, and the data to give it.
 
     The data is ``xy`` after the spec's weight choice, so ``fitter.fit(data)`` is the fit
@@ -280,6 +280,11 @@ def fitter_for(spec: FitSpec, xy: XY) -> tuple[Fitter, XY]:
     refuses (an unknown parameter name, a method that cannot take the loss) raises
     ``ValueError`` from ``fitter.fit``, where ``fit_dataset`` says ``INVALID_SPEC``.
 
+    A spec cannot ask for a polynomial through the origin, but Auto-fit fits one (model id
+    ``polyN_origin``). Give the stored fit as ``result`` and, when it is such a fit of the
+    spec's degree, the fitter is the one that fits the same model; without ``result`` (or
+    for any other fit) it is the ordinary polynomial fitter.
+
     Raises:
         WorkflowError: ``UNKNOWN_MODEL`` / ``INVALID_EQUATION`` for a model that cannot be
             resolved; ``INVALID_SPEC`` for a setting refused before fitting, as
@@ -290,7 +295,13 @@ def fitter_for(spec: FitSpec, xy: XY) -> tuple[Fitter, XY]:
     if model is None:
         assert isinstance(spec.model, PolynomialRef)  # model is None only for polynomials
         _refuse_polynomial_settings(spec)
-        return PolynomialFitter(spec.model.degree), data
+        stored = None if result is None else _POLYNOMIAL_ID.fullmatch(result.model_id)
+        through_origin = (
+            stored is not None
+            and stored.group(2) is not None
+            and int(stored.group(1)) == spec.model.degree
+        )
+        return PolynomialFitter(spec.model.degree, through_origin=through_origin), data
     return NonlinearFitter(model, _fit_config(spec), None), data
 
 

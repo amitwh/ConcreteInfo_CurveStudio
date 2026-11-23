@@ -15,6 +15,7 @@ from test_workflow_fit import big_linear_xy, exponential_xy, make_xy, poly_spec,
 
 from curvestudio import workflow
 from curvestudio.data import XY
+from curvestudio.discovery import AutoFitConfig, AutoFitResult
 from curvestudio.models.registry import _clear_registry
 from curvestudio.models.starter import register_starter_models
 from curvestudio.statistics import NonlinearFitter, PolynomialFitter, build_view, k_fold_cv
@@ -24,6 +25,7 @@ from curvestudio.workflow import (
     FitSpec,
     RegisteredRef,
     WorkflowError,
+    bundle_for_candidate,
     fit_dataset,
     fit_view,
     fitter_for,
@@ -209,6 +211,50 @@ def test_fitter_for_reproduces_the_workflow_fit() -> None:
             {"model": {"kind": "polynomial", "degree": 2, "through_origin": True}}
         )
     assert fitter_for(poly_spec(2), quadratic_xy())[0] == PolynomialFitter(degree=2)
+
+
+def _origin_bundle() -> tuple[FitBundle, XY]:
+    """A ``poly2_origin`` bundle, opened from an Auto-fit row the way the UI opens one."""
+    x = np.arange(1.0, 21.0)
+    xy = XY(x, 3.0 * x - 0.2 * x**2 + 0.1 * np.sin(x), None, "x", "y", "fp-origin")
+    shell = AutoFitResult(
+        config=AutoFitConfig(n_starts=1),
+        dataset_fingerprint="fp-origin",
+        n_active=0,
+        ranked=(),
+        outcomes=(),
+        skipped={},
+        unconverged={},
+        exact_fits=(),
+        warnings=(),
+        cancelled=False,
+    )
+    return bundle_for_candidate(xy, shell, "poly2_origin"), xy
+
+
+def test_fitter_for_gives_a_polynomial_through_the_origin_its_own_fitter() -> None:
+    bundle, xy = _origin_bundle()
+    spec = poly_spec(2)
+    assert bundle.result.model_id == "poly2_origin"
+
+    # the fitter the workflow always gave fits another model, and cannot read this result
+    ordinary, _ = fitter_for(spec, xy)
+    assert ordinary == PolynomialFitter(degree=2)
+    with pytest.raises(ValueError):
+        ordinary.predict(bundle.result, xy.x)
+
+    fitter, data = fitter_for(spec, xy, result=bundle.result)
+    assert fitter == PolynomialFitter(degree=2, through_origin=True)
+    refit = fitter.fit(data)
+    assert [p.name for p in refit.parameters] == [p.name for p in bundle.result.parameters]
+    assert [p.value for p in refit.parameters] == pytest.approx(
+        [p.value for p in bundle.result.parameters], rel=1e-9
+    )
+    x = np.linspace(float(xy.x.min()), float(xy.x.max()), 7)
+    values = fitter.predict(bundle.result, x)
+    assert np.all(np.isfinite(values))
+    assert values == pytest.approx(fitter.predict(refit, x), rel=1e-9, abs=1e-9)
+    assert k_fold_cv(data, fitter).status == "ok"
 
 
 def test_the_bridge_is_exported() -> None:
