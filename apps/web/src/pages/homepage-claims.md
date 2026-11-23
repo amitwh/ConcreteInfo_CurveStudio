@@ -23,13 +23,13 @@ Pinned by the "keeps the trust strip pills and stats" test in `HomePage.test.tsx
 | Claim | Backing |
 |---|---|
 | "NIST StRD reference sets" | As hero above |
-| "~250 models" | The catalogue in `packages/model_library/src/curvestudio_models/` (`generated.py` plus `families/`). **Not yet pinned:** the count is pinned against the real catalogue by a test in `apps/web/src/api` that lands with Task 3 |
+| "~200 models" | The catalogue in `packages/model_library/src/curvestudio_models/` (`generated.py` plus `families/`). **Not yet pinned:** the count is pinned against the real catalogue by a test in `apps/web/src/api` that lands with Task 3 |
 | "AICc / BIC ranking" | `packages/core/src/curvestudio/discovery/ranking.py` |
 | "Confidence & prediction bands" | `packages/core/src/curvestudio/statistics/bands.py` |
 | "AGPL-3.0" | `LICENSE` at the repository root |
 | "Offline desktop app" | `apps/desktop/src/curvestudio_desktop/` (PySide6 app; the `curvestudio-core` engine runs in process, no server round trip) |
 | "174 candidates ranked in one run" | `packages/core/src/curvestudio/discovery/candidates.py` (`enumerate_candidates`) feeding `engine.py`. **Not yet pinned:** the exact candidate count for the default plan is pinned by the same Task 3 test as the model count |
-| "~250 models in the library" | As "~250 models" above |
+| "~200 models in the library" | As "~200 models" above |
 | "6 export formats" | CSV and JSON: `apps/web/src/workspace/results/PredictTab.tsx` and the autofit panel, served by `apps/api/src/curvestudio_api/export.py`. PDF report: `apps/web/src/lib/report/export.ts`. PNG plot: `apps/web/src/components/PlotChart.tsx` (`downloadPlotPng`). XLSX report: `packages/reporting/src/curvestudio_reporting/xlsx_report.py` (desktop today). SVG plot: `packages/plotting/src/curvestudio_plotting/figures.py` (desktop today). **Timing note:** the web app gains the server-side XLSX report and SVG plot in Task 3, and Task 3 also lands the test that pins this count. Until then the count is six on the desktop and four live formats on the web |
 
 ## Who it is for
@@ -103,7 +103,7 @@ research ones" test; each maps to families that exist in the catalogue today.
 |---|---|
 | "Export the numbers as CSV, JSON, XLSX or PDF and the plots as PNG, SVG or PDF" | As "Publish and archive" above, with the same Task 3 timing note for web XLSX/SVG |
 | "A desktop project file records the full analysis" | `packages/core/src/curvestudio/project/model.py` and `archive.py` |
-| "Around 250 forms" | As trust strip above (Task 3 pins the count) |
+| "Around 200 forms" | As trust strip above (Task 3 pin test_api_platform.py::test_catalogue_size_backs_the_home_page_claim (200 models)) |
 | "The desktop app runs fully offline" | As "Runs completely offline" above |
 | "CurveStudio is AGPL-3.0 open source" | `LICENSE` at the repository root |
 
@@ -117,7 +117,7 @@ research ones" test; each maps to families that exist in the catalogue today.
 
 ## Claims that are not yet fully backed
 
-- "~250 models" and "174 candidates" have no pinning test today; Task 3 adds the
+- "~200 models" and "174 candidates" have no pinning test today; Task 3 adds the
   catalogue and candidate-count tests in `apps/web/src/api` and this file should then
   point at them instead of this note.
 - "6 export formats", the requirements row "Publish and archive" and the FAQ export

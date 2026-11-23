@@ -101,7 +101,7 @@ describe("HomePage", () => {
     const scoped = within(strip as HTMLElement);
     for (const pill of [
       "NIST StRD reference sets",
-      "~250 models",
+      "~200 models",
       "AICc / BIC ranking",
       "Confidence & prediction bands",
       "AGPL-3.0",
@@ -110,7 +110,7 @@ describe("HomePage", () => {
       expect(scoped.getByText(pill)).toBeTruthy();
     }
     expect(scoped.getByText("174")).toBeTruthy();
-    expect(scoped.getByText("~250")).toBeTruthy();
+    expect(scoped.getByText("~200")).toBeTruthy();
     expect(scoped.getByText("export formats")).toBeTruthy();
   });
 

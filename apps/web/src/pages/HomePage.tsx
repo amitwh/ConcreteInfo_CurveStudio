@@ -174,7 +174,7 @@ const STEPS = [
   {
     kind: "rank" as const,
     title: "Every model tried and ranked",
-    body: "Around 250 forms are fitted and ordered by AICc or BIC, not by whichever looks best.",
+    body: "Around 200 forms are fitted and ordered by AICc or BIC, not by whichever looks best.",
   },
   {
     kind: "inspect" as const,
@@ -264,7 +264,7 @@ const FAQ = [
   },
   {
     q: "Which models are available?",
-    a: "Around 250 forms: growth and decay, sigmoids, binding models, polynomials, plus a custom grammar for equations of your own.",
+    a: "Around 200 forms: growth and decay, sigmoids, binding models, polynomials, plus a custom grammar for equations of your own.",
   },
   {
     q: "What can I export?",
@@ -902,7 +902,7 @@ export function HomePage(): ReactElement {
             <div className="hp-pills">
               {[
                 "NIST StRD reference sets",
-                "~250 models",
+                "~200 models",
                 "AICc / BIC ranking",
                 "Confidence & prediction bands",
                 "AGPL-3.0",
@@ -922,7 +922,7 @@ export function HomePage(): ReactElement {
               </div>
               <div className="hp-trust__stat">
                 <strong>
-                  <CountUp target={250} prefix="~" />
+                  <CountUp target={200} prefix="~" />
                 </strong>
                 <span>models in the library</span>
               </div>
@@ -1042,7 +1042,7 @@ export function HomePage(): ReactElement {
                   {eq}
                 </code>
               ))}
-              <span className="hp-eq hp-eq--more">and ~250 more</span>
+              <span className="hp-eq hp-eq--more">and ~200 more</span>
             </div>
             <div className="hp-categories">
               <span>Growth &amp; decay</span>
