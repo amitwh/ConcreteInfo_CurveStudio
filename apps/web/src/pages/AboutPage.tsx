@@ -4,32 +4,17 @@ import type { ReactElement } from "react";
 import { Info } from "lucide-react";
 import { Link } from "react-router-dom";
 
+import otherProjects from "../content/other-projects.json";
+
 const APP_VERSION = __APP_VERSION__; // from package.json at build time
 const SOURCE_URL = "https://github.com/amitwh/ConcreteInfo_CurveStudio";
 const AGPL_URL = "https://www.gnu.org/licenses/agpl-3.0.html";
 const WEBSITE_URL = "https://www.concreteinfo.in";
 const CONTACT_EMAIL = "amit@concreteinfo.in";
 
-/** The other free ConcreteInfo projects (the desktop About window lists the same set). */
-const PROJECTS: Array<{ name: string; url: string; blurb: string }> = [
-  {
-    name: "GitHub Desktop for Linux",
-    url: "https://github.com/amitwh/GitHubDesktopLinux",
-    blurb:
-      "A Linux build of GitHub Desktop, with workflow features the standard client does not offer.",
-  },
-  {
-    name: "Markdown Converter",
-    url: "https://github.com/amitwh/markdown-converter",
-    blurb: "A focused utility that converts Markdown documents between formats.",
-  },
-  {
-    name: "PC Power Calculator",
-    url: "https://pcpower.concreteinfo.net/",
-    blurb:
-      "What a PC costs to run: real component specifications, 80+ PSU efficiency curves and your own electricity tariff — computed in the browser, with no account.",
-  },
-];
+/** The shared list (docs/other-projects.json), split into the two About groups. */
+const OPEN_SOURCE = otherProjects.entries.filter((entry) => entry.kind === "open-source");
+const COMMERCIAL = otherProjects.entries.filter((entry) => entry.kind === "commercial");
 
 /** Same credits the desktop app's About window shows. */
 const CREDITS: Array<{ work: string; licence: string }> = [
@@ -97,17 +82,35 @@ export function AboutPage(): ReactElement {
           </div>
         </dl>
 
-        <h2>Other free ConcreteInfo projects</h2>
-        <ul className="about-projects">
-          {PROJECTS.map((project) => (
-            <li key={project.url}>
-              <a href={project.url} rel="noopener noreferrer" target="_blank">
-                {project.name}
-              </a>
-              <span className="muted"> — {project.blurb}</span>
-            </li>
-          ))}
-        </ul>
+        <h2>Other tools we build and maintain.</h2>
+        <div className="about-project-groups">
+          <div>
+            <h3>Open source</h3>
+            <ul className="about-projects">
+              {OPEN_SOURCE.map((project) => (
+                <li key={project.url}>
+                  <a href={project.url} rel="noopener noreferrer" target="_blank">
+                    {project.name}
+                  </a>
+                  <span className="muted"> — {project.summary}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div>
+            <h3>Commercial software</h3>
+            <ul className="about-projects">
+              {COMMERCIAL.map((project) => (
+                <li key={project.url}>
+                  <a href={project.url} rel="noopener noreferrer" target="_blank">
+                    {project.name}
+                  </a>
+                  <span className="muted"> — {project.summary}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
         <p className="muted">
           More at{" "}
           <a href={WEBSITE_URL} rel="noopener noreferrer" target="_blank">

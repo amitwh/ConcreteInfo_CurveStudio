@@ -62,17 +62,33 @@ describe("AboutPage", () => {
 });
 
 describe("AboutPage — projects, free software and policy", () => {
-  it("links the other three free ConcreteInfo projects", () => {
+  it("lists the shared five projects in two groups under the shared heading", () => {
     renderAbout();
     expect(
-      screen.getByRole("link", { name: "GitHub Desktop for Linux" }).getAttribute("href"),
-    ).toBe("https://github.com/amitwh/GitHubDesktopLinux");
-    expect(
-      screen.getByRole("link", { name: "Markdown Converter" }).getAttribute("href"),
-    ).toBe("https://github.com/amitwh/markdown-converter");
+      screen.getByRole("heading", { name: "Other tools we build and maintain." }),
+    ).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Open source" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Commercial software" })).toBeTruthy();
+    // rendered from the imported shared JSON: the URLs pass through unchanged
     expect(
       screen.getByRole("link", { name: "PC Power Calculator" }).getAttribute("href"),
     ).toBe("https://pcpower.concreteinfo.net/");
+    expect(screen.getByRole("link", { name: "CAMS2" }).getAttribute("href")).toBe(
+      "https://cams2.concreteinfo.co.in",
+    );
+    // open source first, commercial second — the shared list's order
+    const listed = Array.from(document.querySelectorAll(".about-projects a")).map(
+      (link) => link.textContent,
+    );
+    expect(listed).toEqual([
+      "PC Power Calculator",
+      "Markdown Converter",
+      "GitHub Desktop for Linux",
+      "ConcreteInfo Mix Design Platform",
+      "CAMS2",
+    ]);
+    // each entry keeps its one-line summary, and the contact line stays
+    expect(screen.getByText(/chemical admixture management for multi-plant producers/i)).toBeTruthy();
     expect(
       screen.getAllByRole("link", { name: "amit@concreteinfo.in" })[0]?.getAttribute("href"),
     ).toBe("mailto:amit@concreteinfo.in");

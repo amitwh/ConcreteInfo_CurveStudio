@@ -1,5 +1,6 @@
 """Widget-backed dialogs and the production implementations of the provider protocols."""
 
+import json
 import platform
 import traceback
 from importlib import resources
@@ -36,26 +37,6 @@ CREDITS: tuple[str, ...] = (
     "pyqtgraph — MIT",
     "Inter and JetBrains Mono typefaces — SIL Open Font License 1.1 (OFL-1.1)",
     "Lucide icons — ISC",
-)
-#: The other free ConcreteInfo projects linked from About: (name, URL, one-line description).
-OTHER_PROJECTS: tuple[tuple[str, str, str], ...] = (
-    (
-        "GitHub Desktop for Linux",
-        "https://github.com/amitwh/GitHubDesktopLinux",
-        "A Linux build of GitHub Desktop, with workflow features the standard client does"
-        " not offer.",
-    ),
-    (
-        "Markdown Converter",
-        "https://github.com/amitwh/markdown-converter",
-        "A focused utility that converts Markdown documents between formats.",
-    ),
-    (
-        "PC Power Calculator",
-        "https://pcpower.concreteinfo.net/",
-        "What a PC costs to run: real component specifications, 80+ PSU efficiency curves"
-        " and your own electricity tariff — computed in the browser, with no account.",
-    ),
 )
 FREE_AND_OPEN_TEXT = (
     "CurveStudio is free software. The desktop application is licensed"
@@ -103,19 +84,42 @@ question about this policy, write to <a href="mailto:{email}">{email}</a>.</p>
 """
 
 
+def _packaged_projects() -> list[dict[str, str]]:
+    """The shared list of the other tools ConcreteInfo builds and maintains.
+
+    Read from the packaged copy of ``docs/other-projects.json`` — the same list the
+    home and About web pages render — so the About window has one source of truth.
+    """
+    data = resources.files("curvestudio_desktop") / "resources/help/other-projects.json"
+    entries: list[dict[str, str]] = json.loads(data.read_text(encoding="utf-8"))["entries"]
+    return entries
+
+
+def _project_group(label: str, entries: list[dict[str, str]]) -> str:
+    items = "".join(
+        f'<li><a href="{entry["url"]}">{entry["name"]}</a> — {entry["summary"]}</li>'
+        for entry in entries
+    )
+    return f"<p><strong>{label}</strong></p><ul>{items}</ul>"
+
+
 def about_sections_html() -> str:
     """The long-form About sections: the other projects, free/open, disclaimer and policy.
 
     Shared by the dialog body and :meth:`AboutDialog.full_text` so both always agree.
     ``{email}`` in :data:`POLICY_HTML` is the only placeholder.
     """
-    projects = "".join(
-        f'<li><a href="{url}">{name}</a> — {description}</li>'
-        for name, url, description in OTHER_PROJECTS
+    entries = _packaged_projects()
+    projects = _project_group(
+        "Open source",
+        [entry for entry in entries if entry["kind"] == "open-source"],
+    ) + _project_group(
+        "Commercial software",
+        [entry for entry in entries if entry["kind"] == "commercial"],
     )
     return (
-        "<h3>Other free ConcreteInfo projects</h3>"
-        f"<ul>{projects}</ul>"
+        "<h3>Other tools we build and maintain.</h3>"
+        f"{projects}"
         "<p>More at "
         f'<a href="{WEBSITE_URL}">{WEBSITE_URL.removeprefix("https://")}</a> · '
         f'<a href="mailto:{CONTACT_EMAIL}">{CONTACT_EMAIL}</a></p>'

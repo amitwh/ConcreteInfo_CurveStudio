@@ -295,6 +295,18 @@ def _run_selftest(argv: list[str] | None = None) -> int:
             if not window.import_file(path):
                 print("SELFTEST FAIL: importing the bundled example was refused", file=sys.stderr)
                 return 1
+        # the other two bundled examples: they must parse everywhere the app ships
+        # (packaging/build.py pins their presence in the frozen bundle)
+        from curvestudio.data import DataError, read_dataset
+
+        for extra in ("example-decay.csv", "example-kinetics.csv"):
+            extra_file = resources.files("curvestudio_desktop") / "resources" / extra
+            with resources.as_file(extra_file) as path:
+                try:
+                    read_dataset(path)
+                except DataError as exc:
+                    print(f"SELFTEST FAIL: {extra} did not parse ({exc})", file=sys.stderr)
+                    return 1
         model = window.table_view.model()
         if model is None or model.rowCount() < 10:
             print("SELFTEST FAIL: the data table did not populate", file=sys.stderr)

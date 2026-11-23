@@ -1828,6 +1828,11 @@ html[data-theme="dark"] .about-logo {
   margin: 1.2rem 0 0.4rem;
 }
 
+.about-project-groups h3 {
+  font-size: 0.92rem;
+  margin: 0.6rem 0 0.2rem;
+}
+
 .credits {
   list-style: none;
   margin: 0.4rem 0 1rem;

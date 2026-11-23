@@ -392,18 +392,31 @@ def test_the_help_browser_resolves_relative_image_sources(qtbot, settings) -> No
     assert (Path(search_paths[0]) / "images").is_dir()
 
 
-def test_about_lists_the_other_projects_and_contact(qtbot) -> None:
-    from curvestudio_desktop.views.dialogs import CONTACT_EMAIL, OTHER_PROJECTS, AboutDialog
+def _packaged_project_entries() -> list[dict[str, str]]:
+    """The shared five-entry list exactly as packaged (name, url, summary, kind)."""
+    packaged = resources.files("curvestudio_desktop") / "resources" / "help" / "other-projects.json"
+    entries: list[dict[str, str]] = json.loads(packaged.read_bytes())["entries"]
+    return entries
+
+
+def test_about_lists_the_shared_projects_and_contact(qtbot) -> None:
+    from curvestudio_desktop.views.dialogs import CONTACT_EMAIL, AboutDialog
 
     dialog = AboutDialog()
     qtbot.addWidget(dialog)
     html = dialog.sections.toHtml()
-    for name, url, _description in OTHER_PROJECTS:
-        assert name in html, name
-        assert url in html, url
+    assert "Other tools we build and maintain" in html
+    entries = _packaged_project_entries()
+    assert len(entries) == 5
+    # every shared entry appears with its link, open source first, commercial second
+    positions = []
+    for entry in entries:
+        assert entry["name"] in html, entry["name"]
+        assert entry["url"] in html, entry["url"]
+        positions.append(html.index(entry["name"]))
+    assert positions == sorted(positions)
     assert CONTACT_EMAIL in html
     assert "https://www.concreteinfo.in" in html
-    assert "GitHub Desktop for Linux" in OTHER_PROJECTS[0][0]
     # the same facts are in the copyable text, not only the widget
     text = dialog.full_text()
     assert "PC Power Calculator" in text and CONTACT_EMAIL in text
@@ -434,3 +447,44 @@ def test_about_carries_the_disclaimer_and_the_policy(qtbot) -> None:
     assert "not sold, and it is not shared for advertising" in html
     assert "Argon2" in html
     assert "no telemetry" in html
+
+
+# -- example datasets --------------------------------------------------------------------------
+
+
+def test_help_section_11_names_all_three_example_datasets() -> None:
+    body = CANONICAL_HELP.read_text(encoding="utf-8").split(
+        "## 11. About, licence, projects and policy", 1
+    )[1]
+    for filename in ("example.csv", "example-decay.csv", "example-kinetics.csv"):
+        assert f"`{filename}`" in body, filename
+
+
+@pytest.mark.parametrize(
+    ("filename", "rows", "columns"),
+    [
+        ("example.csv", None, ("age_days", "strength_mpa")),
+        ("example-decay.csv", 30, ("x", "y")),
+        ("example-kinetics.csv", 24, ("x", "y")),
+    ],
+)
+def test_every_bundled_example_parses_as_a_dataset(
+    filename: str, rows: int | None, columns: tuple[str, ...]
+) -> None:
+    from curvestudio.data import read_dataset
+
+    with resources.as_file(resources.files("curvestudio_desktop") / "resources" / filename) as path:
+        dataset = read_dataset(path)
+    frame = dataset.original
+    assert tuple(frame.columns) == columns
+    if rows is not None:
+        assert len(frame) == rows
+
+
+def test_the_package_ships_exactly_three_example_datasets() -> None:
+    shipped = sorted(
+        entry.name
+        for entry in (resources.files("curvestudio_desktop") / "resources").iterdir()
+        if entry.is_file() and entry.name.startswith("example") and entry.suffix == ".csv"
+    )
+    assert shipped == ["example-decay.csv", "example-kinetics.csv", "example.csv"]

@@ -201,8 +201,11 @@ def check_bundle() -> None:
             "curvestudio-engineering dist-info (registry entry points)",
         ),
         (
-            (internal / "curvestudio_desktop" / "resources" / "example.csv").is_file(),
-            "the bundled example dataset",
+            all(
+                (internal / "curvestudio_desktop" / "resources" / name).is_file()
+                for name in ("example.csv", "example-decay.csv", "example-kinetics.csv")
+            ),
+            "the bundled example datasets",
         ),
     ]
     missing = [what for ok, what in checks if not ok]

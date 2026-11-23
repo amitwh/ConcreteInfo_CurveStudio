@@ -20,8 +20,9 @@ It is the same engine on the web and on the desktop, so a fit made in one matche
    its curve and see its headline numbers; open its details for the full report.
 5. **Export** the report, the ranking or the plot.
 
-The bundled `example.csv` (age in days vs. compressive strength in MPa) is a good dataset to
-explore with.
+Three example datasets ship with the app: `example.csv` (age in days vs. compressive strength
+in MPa), `example-decay.csv` (a first-order decay) and `example-kinetics.csv` (enzyme kinetics)
+— good data to explore with.
 
 ![The desktop workspace: plot, equation caption, ranking and data table](images/workspace.png)
 
@@ -180,9 +181,12 @@ closed. *View → Reset layout* restores the default arrangement.
 ## 11. About, licence, projects and policy
 
 CurveStudio is built by **ConcreteInfo** — <https://www.concreteinfo.in> · amit@concreteinfo.in.
-The About window also lists the other free ConcreteInfo projects (GitHub Desktop for Linux,
-Markdown Converter, PC Power Calculator), explains why the desktop app is free and AGPL, and
-carries the disclaimer and the privacy/fair-use policy in full. In short:
+The About window and the About page list the other tools we build and maintain, in two groups —
+open source (PC Power Calculator, Markdown Converter, GitHub Desktop for Linux) and commercial
+software (ConcreteInfo Mix Design Platform, CAMS2) — explain why the desktop app is free and
+AGPL, and carry the disclaimer and the privacy/fair-use policy in full. Three example datasets
+ship with the app: `example.csv` (age against strength), `example-decay.csv` (first-order decay)
+and `example-kinetics.csv` (enzyme kinetics), so no single discipline leads. In short:
 
 - The desktop app is free software under AGPL-3.0-or-later; the web app is free today and may
   gain a small hosting subscription later (the desktop stays free).
