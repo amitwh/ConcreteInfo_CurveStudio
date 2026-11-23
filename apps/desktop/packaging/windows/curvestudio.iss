@@ -30,6 +30,10 @@ PrivilegesRequired=lowest
 
 [Files]
 Source: "..\..\..\dist\curvestudio-desktop\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs
+; Which artifact the app came from: the app's anonymous install record reports the word
+; in package.txt beside its executable. The installer is its own package kind, so the
+; word comes from this file (the portable zip carries a different one inside the archive).
+Source: "package_windows_setup.txt"; DestDir: "{app}"; DestName: "package.txt"
 
 [Icons]
 Name: "{group}\ConcreteInfo CurveStudio"; Filename: "{app}\curvestudio-desktop.exe"

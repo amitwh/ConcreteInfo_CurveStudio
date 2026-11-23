@@ -2,12 +2,18 @@
 
 The whole directory runs offscreen: ``QT_QPA_PLATFORM=offscreen`` is set before
 PySide6 is imported anywhere, and the directory is skipped cleanly when PySide6
-itself is unavailable (for example a core-only checkout).
+itself is unavailable (for example a core-only checkout). The one network call the
+app makes (its install record) is switched off for the whole directory as well, so
+a test that spawns a real window can never post to the real endpoint.
 """
 
 import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+# No desktop test may reach the install-record endpoint: an empty URL means "never send"
+# (see curvestudio_desktop.install_record). A test that exercises the variable sets it
+# itself, with monkeypatch.
+os.environ.setdefault("CURVESTUDIO_INSTALL_RECORD_URL", "")
 
 import pytest
 

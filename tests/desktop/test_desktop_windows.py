@@ -1,8 +1,10 @@
 """Multiple project windows: File → New/Open project opens another window."""
 
 import pytest
+from PySide6.QtCore import QSettings
 from PySide6.QtWidgets import QApplication
 
+from curvestudio_desktop import windows as windows_module
 from curvestudio_desktop.controllers.project import ProjectController
 from curvestudio_desktop.views.main_window import MainWindow
 from curvestudio_desktop.windows import WindowRegistry
@@ -25,7 +27,22 @@ def registry(settings, confirmation, paths, messenger, qtbot):
         qtbot.addWidget(window)
         return window
 
-    return WindowRegistry(factory)
+    # the registry gets the tests' throwaway settings too: its install record reads them
+    return WindowRegistry(factory, settings=settings)
+
+
+def test_a_spawned_window_sends_the_install_record_once_it_is_shown(
+    registry, settings: QSettings, monkeypatch: pytest.MonkeyPatch, qtbot
+) -> None:
+    """The window comes first; the app's one network call follows, off the start-up path."""
+    asked: list[QSettings] = []
+    monkeypatch.setattr(windows_module, "maybe_send_install_record", asked.append)
+
+    registry.spawn()
+    assert asked == []  # show() has run; the deferred call has not
+
+    qtbot.waitUntil(lambda: bool(asked), timeout=2000)
+    assert asked == [settings]  # through the registry's own settings
 
 
 def test_new_project_opens_a_second_window_and_leaves_the_first_alone(registry) -> None:

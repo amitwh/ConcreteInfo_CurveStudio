@@ -134,7 +134,7 @@ requested points is capped; past the cap the tab says so instead of silently tru
 
 A project holds its datasets, their fits and the Auto-fit results in one `.cstudio` file
 (Ctrl+S saves, Ctrl+Shift+S saves a copy, Ctrl+O opens). Undo (Ctrl+Z) covers project edits.
-A project saved on one machine opens on another; nothing is uploaded anywhere.
+A project saved on one machine opens on another: it is a file on your computer, never uploaded.
 
 ## 8. Exports
 
@@ -174,9 +174,13 @@ closed. *View → Reset layout* restores the default arrangement.
 - **Undefined statistics:** `n/a` means "the fit could not determine this", which is information,
   not an error.
 - **The desktop app reports an unexpected error:** a dialog shows the traceback with a copy
-  button. Saved project files are unaffected. Report it with the copied text.
-- **No network (desktop):** the status bar says so. Fitting is local, so the app keeps working
-  in full — there is no account and no upload.
+  button, and the same report is kept in a `crash.log` on your computer (its "Open log
+  folder" button leads there); nothing is sent. Saved project files are unaffected.
+  Report it with the copied text.
+- **No network (desktop):** fitting is local, so the app keeps working in full, with no
+  account. The only thing it sends is one anonymous install record (version, operating
+  system, package type), on first launch and after an upgrade; without a connection it
+  waits for a later launch, and Edit → Preferences → Privacy turns it off.
 - **Web:** fitting needs a connection to the server. The desktop app is the offline story.
 
 ## 11. About, licence, projects and policy
@@ -193,8 +197,12 @@ and `example-kinetics.csv` (enzyme kinetics), so no single discipline leads. In 
   gain a small hosting subscription later (the desktop stays free).
 - A fit describes agreement with *your* sample. It is not proof of a physical law, code
   compliance or safety — verify anything that matters against the standard and a second method.
-- Desktop data stays on your machine. On the web your datasets and fits are stored in your
-  account only to provide the service; deleting a dataset, a fit or your account removes them.
+- Desktop data stays on your machine: the app works fully offline with no account, and on
+  first launch and after an upgrade it sends one anonymous install record (version,
+  operating system, package type) so we know how many installations exist — Edit →
+  Preferences → Privacy turns it off. Nothing else ever leaves your computer. On the web
+  your datasets and fits are stored in your account only to provide the service; deleting
+  a dataset, a fit or your account removes them.
 
 - CurveStudio: AGPL-3.0-or-later.
 - Qt / PySide6 (desktop): LGPL-3.0.

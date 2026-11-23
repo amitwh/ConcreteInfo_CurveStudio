@@ -10,4 +10,10 @@ __version__ = "0.11.1"
 
 APP_NAME = "ConcreteInfo CurveStudio"
 ORG_NAME = "ConcreteInfo"
-NO_NETWORK_NOTE = "No network access"
+
+INSTALL_RECORD_URL = "https://curvestudio.concreteinfo.cloud/api/v1/installs"
+"""The one address the desktop app ever connects to: its anonymous install record."""
+
+NO_NETWORK_NOTE = "Offline-ready · no account"
+"""What the status bar says: the app works fully offline and has no account. The one thing it
+sends is the install record (:mod:`curvestudio_desktop.install_record`)."""

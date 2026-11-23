@@ -1,16 +1,18 @@
-"""PreferencesDialog: the "Prepared by" identity on reports, and the theme.
+"""PreferencesDialog: the "Prepared by" identity on reports, the theme, and the one switch.
 
 Edit → Preferences… (Ctrl+,). The two report fields are printed as a "Prepared by …" line
 under the title of an exported PDF report, in the print header of an exported workbook and
 along the top of an exported plot. They are kept in QSettings on this computer and read by
-every export; the app is offline and has no account, so they never leave it. OK writes
-both groups; Cancel and Escape write nothing.
+every export; the app has no account, so they never leave it. The Privacy group holds the
+switch for the anonymous install record, the only thing the app ever sends. OK writes all
+three groups; Cancel and Escape write nothing.
 """
 
 from typing import cast
 
 from PySide6.QtCore import QSettings
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
@@ -22,6 +24,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from curvestudio_desktop.install_record import install_record_enabled, set_install_record_enabled
 from curvestudio_desktop.profile import (
     MAX_BYLINE_FIELD,
     ReportIdentity,
@@ -40,6 +43,11 @@ HINT_TEXT = (
     'Printed as "Prepared by …" on PDF reports, exported plots and printed spreadsheets. '
     "It never leaves this computer."
 )
+PRIVACY_TEXT = (
+    "On first launch, and again after an upgrade, CurveStudio sends one anonymous record "
+    "(version, operating system, package type) so we know how many installations exist. "
+    "It holds no account, no name and no project. Nothing else ever leaves this computer."
+)
 
 
 def _one_line(field: QLineEdit) -> str:
@@ -48,20 +56,21 @@ def _one_line(field: QLineEdit) -> str:
 
 
 class PreferencesDialog(QDialog):
-    """Edit → Preferences…: who reports are prepared by, and the theme."""
+    """Edit → Preferences…: who reports are prepared by, the theme, and the install record."""
 
     def __init__(self, parent: QWidget | None = None, *, settings: QSettings | None = None) -> None:
         super().__init__(parent)
         self._settings = settings if settings is not None else QSettings()
         self.setObjectName("preferencesDialog")
         self.setWindowTitle(TITLE)
-        # Wide enough for the two fields; the hint wraps inside it rather than widening it.
+        # Wide enough for the two fields; the hints wrap inside it rather than widening it.
         self.setMinimumWidth(520)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(18, 18, 18, 14)
         layout.setSpacing(8)
         layout.addWidget(self._build_reports())
         layout.addWidget(self._build_appearance())
+        layout.addWidget(self._build_privacy())
         self.buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
@@ -110,13 +119,27 @@ class PreferencesDialog(QDialog):
         form.addRow("Theme", self.theme_combo)
         return appearance
 
+    def _build_privacy(self) -> QGroupBox:
+        privacy = QGroupBox("Privacy")
+        layout = QVBoxLayout(privacy)
+        self.install_record_check = QCheckBox("Send an anonymous install record")
+        self.install_record_check.setObjectName("preferencesInstallRecord")
+        self.install_record_check.setChecked(install_record_enabled(self._settings))
+        layout.addWidget(self.install_record_check)
+        self.privacy_label = QLabel(PRIVACY_TEXT)
+        self.privacy_label.setWordWrap(True)
+        self.privacy_label.setObjectName("preferencesPrivacyHint")
+        layout.addWidget(self.privacy_label)
+        return privacy
+
     # -- buttons -----------------------------------------------------------------------------
 
     def _accept(self) -> None:
-        """OK: write both groups, then close as accepted."""
+        """OK: write all three groups, then close as accepted."""
         set_report_identity(
             ReportIdentity(_one_line(self.name_edit), _one_line(self.organisation_edit)),
             self._settings,
         )
         set_theme_preference(cast("Preference", self.theme_combo.currentData()), self._settings)
+        set_install_record_enabled(self.install_record_check.isChecked(), self._settings)
         self.accept()

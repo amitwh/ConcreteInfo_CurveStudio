@@ -12,6 +12,8 @@ import importlib.util
 import os
 import re
 import stat
+import tarfile
+import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
@@ -121,6 +123,11 @@ build = _load_build()
 APP = "curvestudio-desktop"
 
 
+def package_word(directory: Path) -> str:
+    """The ``package`` word the artifact left beside its executable (``package.txt``)."""
+    return (directory / build.PACKAGE_FILE).read_text(encoding="utf-8").strip()
+
+
 @dataclass
 class FakeRepo:
     """A throwaway repository layout wired into the build driver's module globals."""
@@ -189,6 +196,7 @@ def test_deb_tree_layout(fake_repo: FakeRepo) -> None:
 
     library = staging / "usr" / "lib" / APP
     assert (library / "_internal" / "data.txt").read_text(encoding="utf-8") == "payload"
+    assert package_word(library) == "deb"  # beside the binary, for the app's install record
     assert stat.S_IMODE(library.stat().st_mode) == 0o755
     assert stat.S_IMODE((library / APP).stat().st_mode) & 0o111, "the main binary stays executable"
 
@@ -226,10 +234,53 @@ def test_appdir_layout(fake_repo: FakeRepo) -> None:
     assert (appdir / f"{APP}.png").is_file()
     assert (appdir / f"{APP}.desktop").is_file()
     assert (appdir / "usr" / "lib" / APP / "_internal" / "data.txt").is_file()
+    # the tree was assembled like the .deb's, but the image is its own package kind
+    assert package_word(appdir / "usr" / "lib" / APP) == "appimage"
     assert (appdir / "usr" / "share" / "applications" / f"{APP}.desktop").is_file()
     assert (
         appdir / "usr" / "share" / "icons" / "hicolor" / "256x256" / "apps" / f"{APP}.png"
     ).is_file()
+
+
+@pytest.mark.parametrize(
+    ("windows", "suffix", "expected"),
+    [(False, ".tar.gz", "tarball"), (True, ".zip", "windows_zip")],
+    ids=["linux-tarball", "windows-zip"],
+)
+def test_the_archive_carries_its_own_package_word(
+    fake_repo: FakeRepo, monkeypatch: pytest.MonkeyPatch, windows: bool, suffix: str, expected: str
+) -> None:
+    """The archive holds ``<bundle>/package.txt`` with its word, beside the executable."""
+    monkeypatch.setattr(build, "is_windows", lambda: windows)
+    monkeypatch.setattr(build, "os_name", lambda: "windows" if windows else "linux")
+
+    archive = build.make_archive(fake_repo.icons)
+
+    assert archive.name.endswith(suffix)
+    if windows:
+        with zipfile.ZipFile(archive) as zf:
+            word = zf.read(f"{APP}/{build.PACKAGE_FILE}").decode("utf-8")
+    else:
+        with tarfile.open(archive, "r:gz") as tf:
+            member = tf.extractfile(f"{APP}/{build.PACKAGE_FILE}")
+            assert member is not None
+            word = member.read().decode("utf-8")
+    assert word.strip() == expected
+    # the shared bundle stays neutral: no later artifact (the installer) inherits a word
+    assert not (fake_repo.dist / APP / build.PACKAGE_FILE).exists()
+
+
+def test_the_installer_carries_its_own_package_word() -> None:
+    """Inno Setup ships the bundle as is, so the setup's word comes from a file of its own."""
+    text = ISS.read_text(encoding="utf-8")
+    entries = re.findall(
+        r'^Source: "([^"]+)"; DestDir: "\{app\}"; DestName: "package\.txt"', text, re.M
+    )
+    assert len(entries) == 1, "the installer must install exactly one package.txt"
+    source = (ISS.parent / entries[0]).resolve()
+    assert source.read_text(encoding="utf-8").strip() == "windows_setup"
+    # the bundle's wildcard cannot bring a second one along: the archive never leaves the
+    # word on disk (test_the_archive_carries_its_own_package_word)
 
 
 @pytest.mark.parametrize(("arch", "expected"), [("x86_64", "amd64"), ("arm64", "arm64")])

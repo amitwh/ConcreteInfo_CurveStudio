@@ -23,12 +23,19 @@ The frozen executable's ``--selftest`` runs one fit and one Auto-fit through the
 spawn process pool, so a green build proves ``freeze_support()`` and the
 model-library entry points survived freezing. The Linux archive additionally
 carries the ``.desktop`` file and the icon for menu integration.
+
+Every artifact also carries its ``package`` word in ``package.txt`` beside the
+executable (``deb``, ``appimage``, ``tarball``, ``windows_zip``; the Inno Setup
+installer brings its own, ``windows_setup``): the app's anonymous install record
+reports which kind of download it runs from. The shared bundle itself stays
+neutral, so no artifact inherits another's word.
 """
 
 from __future__ import annotations
 
 import argparse
 import hashlib
+import io
 import os
 import platform
 import shutil
@@ -48,6 +55,11 @@ RELEASE = DIST / "release"
 WORK = REPO / "build"
 SELFTEST_TIMEOUT = 900  # a cold-start Auto-fit pool in a frozen app can be slow
 SELFTEST_OK = "SELFTEST OK"
+
+PACKAGE_FILE = "package.txt"
+"""Beside the frozen executable: which artifact the app came from, for its install record."""
+ARCHIVE_PACKAGES = {"windows": "windows_zip", "linux": "tarball"}
+"""The word each OS's plain archive carries (the portable zip, the tarball)."""
 
 ARCHITECTURES = {"x86_64": "x86_64", "amd64": "x86_64", "aarch64": "arm64", "arm64": "arm64"}
 DEB_ARCHITECTURES = {"x86_64": "amd64", "arm64": "arm64"}
@@ -84,6 +96,13 @@ def cpu_arch() -> str:
 
 def is_windows() -> bool:
     return sys.platform == "win32"
+
+
+def write_package_file(directory: Path, package: str) -> Path:
+    """Leave the artifact's ``package`` word in ``directory``, beside its executable."""
+    path = directory / PACKAGE_FILE
+    path.write_text(package + "\n", encoding="utf-8")
+    return path
 
 
 def make_icons() -> Path:
@@ -138,6 +157,9 @@ def run_frozen_selftest() -> None:
     env = dict(os.environ)
     env["QT_QPA_PLATFORM"] = "offscreen"  # Qt Widgets renders offscreen on Windows too
     env["CURVESTUDIO_SELFTEST_OUT"] = str(log)
+    # A build is not an installation: the smoke test must never post an install record
+    # (an empty destination means "never send" to the app).
+    env["CURVESTUDIO_INSTALL_RECORD_URL"] = ""
     if log.exists():
         log.unlink()
     print(f"+ {exe} --selftest", flush=True)
@@ -218,9 +240,15 @@ def dir_size(path: Path) -> int:
 
 
 def make_archive(icons: Path) -> Path:
-    """Pack the bundle (Linux: with .desktop file and icon) into dist/release."""
+    """Pack the bundle (Linux: with .desktop file and icon) into dist/release.
+
+    The archive's own ``package`` word goes in as an entry, beside the executable in the
+    archive but never as a file in the shared bundle, so the installer built afterwards
+    from that same bundle cannot pick it up by accident.
+    """
     RELEASE.mkdir(parents=True, exist_ok=True)
     stem = f"{APP}-{app_version()}-{os_name()}-{cpu_arch()}"
+    word = (ARCHIVE_PACKAGES[os_name()] + "\n").encode("utf-8")
     if is_windows():
         archive = RELEASE / f"{stem}.zip"
         with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -228,10 +256,15 @@ def make_archive(icons: Path) -> Path:
                 if file.is_file():
                     # as_posix: zip entries must always use forward slashes
                     zf.write(file, file.relative_to(DIST).as_posix())
+            zf.writestr(f"{BUNDLE}/{PACKAGE_FILE}", word)
     else:
         archive = RELEASE / f"{stem}.tar.gz"
         with tarfile.open(archive, "w:gz") as tf:
             tf.add(DIST / BUNDLE, arcname=BUNDLE)
+            entry = tarfile.TarInfo(f"{BUNDLE}/{PACKAGE_FILE}")
+            entry.size = len(word)
+            entry.mode = 0o644
+            tf.addfile(entry, io.BytesIO(word))
             tf.add(PACKAGING / "linux" / f"{APP}.desktop", arcname=f"{APP}.desktop")
             tf.add(icons / f"{APP}.png", arcname=f"{APP}.png")
     return archive
@@ -349,6 +382,7 @@ def make_deb_tree() -> Path:
     library = staging / "usr" / "lib" / BUNDLE
     library.parent.mkdir(parents=True)
     _copy_bundle(library)
+    write_package_file(library, "deb")
 
     launcher = staging / "usr" / "bin" / BUNDLE
     launcher.parent.mkdir(parents=True)
@@ -402,6 +436,8 @@ def make_appdir() -> Path:
     library = appdir / "usr" / "lib" / BUNDLE
     library.parent.mkdir(parents=True)
     _copy_bundle(library)
+    # assembled like the .deb's tree, but the image is its own package kind
+    write_package_file(library, "appimage")
 
     app_run = appdir / "AppRun"
     app_run.write_text(APPIMAGE_APPRUN, encoding="utf-8")

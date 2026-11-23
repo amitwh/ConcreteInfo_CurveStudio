@@ -1,18 +1,28 @@
-"""Edit → Preferences: the "Prepared by" identity on reports, and the theme in one place.
+"""Edit → Preferences: the "Prepared by" identity on reports, the theme, and the one switch.
 
 The two report fields are the name and organisation printed on an exported PDF report,
 in an exported workbook's print header and along the top of an exported plot. They are
-QSettings on this computer and nothing else: the desktop app is offline and has no
-account, so these tests only ever read them back from the settings file.
+QSettings on this computer and nothing else: the desktop app has no account, so these
+tests only ever read them back from the settings file. The third group is Privacy: the
+switch for the anonymous install record, the only thing the app ever sends.
 """
 
 import pytest
 from desktop_data import GOOD_CSV
 from openpyxl import load_workbook
 from PySide6.QtCore import QSettings, Qt
-from PySide6.QtWidgets import QAbstractButton, QDialog, QDialogButtonBox, QMenu
+from PySide6.QtWidgets import (
+    QAbstractButton,
+    QCheckBox,
+    QDialog,
+    QDialogButtonBox,
+    QGroupBox,
+    QLabel,
+    QMenu,
+)
 
 from curvestudio_desktop.controllers import exports
+from curvestudio_desktop.install_record import INSTALL_RECORD_KEY, install_record_enabled
 from curvestudio_desktop.profile import (
     MAX_BYLINE_FIELD,
     NAME_KEY,
@@ -24,7 +34,7 @@ from curvestudio_desktop.profile import (
 from curvestudio_desktop.theme import THEME_CHOICES, THEME_SETTINGS_KEY, theme_preference
 from curvestudio_desktop.views import main_window as main_window_module
 from curvestudio_desktop.views.help_dialog import help_markdown
-from curvestudio_desktop.views.preferences_dialog import HINT_TEXT, PreferencesDialog
+from curvestudio_desktop.views.preferences_dialog import HINT_TEXT, PRIVACY_TEXT, PreferencesDialog
 
 IDENTITY = "Amit Haridas, ConcreteInfo"
 """What the settings hold and the exports pass on: the identity text, never the prefix."""
@@ -312,3 +322,73 @@ def test_preferences_dialog_hint_wraps_instead_of_widening_the_dialog(
 
     dialog.show()
     assert dialog.width() <= 600
+
+
+# -- Privacy: the install-record switch ---------------------------------------------------------
+
+
+def test_the_privacy_group_holds_the_install_record_switch_on_by_default(
+    qtbot, settings: QSettings
+) -> None:
+    dialog = PreferencesDialog(settings=settings)
+    qtbot.addWidget(dialog)
+
+    titles = [group.title() for group in dialog.findChildren(QGroupBox)]
+    assert titles == ["Reports", "Appearance", "Privacy"]
+    check = dialog.findChild(QCheckBox, "preferencesInstallRecord")
+    assert check is dialog.install_record_check
+    assert check.text() == "Send an anonymous install record"
+    assert check.isChecked() is True  # on unless the user turned it off
+    assert settings.contains(INSTALL_RECORD_KEY) is False  # the default is an absent key
+    assert install_record_enabled(settings) is True
+
+
+def test_the_privacy_text_says_what_is_sent_and_that_nothing_else_is(
+    qtbot, settings: QSettings
+) -> None:
+    dialog = PreferencesDialog(settings=settings)
+    qtbot.addWidget(dialog)
+
+    note = dialog.findChild(QLabel, "preferencesPrivacyHint")
+    assert note is dialog.privacy_label
+    assert note.text() == PRIVACY_TEXT
+    assert note.wordWrap()
+    for words in (
+        "first launch",
+        "after an upgrade",
+        "one anonymous record",
+        "version, operating system, package type",
+        "no account, no name and no project",
+        "Nothing else ever leaves this computer",
+    ):
+        assert words in PRIVACY_TEXT
+
+
+def test_ok_writes_the_install_record_switch_and_cancel_writes_nothing(
+    qtbot, settings: QSettings
+) -> None:
+    dialog = PreferencesDialog(settings=settings)
+    qtbot.addWidget(dialog)
+    dialog.install_record_check.setChecked(False)
+    assert settings.contains(INSTALL_RECORD_KEY) is False  # nothing is written before OK
+    ok_button(dialog).click()
+
+    assert dialog.result() == QDialog.DialogCode.Accepted
+    assert settings.value(INSTALL_RECORD_KEY) is False
+    assert install_record_enabled(settings) is False
+
+    # a fresh settings object on the same file is what the next launch reads
+    settings.sync()
+    reopened = PreferencesDialog(
+        settings=QSettings(settings.fileName(), QSettings.Format.IniFormat)
+    )
+    qtbot.addWidget(reopened)
+    assert reopened.install_record_check.isChecked() is False
+
+    reopened.install_record_check.setChecked(True)
+    before = sorted(settings.allKeys())
+    cancel = reopened.buttons.button(QDialogButtonBox.StandardButton.Cancel)
+    assert cancel is not None
+    cancel.click()
+    assert sorted(settings.allKeys()) == before
+    assert install_record_enabled(settings) is False

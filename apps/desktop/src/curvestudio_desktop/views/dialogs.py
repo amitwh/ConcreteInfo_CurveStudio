@@ -7,12 +7,13 @@ from importlib import resources
 from pathlib import Path
 from types import TracebackType
 
-from PySide6.QtCore import Qt, qVersion
-from PySide6.QtGui import QPixmap
+from PySide6.QtCore import Qt, QUrl, qVersion
+from PySide6.QtGui import QDesktopServices, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QDialog,
     QFileDialog,
+    QHBoxLayout,
     QLabel,
     QMessageBox,
     QPlainTextEdit,
@@ -66,8 +67,11 @@ are not liable for indirect, incidental or consequential loss arising from use o
 software or its results. This is a plain-language summary, not legal advice.</p>
 """
 POLICY_HTML = """
-<p><b>Desktop:</b> everything stays on your computer. Projects, datasets and fits are files
-you create, there is no telemetry, and nothing is uploaded anywhere.</p>
+<p><b>Desktop:</b> works fully offline, no account needed. Projects, datasets and fits are
+files you create. On first launch, and again after an upgrade, the app sends one anonymous
+install record (version, operating system, package type) so we know how many installations
+exist; turn it off under Edit → Preferences → Privacy. Nothing else ever leaves your
+computer, and no error report is ever sent.</p>
 <p><b>Web:</b> to run a fit for you the service has to hold your data. It stores your email
 address, a password hash (Argon2 — never the password itself), the datasets you upload and
 the fits you run, so your workspace and history are there when you return. Your data is used
@@ -291,7 +295,7 @@ class AboutDialog(QDialog):
 
 
 class CrashDialog(QDialog):
-    """The app-level crash guard dialog: the error, its details, one-click copy."""
+    """The app-level crash guard dialog: the error, its details, one-click copy, the local log."""
 
     def __init__(self, details: str, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -308,6 +312,16 @@ class CrashDialog(QDialog):
         details_view = QPlainTextEdit(details)
         details_view.setReadOnly(True)
         layout.addWidget(details_view)
+        # the same report is in crash.log, on this computer; nothing is sent anywhere
+        log_row = QHBoxLayout()
+        self.log_note = QLabel("This report stays on your computer.")
+        self.log_note.setObjectName("crashLogNote")
+        log_row.addWidget(self.log_note, 1)
+        open_log = QPushButton("Open log folder")
+        open_log.setObjectName("openLogFolderButton")
+        open_log.clicked.connect(self.open_log_folder)
+        log_row.addWidget(open_log)
+        layout.addLayout(log_row)
         copy = QPushButton("Copy details")
         copy.setObjectName("copyDetailsButton")
         copy.clicked.connect(self.copy_details)
@@ -324,6 +338,19 @@ class CrashDialog(QDialog):
         clipboard = QApplication.clipboard()
         if clipboard is not None:
             clipboard.setText(self._details)
+
+    def open_log_folder(self) -> None:
+        """Open the folder that holds ``crash.log`` in the desktop's file manager."""
+        from curvestudio_desktop.app import app_data_dir  # resolved now: the crash guard's own
+
+        try:
+            directory = app_data_dir()
+        except OSError as failure:
+            QMessageBox.warning(
+                self, "Log folder", f"The log folder could not be opened.\n{failure}"
+            )
+            return
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(directory)))
 
 
 def show_crash_dialog(details: str) -> None:

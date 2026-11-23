@@ -46,12 +46,13 @@ def test_analysis_dock_has_a_summary_and_the_details_window_has_the_result_tabs(
         assert tabs.tab_text_at(index).strip() == "No fit yet"
 
 
-def test_status_bar_shows_no_network_indicator(make_window, qtbot) -> None:
+def test_status_bar_says_offline_ready_with_no_account(make_window, qtbot) -> None:
+    """Offline-ready, not "no network": the app sends one install record and nothing else."""
     window = make_window()
     qtbot.addWidget(window)
     label = window.statusBar().findChild(QLabel, "noNetworkLabel")
     assert label is not None
-    assert NO_NETWORK_NOTE in label.text()
+    assert label.text() == NO_NETWORK_NOTE == "Offline-ready · no account"
     observations = window.statusBar().findChild(QLabel, "observationsLabel")
     assert observations is not None
     assert "0" in observations.text()  # no dataset yet

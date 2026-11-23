@@ -446,7 +446,12 @@ def test_about_carries_the_disclaimer_and_the_policy(qtbot) -> None:
     assert "Privacy and fair-use policy" in html
     assert "not sold, and it is not shared for advertising" in html
     assert "Argon2" in html
-    assert "no telemetry" in html
+    # the desktop half: no account, and the one thing it does send is named, with its switch
+    assert "no account" in html
+    assert "one anonymous install record" in html
+    assert "Edit → Preferences → Privacy" in html
+    assert "Nothing else ever leaves your computer" in html
+    assert "nothing is uploaded" not in html and "no telemetry" not in html
 
 
 # -- example datasets --------------------------------------------------------------------------

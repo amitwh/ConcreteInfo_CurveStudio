@@ -1,4 +1,4 @@
-"""Application wiring: QApplication factory, theme, crash guard and the selftest.
+"""Application wiring: QApplication factory, theme, crash guard, crash log and the selftest.
 
 ``run_app`` is the real entry point; ``run_selftest`` is the headless smoke used
 by CI and packaging (D4): it builds the whole main window offscreen, loads the
@@ -10,17 +10,19 @@ when everything worked.
 
 import io
 import os
+import platform
 import sys
 import tempfile
 import threading
 import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager, redirect_stderr, redirect_stdout
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import TracebackType
 from typing import TYPE_CHECKING, cast
 
-from PySide6.QtCore import QSettings
+from PySide6.QtCore import QSettings, QStandardPaths, qVersion
 from PySide6.QtWidgets import QApplication
 
 from curvestudio_desktop import APP_NAME, ORG_NAME, __version__
@@ -35,6 +37,60 @@ Shower = Callable[[str], None]
 SELFTEST_TIMEOUT_SECONDS = 60.0
 """Bound on the selftest's Auto-fit wait: a tiny run finishes in seconds, so a hang
 (a run that never started, or never delivered) fails fast with a clear reason."""
+
+IST = timezone(timedelta(hours=5, minutes=30), name="IST")
+"""A fixed offset is India Standard Time exactly: the country has no daylight saving."""
+
+CRASH_LOG_NAME = "crash.log"
+CRASH_LOG_ROTATED_NAME = "crash.log.1"
+CRASH_LOG_MAX_BYTES = 1_000_000
+"""The crash log rotates once it reaches this size: the old file becomes ``crash.log.1``."""
+
+_crash_log_lock = threading.Lock()
+"""One writer at a time: a worker thread's crash and a main-thread crash must not interleave."""
+
+
+def app_data_dir() -> Path:
+    """Where the app keeps its own files on this computer: Qt's per-user app-data folder.
+
+    Created on demand. It depends on the application and organisation names, which
+    :func:`create_application` sets. Nothing in it is ever sent anywhere.
+    """
+    location = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppDataLocation)
+    directory = Path(location)
+    directory.mkdir(parents=True, exist_ok=True)
+    return directory
+
+
+def crash_log_header(now: datetime | None = None) -> str:
+    """The one line above each entry: the time in IST, and the versions the app ran under."""
+    moment = datetime.now(IST) if now is None else now.astimezone(IST)
+    return (
+        f"{moment:%Y-%m-%d %H:%M:%S} IST · CurveStudio {__version__}"
+        f" · Python {platform.python_version()} · Qt {qVersion()}"
+    )
+
+
+def append_crash_log(details: str, *, directory: Path | None = None) -> Exception | None:
+    """Append one crash to ``crash.log``; return what stopped the write, or ``None``.
+
+    An entry is a header line followed by the traceback and a blank line. A file that has
+    reached :data:`CRASH_LOG_MAX_BYTES` is rotated first: it becomes ``crash.log.1``,
+    replacing any previous one. Never raises: a full disk must not stand between a crash
+    and its dialog, so the error is handed back to the caller to mention on stderr.
+    """
+    try:
+        target = app_data_dir() if directory is None else directory
+        target.mkdir(parents=True, exist_ok=True)
+        path = target / CRASH_LOG_NAME
+        with _crash_log_lock:
+            if path.exists() and path.stat().st_size >= CRASH_LOG_MAX_BYTES:
+                path.replace(target / CRASH_LOG_ROTATED_NAME)
+            with path.open("a", encoding="utf-8") as handle:
+                handle.write(f"{crash_log_header()}\n{details.rstrip()}\n\n")
+    except Exception as failure:
+        return failure
+    return None
 
 
 @contextmanager
@@ -73,16 +129,18 @@ def create_application(argv: list[str] | None = None) -> QApplication:
 
 
 def install_crash_guard(shower: Shower | None = None) -> None:
-    """Route unhandled exceptions — from any thread — to a dialog with copyable details.
+    """Route unhandled exceptions — from any thread — to a dialog, a local log and stderr.
 
     Main-thread exceptions (``sys.excepthook``) show the dialog immediately: we are
     already on the GUI thread. Exceptions raised inside ``threading.Thread`` workers
     (``threading.excepthook``) are marshalled to the GUI thread through a queued
     signal first — opening a Qt dialog off the GUI thread is undefined behaviour —
     and are always printed to stderr so logs keep them. While a dialog is up, a
-    second crash goes to stderr only (no re-entrant dialogs). Whether the process
-    exits afterwards depends on where the exception escaped: a top-level one still
-    terminates the interpreter through the default hook, while one caught inside
+    second crash goes to stderr only (no re-entrant dialogs). Every crash, the nested
+    ones included, is also appended to ``crash.log`` in :func:`app_data_dir`, on this
+    computer only; the dialog's "Open log folder" button leads there. Whether the
+    process exits afterwards depends on where the exception escaped: a top-level one
+    still terminates the interpreter through the default hook, while one caught inside
     the Qt event loop leaves the application running.
     """
     from PySide6.QtCore import QObject, QThread, Signal
@@ -106,6 +164,11 @@ def install_crash_guard(shower: Shower | None = None) -> None:
 
     showing: list[bool] = [False]
 
+    def _log(details: str) -> None:
+        failure = append_crash_log(details)
+        if failure is not None:  # said on stderr, never raised: the dialog comes first
+            print(f"the crash log could not be written: {failure}", file=sys.stderr, flush=True)
+
     def _display(details: str) -> None:
         if showing[0]:  # a crash while showing the crash dialog: stderr, not recursion
             print(details, file=sys.stderr, flush=True)
@@ -127,7 +190,9 @@ def install_crash_guard(shower: Shower | None = None) -> None:
     ) -> None:
         from curvestudio_desktop.views.dialogs import format_exception
 
-        _display(format_exception(exc_type, exc, tb))
+        details = format_exception(exc_type, exc, tb)
+        _log(details)
+        _display(details)
         sys.__excepthook__(exc_type, exc, tb)
 
     def _thread_hook(args: threading.ExceptHookArgs) -> None:
@@ -137,6 +202,7 @@ def install_crash_guard(shower: Shower | None = None) -> None:
             print(f"exception in thread {args.thread}: {args.exc_type!r}", file=sys.stderr)
             return
         details = format_exception(args.exc_type, args.exc_value, args.exc_traceback)
+        _log(details)
         if relay is None or app is None or QThread.currentThread() is app.thread():
             _display(details)  # no event loop to relay through (or already GUI)
             return
@@ -198,6 +264,7 @@ def run_app(argv: list[str] | None = None) -> int:
             store, registry=window_registry, persist_layout=persist
         ),
         parent=app,
+        settings=store,
     )
     registry.spawn()
     return int(app.exec())

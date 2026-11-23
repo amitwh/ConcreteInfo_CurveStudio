@@ -39,9 +39,13 @@ Verify a download against the matching `SHA256SUMS-<os>-<arch>` file
 - **Windows**: extract the zip and run `curvestudio-desktop\curvestudio-desktop.exe`
   (or run the installer, which adds Start-menu and optional desktop shortcuts).
 
-**Works fully offline.** The app makes no network calls, ever — no updates, no
-telemetry, no account — and ships everything it needs (model catalogue, fonts,
-Qt, the Python stack). First run needs nothing but the extracted files.
+**Works fully offline, no account needed.** On first launch and after an upgrade the app
+sends one anonymous install record (version, operating system, package type) so we know
+how many installations exist; turn it off under Edit → Preferences → Privacy. Nothing
+else ever leaves your computer: there are no updates, no error reports and no account,
+and the app ships everything it needs (model catalogue, fonts, Qt, the Python stack).
+A crash is written to a local `crash.log` (the dialog's *Open log folder* button leads
+there) and is never sent. First run needs nothing but the extracted files.
 
 ## Build from source
 
@@ -60,8 +64,10 @@ deterministic, from the geometry in `packaging/icon.svg`), runs PyInstaller with
 what proves `freeze_support()` and the model-library entry points survived
 freezing), checks that the report fonts and Qt SVG plugins landed in the bundle,
 and packs `dist/release/curvestudio-desktop-<version>-<os>-<arch>.tar.gz|zip`
-plus a `SHA256SUMS-<os>-<arch>` file. `build.py` also takes the steps
-`selftest`, `icons` and `sums` on their own.
+plus a `SHA256SUMS-<os>-<arch>` file. Every artifact carries its package word
+(`tarball`, `windows_zip`, `deb`, `appimage`, `windows_setup`) in a `package.txt`
+beside the executable, which the app's install record reports. `build.py` also takes
+the steps `selftest`, `icons` and `sums` on their own.
 
 On Windows the same command produces the portable zip; the optional installer
 (`packaging/windows/curvestudio.iss`) is built by CI with Inno Setup — `iscc

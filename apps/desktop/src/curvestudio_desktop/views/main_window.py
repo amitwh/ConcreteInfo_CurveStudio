@@ -528,7 +528,7 @@ class MainWindow(QMainWindow):
         self._job_progress.hide()
         self._observations = QLabel("Observations: 0")
         self._observations.setObjectName("observationsLabel")
-        self._no_network = QLabel(f"Offline · {NO_NETWORK_NOTE}")
+        self._no_network = QLabel(NO_NETWORK_NOTE)
         self._no_network.setObjectName("noNetworkLabel")
         bar.addPermanentWidget(self._job_progress)
         bar.addPermanentWidget(self._observations)

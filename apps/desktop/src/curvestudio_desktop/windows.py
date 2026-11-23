@@ -11,13 +11,19 @@ a window never rewrites the arrangement the user set up.
 
 The registry keeps every open window alive (a PySide top-level with no Python reference
 would be collected), and forgets one when it closes.
+
+Showing a window also starts the app's one network call, the anonymous install record
+(:mod:`curvestudio_desktop.install_record`) — after the window is on screen, so a slow
+network never delays it. The record itself decides whether anything is owed.
 """
 
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QObject
+from PySide6.QtCore import QObject, QSettings, QTimer
+
+from curvestudio_desktop.install_record import maybe_send_install_record
 
 if TYPE_CHECKING:
     from curvestudio_desktop.views.main_window import MainWindow
@@ -29,9 +35,16 @@ WindowFactory = Callable[["WindowRegistry", bool], "MainWindow"]
 class WindowRegistry(QObject):
     """The open project windows, and the way to open one more."""
 
-    def __init__(self, factory: WindowFactory, parent: QObject | None = None) -> None:
+    def __init__(
+        self,
+        factory: WindowFactory,
+        parent: QObject | None = None,
+        *,
+        settings: QSettings | None = None,
+    ) -> None:
         super().__init__(parent)
         self._factory = factory
+        self._settings = settings if settings is not None else QSettings()
         self._windows: list[MainWindow] = []
 
     def windows(self) -> list[MainWindow]:
@@ -48,7 +61,12 @@ class WindowRegistry(QObject):
         window.show()
         window.raise_()
         window.activateWindow()
+        # Deferred to the next turn of the event loop: by then the window is on screen.
+        QTimer.singleShot(0, self._send_install_record)
         return window
+
+    def _send_install_record(self) -> None:
+        maybe_send_install_record(self._settings)
 
     def open_from(self, source: MainWindow) -> MainWindow | None:
         """Ask for a project file in ``source`` and open it in a new window."""

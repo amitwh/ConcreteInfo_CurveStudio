@@ -174,19 +174,26 @@ export function AboutPage(): ReactElement {
 
         <h2>Privacy and fair-use policy</h2>
         <p>
-          <strong>Desktop:</strong> everything stays on your computer. Projects, datasets
-          and fits are files you create, there is no telemetry, and nothing is uploaded
-          anywhere.
+          <strong>Desktop:</strong> works fully offline, no account needed. Projects,
+          datasets and fits are files you create. On first launch and after an upgrade the
+          desktop app sends one anonymous install record (version, operating system,
+          package type) so we know how many installations exist; turn it off under
+          Edit → Preferences → Privacy. Nothing else ever leaves your computer, and no
+          error report is ever sent.
         </p>
         <p>
-          <strong>Web:</strong> to run a fit for you this service has to hold your data. It
-          stores your email address, a password hash (Argon2 — never the password itself),
+          <strong>Web:</strong> to run a fit for you this service has to hold your data.
+          Your account keeps your e-mail address, a password hash (Argon2 — never the
+          password itself), your name if you give one, the last day you were active, the
+          time of your last sign-in and your error-report choice. The service also stores
           the datasets you upload and the fits you run, so your workspace and history are
           there when you return. Your data is used only to provide the service: it is not
           sold, and it is not shared for advertising. There are no third-party analytics or
           advertising scripts in the app. Signing in keeps a token in your browser’s local
           storage; that is the only browser state the app relies on. Deleting a dataset, a
-          fit, or your account removes the corresponding records.
+          fit, or your account removes the corresponding records. This web app can also
+          send an anonymous error report when something goes wrong; the Error reports note
+          below, with its switch, says how that is turned off.
         </p>
         {signedIn ? (
           <p>
