@@ -109,6 +109,18 @@ def without_uncertainty(bundle: FitBundle, *, which: str = "first") -> FitBundle
     return bundle.model_copy(update={"result": result})
 
 
+def with_error(bundle: FitBundle, std_err: float, *, which: str = "first") -> FitBundle:
+    """The same fit with the standard error of its parameters replaced by ``std_err``."""
+    changed = {bundle.result.parameters[0].name} if which == "first" else None
+    parameters = tuple(
+        p.model_copy(update={"std_err": std_err}) if changed is None or p.name in changed else p
+        for p in bundle.result.parameters
+    )
+    return bundle.model_copy(
+        update={"result": bundle.result.model_copy(update={"parameters": parameters})}
+    )
+
+
 def without_recorded_version(bundle: FitBundle) -> FitBundle:
     """The same fit with the CurveStudio version left out of what it recorded."""
     versions = dict(bundle.result.provenance.software_versions)
@@ -244,6 +256,45 @@ def test_a_parameter_without_a_standard_error_is_said_to_have_none() -> None:
         table = methods_text(every, spec=QUADRATIC, style=style).table
         plain = table.replace("\\text{not determined}", "not determined")
         assert plain.count("not determined") == 9
+
+
+def test_a_standard_error_at_rounding_level_is_written_in_scientific_notation() -> None:
+    clean = fit_dataset(quadratic_xy(), QUADRATIC)
+    first = clean.result.parameters[0]
+    value = f"{first.value:.4g}"
+    assert value == "1.022"  # four significant digits
+    for std_err, error in ((1e-17, "1.0e-17"), (0.0, "0")):
+        for style in STYLES:
+            text = methods_text(with_error(clean, std_err), spec=QUADRATIC, style=style)
+            lines = [line.strip() for line in text.equation.splitlines()]
+            line = next(line for line in lines if line.startswith("b0 "))
+            head, sign, tail = line.partition(" \\pm " if style == "latex" else " ± ")
+            assert sign and head.endswith(value) and tail.strip(" \\") == error
+            cells = _data_rows(style, text.table)[0]
+            assert cells[1:3] == [value, error]
+            assert cells[3:5] == [f"{first.ci_low:.4g}", f"{first.ci_high:.4g}"]
+
+    # the boundary: an error that needs six decimal places shares them, one that needs
+    # seven does not
+    six = _data_rows("text", methods_text(with_error(clean, 1.23e-5), spec=QUADRATIC).table)
+    assert six[0][1:3] == [f"{first.value:.6f}", "0.000012"]
+    seven = _data_rows("text", methods_text(with_error(clean, 1.23e-6), spec=QUADRATIC).table)
+    assert seven[0][1:3] == ["1.022", "1.2e-06"]
+
+    # the others keep the shared rule
+    others = _data_rows("text", methods_text(with_error(clean, 1e-17), spec=QUADRATIC).table)[1:]
+    assert all(_decimals(cells[1]) == _decimals(cells[2]) for cells in others)
+
+    # a fit to noiseless data: its errors come out at rounding level, not exactly zero, and
+    # are written the same way (this was 18 decimal places and a table off the page)
+    x = np.linspace(0.0, 10.0, 40)
+    exact = fit_dataset(_xy(x, 1.0 + 0.5 * x - 0.03 * x**2), QUADRATIC)
+    assert all(p.std_err is not None and p.std_err < 1e-5 for p in exact.result.parameters)
+    lines = methods_text(exact, spec=QUADRATIC).equation.splitlines()[1:]
+    for line, p in zip(lines, exact.result.parameters, strict=True):
+        assert p.std_err is not None
+        assert line == f"{p.name} = {p.value:.4g} ± {p.std_err:.1e}"
+    assert max(len(line) for line in methods_text(exact, spec=QUADRATIC).table.splitlines()) < 80
 
 
 def test_what_is_not_known_is_said_not_guessed() -> None:
@@ -409,7 +460,9 @@ def test_every_number_in_the_methods_text_comes_from_the_result() -> None:
             assert strays == [], f"{style}: {result.model_id}: {strays}"
 
             # the rule itself: a value and its standard error share decimal places, chosen so
-            # that the error shows two significant digits
+            # that the error shows two significant digits. An error at rounding level (below
+            # 1e-5, which would need more than six places) or a zero one is written another
+            # way: the value with four significant digits, the error in scientific notation.
             rows_by_style = _data_rows(style, text.table)
             for cells, p in zip(rows_by_style, result.parameters, strict=True):
                 cells = [cell.replace("\\text{not determined}", "not determined") for cell in cells]
@@ -417,6 +470,12 @@ def test_every_number_in_the_methods_text_comes_from_the_result() -> None:
                     assert cells[2:] == ["not determined"] * 3
                     continue
                 value, error = cells[1], cells[2]
+                if error == "0" or "e" in error:
+                    assert p.std_err < 1e-5, (value, error, p.std_err)
+                    assert _significant(value) <= 4, value
+                    assert error == "0" or _significant(error) == 2, error
+                    continue
+                assert p.std_err >= 1e-5
                 assert _decimals(value) == _decimals(error)
                 assert _significant(error) == 2, error
 
