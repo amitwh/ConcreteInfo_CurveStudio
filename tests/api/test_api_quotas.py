@@ -81,6 +81,7 @@ def test_dataset_bytes_quota(
     refused = upload(client, headers, linear_csv(300))
     assert refused.status_code == 413
     assert refused.json()["error"] == "QUOTA_EXCEEDED"
+    assert refused.json()["detail"]["plan"] == "self-hosted"
     assert refused.json()["detail"]["quota"] == "dataset_bytes"
     assert refused.json()["detail"]["limit"] == 1500
 

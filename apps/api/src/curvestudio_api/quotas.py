@@ -132,6 +132,7 @@ def check(
             {
                 "code": "QUOTA_EXCEEDED",
                 "quota": quota,
+                "plan": resolve_plan(db, settings, _plan_override(db, user_id)).name,
                 "limit": limit,
                 "limits": asdict(limits),
                 "usage": asdict(used),
