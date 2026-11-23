@@ -12,6 +12,8 @@ from curvestudio_api.db import make_engine, make_session_factory
 from curvestudio_api.deps import (
     AUTH_ATTEMPTS_PER_MINUTE,
     AUTH_PER_IP_PER_MINUTE,
+    ERROR_REPORTS_PER_HOUR,
+    INSTALL_RECORDS_PER_HOUR,
     Context,
 )
 from curvestudio_api.errors import install_error_handlers
@@ -22,6 +24,7 @@ from curvestudio_api.jobs import JobManager
 from curvestudio_api.logging_setup import configure_logging, get_logger
 from curvestudio_api.middleware import BodyLimitMiddleware, RequestContextMiddleware
 from curvestudio_api.migrations import upgrade_to_head
+from curvestudio_api.modules import register_models
 from curvestudio_api.ratelimit import DailyCap, SlidingWindowLimiter
 from curvestudio_api.routers import auth, autofits, datasets, fits, oauth, system
 from curvestudio_api.security import JwtKeys
@@ -49,6 +52,7 @@ def create_app(
     ``autofit_worker`` and ``import_worker`` exist for tests; they must be top-level functions
     (they run in spawned processes).
     """
+    register_models()
     settings = settings or Settings()
     configure_logging()
     private_pem, public_pem = load_jwt_keys(settings)
@@ -78,6 +82,8 @@ def create_app(
         jobs=jobs,
         auth_limiter=SlidingWindowLimiter(AUTH_ATTEMPTS_PER_MINUTE),
         ip_limiter=SlidingWindowLimiter(AUTH_PER_IP_PER_MINUTE),
+        install_limiter=SlidingWindowLimiter(INSTALL_RECORDS_PER_HOUR, 3600.0),
+        error_limiter=SlidingWindowLimiter(ERROR_REPORTS_PER_HOUR, 3600.0),
         imports=ImportRunner(
             concurrency=settings.import_concurrency,
             timeout_s=settings.import_timeout_s,
@@ -125,6 +131,7 @@ def create_app(
         default_limit=JSON_BODY_LIMIT,
         upload_limit=settings.max_upload_bytes + MULTIPART_OVERHEAD,
         upload_path=f"{API_PREFIX}/datasets",
+        path_limits={f"{API_PREFIX}/installs": 2048, f"{API_PREFIX}/errors": 65_536},
     )
     if settings.cors_origins:
         app.add_middleware(

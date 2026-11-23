@@ -56,6 +56,8 @@ def shared_client(tmp_path_factory: pytest.TempPathFactory) -> Iterator[TestClie
     app = create_app(make_settings(directory))
     app.state.ctx.ip_limiter.limit = 100_000  # tests share one client address
     app.state.ctx.auth_limiter.limit = 100_000
+    app.state.ctx.install_limiter.limit = 100_000
+    app.state.ctx.error_limiter.limit = 100_000
     with TestClient(app) as client:
         yield client
 
@@ -70,6 +72,8 @@ def client_factory(
     def build(app_settings: Settings | None = None, **kwargs: Any) -> TestClient:
         app: FastAPI = create_app(app_settings or settings_factory(), **kwargs)
         app.state.ctx.ip_limiter.limit = 100_000
+        app.state.ctx.install_limiter.limit = 100_000
+        app.state.ctx.error_limiter.limit = 100_000
         client = TestClient(app)
         client.__enter__()
         opened.append(client)

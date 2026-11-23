@@ -50,6 +50,9 @@ class Settings(BaseSettings):
     # Comma-separated addresses whose accounts are promoted to administrator at their next
     # successful sign-in. Empty by default; the list never demotes.
     admin_emails: Annotated[list[str], NoDecode] = Field(default_factory=list)
+    # The release the admin console counts as the latest during a release window; empty means
+    # the API's own version.
+    current_release: str = ""
     registration_enabled: bool = True
     billing_enabled: bool = False
     web_dist: Path | None = None

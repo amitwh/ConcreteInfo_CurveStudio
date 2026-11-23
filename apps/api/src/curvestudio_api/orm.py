@@ -50,9 +50,15 @@ def _default_preferences() -> dict[str, Any]:
     return dict(DEFAULT_PREFERENCES)
 
 
-class _Timestamps:
+class Timestamps:
+    """The ``created_at``/``updated_at`` pair, set by the ORM on insert and on update."""
+
     created_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utcnow, onupdate=utcnow)
+
+
+# The name the tables in this module were written against.
+_Timestamps = Timestamps
 
 
 class User(_Timestamps, Base):

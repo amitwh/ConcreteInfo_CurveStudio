@@ -4,6 +4,7 @@ import logging
 import re
 import time
 import uuid
+from collections.abc import Mapping
 from typing import Any
 
 from starlette.datastructures import Headers, MutableHeaders
@@ -92,6 +93,9 @@ class BodyLimitMiddleware:
 
     A declared ``Content-Length`` over the limit is refused without reading a byte; a body
     that exceeds it anyway (chunked, or a lying header) stops at the limit with a 413.
+
+    A path in ``path_limits`` gets that limit, whatever the method; ``upload_limit`` applies to
+    POSTs on ``upload_path``; every other request gets ``default_limit``.
     """
 
     def __init__(
@@ -101,14 +105,19 @@ class BodyLimitMiddleware:
         default_limit: int,
         upload_limit: int,
         upload_path: str,
+        path_limits: Mapping[str, int] | None = None,
     ) -> None:
         self.app = app
         self.default_limit = default_limit
         self.upload_limit = upload_limit
         self.upload_path = upload_path
+        self.path_limits: Mapping[str, int] = path_limits or {}
 
     def _limit(self, scope: Scope) -> int:
-        if scope["method"] == "POST" and scope["path"] == self.upload_path:
+        path = scope["path"]
+        if path in self.path_limits:
+            return self.path_limits[path]
+        if scope["method"] == "POST" and path == self.upload_path:
             return self.upload_limit
         return self.default_limit
 

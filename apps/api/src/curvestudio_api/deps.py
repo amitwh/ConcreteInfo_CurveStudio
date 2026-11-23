@@ -25,6 +25,8 @@ from curvestudio_api.timeutil import IST, utcnow
 
 AUTH_ATTEMPTS_PER_MINUTE = 10
 AUTH_PER_IP_PER_MINUTE = 60
+INSTALL_RECORDS_PER_HOUR = 20
+ERROR_REPORTS_PER_HOUR = 20
 
 _log = get_logger("deps")
 
@@ -40,6 +42,8 @@ class Context:
     jobs: JobManager
     auth_limiter: SlidingWindowLimiter
     ip_limiter: SlidingWindowLimiter
+    install_limiter: SlidingWindowLimiter
+    error_limiter: SlidingWindowLimiter
     imports: ImportRunner
     failed_logins: DailyCap
 
