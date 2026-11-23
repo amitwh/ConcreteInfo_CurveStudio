@@ -390,24 +390,18 @@ def test_the_trend_check_tests_terms_the_fitted_model_cannot_represent(scenarios
     assert by_spec.statistic.endswith(", for quadratic and cubic terms beyond the fitted linear")
 
 
-TREND_400_MEASURED = "92.5 % pass, 7.5 % caution over 40 ordinary seeds: below the 95 % bar"
-
-
-@pytest.mark.parametrize(
-    "n",
-    [
-        20,
-        40,
-        pytest.param(400, marks=pytest.mark.xfail(strict=True, reason=TREND_400_MEASURED)),
-    ],
-)
+@pytest.mark.parametrize("n", [20, 40, 400])
 def test_the_trend_check_is_calibrated_on_well_behaved_fits(scenarios, n) -> None:
+    # A test at the 5 % level passes 95 % of well-behaved fits by construction, so the bar
+    # sits below that, as it does for every other check; over 40 seeds the pass rate is
+    # 92.5-95 % at these sizes.
     verdicts = [
         _check(audit_fit(scenarios.quadratic_fit(n, seed)), "residual_trend").verdict
         for seed in SEEDS
     ]
 
-    assert verdicts.count(Verdict.PASS) >= 0.95 * len(SEEDS), _rates(verdicts)
+    assert verdicts.count(Verdict.PASS) >= 0.90 * len(SEEDS), _rates(verdicts)
+    assert verdicts.count(Verdict.FAIL) <= 0.01 * len(SEEDS), _rates(verdicts)
 
 
 # -- cross-validation ----------------------------------------------------------------------------
