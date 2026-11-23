@@ -55,6 +55,9 @@ class User(_Timestamps, Base):
     name: Mapped[str] = mapped_column(String(100), default="")
     is_active: Mapped[bool] = mapped_column(default=True)
     email_verified_at: Mapped[datetime | None] = mapped_column(UtcDateTime, default=None)
+    # A plan name (set by an admin or the entitlement connector); the resolver in ``quotas``
+    # falls back to ``free`` when the name matches no row.
+    plan_override: Mapped[str | None] = mapped_column(String(50), default=None)
 
 
 Index("uq_users_email_lower", func.lower(User.email), unique=True)

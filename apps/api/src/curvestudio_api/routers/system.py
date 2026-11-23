@@ -52,8 +52,9 @@ def ready(ctx: Ctx) -> ReadyOut:
 
 @router.get("/me", response_model=MeOut, tags=["auth"])
 def me(user: CurrentUser, ctx: Ctx, db: Db) -> MeOut:
-    """The signed-in user with the plan's limits and what the user has used so far."""
-    limits = quotas.effective_limits(db, ctx.settings)
+    """The signed-in user with the resolved plan's limits and what the user has used so far."""
+    plan = quotas.resolve_plan(db, ctx.settings, user.plan_override)
+    limits = quotas.effective_limits(db, ctx.settings, user.plan_override)
     used = quotas.usage(db, user.id)
     return MeOut(
         id=user.id,
@@ -61,7 +62,7 @@ def me(user: CurrentUser, ctx: Ctx, db: Db) -> MeOut:
         name=user.name,
         created_at=user.created_at,
         email_verified=user.email_verified_at is not None,
-        plan=PlanOut(name=quotas.PLAN_NAME, **asdict(limits)),
+        plan=PlanOut(name=plan.name, **asdict(limits)),
         usage=UsageOut(**asdict(used)),
     )
 

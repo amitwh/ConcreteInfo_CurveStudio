@@ -236,7 +236,9 @@ def test_upgrading_from_0001_keeps_data_and_applies_the_new_rules(tmp_path: Path
     command.upgrade(_config(engine), "head")
     with engine.connect() as connection:
         assert connection.execute(text("SELECT count(*) FROM users")).scalar_one() == 1
-        limits = connection.execute(text("SELECT limits FROM plans")).scalar_one()
+        limits = connection.execute(
+            text("SELECT limits FROM plans WHERE name = 'self-hosted'")
+        ).scalar_one()
         assert "max_datasets" in str(limits) and "unlimited" not in str(limits)
     command.downgrade(_config(engine), "0001")
     command.upgrade(_config(engine), "head")

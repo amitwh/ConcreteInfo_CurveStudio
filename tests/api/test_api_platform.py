@@ -370,8 +370,17 @@ def test_migration_matches_the_models_and_seeds_the_plan(tmp_path: Path) -> None
     } <= tables
     with app.state.ctx.session_factory() as db:
         plans = list(db.scalars(select(Plan)))
-    assert [(p.name, p.limits) for p in plans] == [
-        ("self-hosted", {"max_datasets": 200, "max_dataset_bytes": 500_000_000, "max_fits": 2000})
+    assert sorted((p.name, p.limits) for p in plans) == [
+        (
+            "free",
+            {
+                "max_datasets": 200,
+                "max_dataset_bytes": 500_000_000,
+                "max_fits": 2000,
+                "max_autofits_per_day": 100,
+            },
+        ),
+        ("self-hosted", {"max_datasets": 200, "max_dataset_bytes": 500_000_000, "max_fits": 2000}),
     ]
 
 

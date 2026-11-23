@@ -533,7 +533,7 @@ export interface paths {
         };
         /**
          * Me
-         * @description The signed-in user with the plan's limits and what the user has used so far.
+         * @description The signed-in user with the resolved plan's limits and what the user has used so far.
          */
         get: operations["me_api_v1_me_get"];
         put?: never;

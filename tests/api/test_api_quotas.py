@@ -8,12 +8,16 @@ from pathlib import Path
 from typing import Any
 
 import api_job_workers
+from alembic import command
 from fastapi.testclient import TestClient
-from sqlalchemy import select
+from sqlalchemy import inspect, select, text
 
 from conftest import linear_csv, new_email, signup, upload
+from curvestudio_api.app import create_app
 from curvestudio_api.housekeeping import purge
+from curvestudio_api.migrations import _config, upgrade_to_head
 from curvestudio_api.orm import AuditLog, Dataset, Fit, Job, Plan, RefreshToken, User
+from curvestudio_api.quotas import autofits_per_day_limit, resolve_plan
 from curvestudio_api.timeutil import utcnow
 
 API = "/api/v1"
@@ -126,6 +130,135 @@ def test_the_plan_row_sets_the_limits_and_settings_override_it(
     )
     plan_of = overridden.get(f"{API}/me", headers=signup(overridden)).json()["plan"]
     assert plan_of["max_fits"] == 9 and plan_of["max_datasets"] == 200
+
+
+# -- plan resolution -------------------------------------------------------------------------------
+
+FREE_LIMITS = {
+    "max_datasets": 200,
+    "max_dataset_bytes": 500_000_000,
+    "max_fits": 2000,
+    "max_autofits_per_day": 100,
+}
+PLUS_LIMITS = {
+    "max_datasets": 7,
+    "max_dataset_bytes": 8_000,
+    "max_fits": 9,
+    "max_autofits_per_day": 1,
+}
+SMALL = {"families": ["polynomial"], "max_parameters": 2, "cv_folds": 3, "n_starts": 1}
+
+
+def test_billing_off_resolves_self_hosted(shared_client: TestClient) -> None:
+    """The default: every install resolves to the ``self-hosted`` row and /me says so."""
+    headers = signup(shared_client)
+    assert shared_client.get(f"{API}/me", headers=headers).json()["plan"]["name"] == "self-hosted"
+    ctx = shared_client.app.state.ctx  # type: ignore[attr-defined]
+    with ctx.session_factory() as db:
+        user = db.get(User, user_id(shared_client, headers))
+        assert user is not None and user.plan_override is None
+        assert resolve_plan(db, ctx.settings, user.plan_override).name == "self-hosted"
+
+
+def test_billing_on_resolves_free_and_the_seeded_row(
+    client_factory: Callable[..., TestClient], settings_factory: Callable[..., Any]
+) -> None:
+    """Billing on with no override: the account is on ``free``, seeded by migration 0006."""
+    client = client_factory(settings_factory(billing_enabled=True))
+    headers = signup(client)
+    assert client.get(f"{API}/me", headers=headers).json()["plan"]["name"] == "free"
+    ctx = client.app.state.ctx  # type: ignore[attr-defined]
+    with ctx.session_factory() as db:
+        plan = resolve_plan(db, ctx.settings, None)
+        assert plan.name == "free"
+        assert plan.limits == FREE_LIMITS
+
+
+def test_a_known_override_resolves_to_its_row(
+    client_factory: Callable[..., TestClient], settings_factory: Callable[..., Any]
+) -> None:
+    client = client_factory(settings_factory(billing_enabled=True))
+    headers = signup(client)
+    with client.app.state.ctx.session_factory() as db:  # type: ignore[attr-defined]
+        db.add(Plan(name="plus", limits=PLUS_LIMITS))
+        user = db.get(User, user_id(client, headers))
+        assert user is not None
+        user.plan_override = "plus"
+        db.commit()
+    reported = client.get(f"{API}/me", headers=headers).json()["plan"]
+    assert reported["name"] == "plus"
+    assert reported["max_datasets"] == 7 and reported["max_fits"] == 9
+    ctx = client.app.state.ctx  # type: ignore[attr-defined]
+    with ctx.session_factory() as db:
+        assert resolve_plan(db, ctx.settings, "plus").limits["max_autofits_per_day"] == 1
+
+
+def test_an_unknown_override_falls_back_to_free(
+    client_factory: Callable[..., TestClient], settings_factory: Callable[..., Any]
+) -> None:
+    """An override naming no row must degrade to ``free``, never to an error."""
+    client = client_factory(settings_factory(billing_enabled=True))
+    headers = signup(client)
+    with client.app.state.ctx.session_factory() as db:  # type: ignore[attr-defined]
+        user = db.get(User, user_id(client, headers))
+        assert user is not None
+        user.plan_override = "nope"
+        db.commit()
+    response = client.get(f"{API}/me", headers=headers)
+    assert response.status_code == 200
+    assert response.json()["plan"]["name"] == "free"
+    ctx = client.app.state.ctx  # type: ignore[attr-defined]
+    with ctx.session_factory() as db:
+        assert resolve_plan(db, ctx.settings, "nope").name == "free"
+
+
+def test_the_autofit_cap_follows_the_resolved_plan(
+    client_factory: Callable[..., TestClient], settings_factory: Callable[..., Any]
+) -> None:
+    """Two plans with different ``max_autofits_per_day`` give different daily caps."""
+    client = client_factory(settings_factory(billing_enabled=True))
+    headers = signup(client)
+    dataset = upload(client, headers, linear_csv()).json()
+    with client.app.state.ctx.session_factory() as db:  # type: ignore[attr-defined]
+        db.add(Plan(name="plus", limits=PLUS_LIMITS))
+        db.commit()
+    ctx = client.app.state.ctx  # type: ignore[attr-defined]
+    url = f"{API}/datasets/{dataset['id']}/autofit"
+    with ctx.session_factory() as db:
+        # the seeded free row allows 100 a day; the plus row allows one
+        assert autofits_per_day_limit(db, ctx.settings, None) == 100
+        assert autofits_per_day_limit(db, ctx.settings, "plus") == 1
+    assert client.post(url, headers=headers, json=SMALL).status_code == 202
+    with ctx.session_factory() as db:
+        user = db.get(User, user_id(client, headers))
+        assert user is not None
+        user.plan_override = "plus"
+        db.commit()
+    refused = client.post(url, headers=headers, json=SMALL)
+    assert refused.status_code == 429
+    body = refused.json()
+    assert body["error"] == "QUOTA_EXCEEDED"
+    assert body["detail"]["quota"] == "autofits_per_day" and body["detail"]["limit"] == 1
+
+
+def test_migration_0006_can_be_rolled_back_and_reapplied(
+    settings_factory: Callable[..., Any],
+) -> None:
+    app = create_app(settings_factory())
+    engine = app.state.ctx.engine
+    upgrade_to_head(engine)
+    command.downgrade(_config(engine), "0005")
+    with engine.connect() as connection:
+        columns = {c["name"] for c in inspect(connection).get_columns("users")}
+        plan_names = {row[0] for row in connection.execute(text("SELECT name FROM plans"))}
+    assert "plan_override" not in columns
+    assert plan_names == {"self-hosted"}
+    upgrade_to_head(engine)
+    with engine.connect() as connection:
+        columns = {c["name"] for c in inspect(connection).get_columns("users")}
+        plan_names = {row[0] for row in connection.execute(text("SELECT name FROM plans"))}
+    assert "plan_override" in columns
+    assert plan_names == {"free", "self-hosted"}
 
 
 # -- housekeeping ----------------------------------------------------------------------------------

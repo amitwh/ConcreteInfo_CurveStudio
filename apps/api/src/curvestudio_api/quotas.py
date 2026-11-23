@@ -1,4 +1,4 @@
-"""Per-user quotas from the ``plans`` row (``self-hosted``), overridable by settings."""
+"""Per-user quotas from the account's resolved ``plans`` row, overridable by settings."""
 
 import uuid
 from dataclasses import asdict, dataclass
@@ -9,11 +9,12 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from curvestudio_api.errors import ApiError
-from curvestudio_api.orm import AuditLog, Dataset, Fit, Job, Plan
+from curvestudio_api.orm import AuditLog, Dataset, Fit, Job, Plan, User
 from curvestudio_api.settings import Settings
 from curvestudio_api.timeutil import IST, utcnow
 
 PLAN_NAME = "self-hosted"
+FREE_PLAN_NAME = "free"
 DEFAULT_LIMITS = {"max_datasets": 200, "max_dataset_bytes": 500_000_000, "max_fits": 2000}
 DEFAULT_MAX_AUTOFITS_PER_DAY = 100
 Quota = Literal["datasets", "dataset_bytes", "fits"]
@@ -33,19 +34,38 @@ class Usage:
     fits: int
 
 
-def plan_limits(db: Session) -> dict[str, object]:
-    """The ``limits`` JSON of the self-hosted plan (empty if the row is missing)."""
-    plan = db.scalar(select(Plan).where(Plan.name == PLAN_NAME))
-    return dict(plan.limits) if plan is not None else {}
+def resolve_plan(db: Session, settings: Settings, override: str | None) -> Plan:
+    """The one way to resolve an account's plan row.
+
+    Billing off: ``self-hosted`` — today's behaviour for every install. Billing on: the
+    override when it names a known row, else ``free``.
+
+    Raises:
+        ApiError: 503 when no seeded plan row exists at all (only possible below migration 0001).
+    """
+    wanted = PLAN_NAME if not settings.billing_enabled else (override or FREE_PLAN_NAME)
+    plan = db.scalar(select(Plan).where(Plan.name == wanted))
+    if plan is None:
+        # An override naming an unknown row (or, unexpectedly, a missing seeded row) falls
+        # back to the other seeded row rather than turning every request into an error.
+        wanted = FREE_PLAN_NAME if wanted != FREE_PLAN_NAME else PLAN_NAME
+        plan = db.scalar(select(Plan).where(Plan.name == wanted))
+    if plan is None:
+        raise ApiError(503, "SERVICE_UNAVAILABLE", "the plan rows are not seeded")
+    return plan
 
 
-def effective_limits(db: Session, settings: Settings) -> Limits:
-    """Settings override the plan row, which overrides the built-in defaults."""
-    stored = plan_limits(db)
+def _plan_override(db: Session, user_id: uuid.UUID) -> str | None:
+    return db.scalar(select(User.plan_override).where(User.id == user_id))
 
-    def pick(override: int | None, key: str) -> int:
-        if override is not None:
-            return override
+
+def effective_limits(db: Session, settings: Settings, override: str | None = None) -> Limits:
+    """Settings override the resolved plan row, which overrides the built-in defaults."""
+    stored = dict(resolve_plan(db, settings, override).limits)
+
+    def pick(setting: int | None, key: str) -> int:
+        if setting is not None:
+            return setting
         value = stored.get(key)
         return value if isinstance(value, int) and value > 0 else DEFAULT_LIMITS[key]
 
@@ -89,7 +109,7 @@ def check(
         ApiError: 409 ``QUOTA_EXCEEDED`` for counts, 413 ``QUOTA_EXCEEDED`` for bytes; the
             detail names the quota, the limits and the current usage.
     """
-    limits = effective_limits(db, settings)
+    limits = effective_limits(db, settings, _plan_override(db, user_id))
     used = usage(db, user_id)
     if quota == "datasets":
         exceeded = used.datasets + 1 > limits.max_datasets
@@ -117,11 +137,11 @@ def check(
         )
 
 
-def autofits_per_day_limit(db: Session, settings: Settings) -> int:
+def autofits_per_day_limit(db: Session, settings: Settings, override: str | None = None) -> int:
     """Auto-fit runs one user may start per day: the setting, else the plan row, else 100."""
     if settings.quota_max_autofits_per_day is not None:
         return settings.quota_max_autofits_per_day
-    value = plan_limits(db).get("max_autofits_per_day")
+    value = resolve_plan(db, settings, override).limits.get("max_autofits_per_day")
     return value if isinstance(value, int) and value > 0 else DEFAULT_MAX_AUTOFITS_PER_DAY
 
 
@@ -138,7 +158,7 @@ def check_autofit_runs(
     """
     current = (now or utcnow()).astimezone(IST)
     day_start = current.replace(hour=0, minute=0, second=0, microsecond=0)
-    limit = autofits_per_day_limit(db, settings)
+    limit = autofits_per_day_limit(db, settings, _plan_override(db, user_id))
     used = (
         db.scalar(
             # Audit rows, not Job rows: deleting a dataset cascades its jobs away, which
