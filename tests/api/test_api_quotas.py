@@ -1,9 +1,10 @@
 """Per-user quotas from the plan row, /me usage, housekeeping and audit capping."""
 
+import logging
 import time
 import uuid
 from collections.abc import Callable
-from datetime import timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -11,17 +12,21 @@ import api_job_workers
 import pytest
 from alembic import command
 from fastapi.testclient import TestClient
-from sqlalchemy import inspect, select, text
+from sqlalchemy import func, inspect, select, text
 
 from conftest import linear_csv, new_email, signup, upload
 from curvestudio_api.app import create_app
 from curvestudio_api.errors import ApiError
 from curvestudio_api.housekeeping import purge
 from curvestudio_api.migrations import _config, upgrade_to_head
+from curvestudio_api.modules.admin.models import RequestStatDaily
+from curvestudio_api.modules.admin.requeststats import BUCKET_COUNT
+from curvestudio_api.modules.errors.models import ErrorEvent
+from curvestudio_api.modules.installs.models import InstallEvent, InstallRecord
 from curvestudio_api.orm import AuditLog, Dataset, Fit, Job, Plan, RefreshToken, User
 from curvestudio_api.quotas import autofits_per_day_limit, resolve_plan, set_plan_override
 from curvestudio_api.settings import Settings
-from curvestudio_api.timeutil import utcnow
+from curvestudio_api.timeutil import IST, utcnow
 
 API = "/api/v1"
 POLY1 = {"model": {"kind": "polynomial", "degree": 1}}
@@ -453,6 +458,130 @@ def test_housekeeping_runs_on_its_own(
                 return
         time.sleep(0.1)
     raise AssertionError("the housekeeping task did not purge the old token")
+
+
+def _error_event(status: str, last_seen: datetime) -> ErrorEvent:
+    return ErrorEvent(
+        source="client",
+        category="crash",
+        severity="error",
+        error_type="TypeError",
+        message=f"{status}, last seen {last_seen.isoformat()}",
+        fingerprint=uuid.uuid4().hex,
+        status=status,
+        occurrence_count=1,
+        first_seen_at=last_seen,
+        last_seen_at=last_seen,
+    )
+
+
+def _stat_row(day: date) -> RequestStatDaily:
+    return RequestStatDaily(
+        day=day,
+        route_template="/api/v1/health",
+        count=1,
+        errors=0,
+        histogram=[1] + [0] * (BUCKET_COUNT - 1),
+        p50_ms=0,
+        p95_ms=0,
+        max_ms=1,
+    )
+
+
+def test_the_housekeeper_merges_request_stats_and_purges_by_age(
+    client_factory: Callable[..., TestClient],
+    settings_factory: Callable[..., Any],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """One run merges what the middleware counted, removes error events and request statistics
+    past their retention, and leaves the install records alone."""
+    client = client_factory(settings_factory(housekeeping_interval_s=0.05))
+    ctx = client.app.state.ctx
+    now = utcnow()
+    today = now.astimezone(IST).date()
+    day = timedelta(days=1)
+    gone = [
+        _error_event("resolved", now - 91 * day),
+        _error_event("ignored", now - 100 * day),
+        _error_event("new", now - 181 * day),  # whatever its status, nothing is kept for ever
+    ]
+    kept = [
+        _error_event("resolved", now - 89 * day),
+        _error_event("new", now - 100 * day),  # still open: kept until the 180-day rule
+        _error_event("acknowledged", now - 179 * day),
+    ]
+    with ctx.session_factory() as db:
+        db.add_all(gone + kept)
+        # 400 days back is kept; the day before it goes.
+        db.add_all(
+            [
+                _stat_row(today - 401 * day),
+                _stat_row(today - 400 * day),
+                _stat_row(today - 399 * day),
+            ]
+        )
+        record = InstallRecord(
+            install_key="k" * 64,
+            app_version="0.11.1",
+            os_name="linux",
+            os_version="6.8",
+            arch="x86_64",
+            package="appimage",
+            session="wayland",
+            first_seen_at=now - 1000 * day,
+            last_seen_at=now - 1000 * day,
+        )
+        db.add(record)
+        db.flush()
+        db.add(InstallEvent(install_record_id=record.id, event="install", to_version="0.11.1"))
+        db.commit()
+        gone_ids, kept_ids = [event.id for event in gone], [event.id for event in kept]
+
+    # What the middleware counted since the previous run.
+    ctx.stats.record("/api/v1/health", 12.5, error=False)
+    ctx.stats.record("/api/v1/health", 30_000.0, error=True)
+    ctx.stats.record(None, 5.0, error=False)  # a request that matched no route
+
+    with caplog.at_level(logging.INFO, logger="curvestudio_api"):
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            with ctx.session_factory() as db:
+                merged = db.scalar(select(RequestStatDaily).where(RequestStatDaily.day == today))
+                if (
+                    db.get(ErrorEvent, gone_ids[0]) is None
+                    and merged is not None
+                    and merged.count == 2
+                ):
+                    break
+            time.sleep(0.05)
+        else:
+            raise AssertionError("the housekeeping task did not merge and purge")
+
+    assert (merged.route_template, merged.count, merged.errors, merged.max_ms) == (
+        "/api/v1/health",
+        2,
+        1,
+        30_000,
+    )
+    assert sum(merged.histogram) == 2
+    assert merged.p50_ms < merged.p95_ms <= merged.max_ms
+    with ctx.session_factory() as db:
+        assert set(db.scalars(select(ErrorEvent.id))) == set(kept_ids)
+        assert set(db.scalars(select(RequestStatDaily.day))) == {
+            today,
+            today - 399 * day,
+            today - 400 * day,
+        }
+        # Install records and their events are never purged.
+        assert db.scalar(select(func.count()).select_from(InstallRecord)) == 1
+        assert db.scalar(select(func.count()).select_from(InstallEvent)) == 1
+
+    purged = [r for r in caplog.records if r.getMessage() == "purged"]
+    lines = [r.fields for r in purged if r.fields["error_events_closed"] == 2]  # type: ignore[attr-defined]
+    assert lines, [r.getMessage() for r in caplog.records]
+    assert (lines[0]["error_events_expired"], lines[0]["request_stats"]) == (1, 1)
+    assert {"tokens", "jobs"} <= set(lines[0])
+    assert any(r.fields["stats_merged"] >= 1 for r in purged)  # type: ignore[attr-defined]
 
 
 def test_repeated_failed_logins_write_a_bounded_number_of_audit_rows(

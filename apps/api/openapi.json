@@ -1,6 +1,288 @@
 {
   "components": {
     "schemas": {
+      "AccountCountsOut": {
+        "properties": {
+          "new_30d": {
+            "title": "New 30D",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "verified": {
+            "title": "Verified",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "verified",
+          "new_30d"
+        ],
+        "title": "AccountCountsOut",
+        "type": "object"
+      },
+      "ActiveUsersOut": {
+        "description": "Accounts active in the last 1, 7 and 30 days; today counts.",
+        "properties": {
+          "d1": {
+            "title": "D1",
+            "type": "integer"
+          },
+          "d30": {
+            "title": "D30",
+            "type": "integer"
+          },
+          "d7": {
+            "title": "D7",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "d1",
+          "d7",
+          "d30"
+        ],
+        "title": "ActiveUsersOut",
+        "type": "object"
+      },
+      "AdminUserDetailOut": {
+        "description": "An account and the last fifty rows of its audit trail, newest first.",
+        "properties": {
+          "audit": {
+            "items": {
+              "$ref": "#/components/schemas/AuditOut"
+            },
+            "title": "Audit",
+            "type": "array"
+          },
+          "user": {
+            "$ref": "#/components/schemas/AdminUserOut"
+          }
+        },
+        "required": [
+          "user",
+          "audit"
+        ],
+        "title": "AdminUserDetailOut",
+        "type": "object"
+      },
+      "AdminUserOut": {
+        "description": "An account as the console lists it. ``plan`` is the resolved plan's name.",
+        "properties": {
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "email_verified": {
+            "title": "Email Verified",
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "last_active_on": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Active On"
+          },
+          "last_login_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Login At"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "plan": {
+            "title": "Plan",
+            "type": "string"
+          },
+          "plan_override": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan Override"
+          },
+          "role": {
+            "enum": [
+              "member",
+              "admin"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/UsageOut"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "name",
+          "role",
+          "plan",
+          "plan_override",
+          "is_active",
+          "email_verified",
+          "created_at",
+          "last_login_at",
+          "last_active_on",
+          "usage"
+        ],
+        "title": "AdminUserOut",
+        "type": "object"
+      },
+      "AdminUserUpdateIn": {
+        "additionalProperties": false,
+        "description": "What to change on an account. ``plan_override`` set to ``null`` clears it; a key left\nout keeps its value.",
+        "properties": {
+          "is_active": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Active"
+          },
+          "plan_override": {
+            "anyOf": [
+              {
+                "maxLength": 50,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan Override"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "enum": [
+                  "member",
+                  "admin"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role"
+          }
+        },
+        "title": "AdminUserUpdateIn",
+        "type": "object"
+      },
+      "AuditOut": {
+        "description": "One audit row.",
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "detail": {
+            "additionalProperties": true,
+            "title": "Detail",
+            "type": "object"
+          },
+          "entity": {
+            "title": "Entity",
+            "type": "string"
+          },
+          "entity_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entity Id"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Request Id"
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id"
+          }
+        },
+        "required": [
+          "id",
+          "user_id",
+          "action",
+          "entity",
+          "entity_id",
+          "detail",
+          "request_id",
+          "created_at"
+        ],
+        "title": "AuditOut",
+        "type": "object"
+      },
       "AutoFitConfig": {
         "additionalProperties": false,
         "description": "Settings of one Auto-fit run.\n\nAttributes:\n    rank_by: ordering criterion of the result.\n    families: keep only models whose category equals one of these or has it as its first\n        dotted segment (``\"engineering\"`` matches ``\"engineering.strength\"``);\n        ``None`` keeps every category.\n    include_polynomials: also try polynomials (``polyN`` and ``polyN_origin``).\n    include_generated: also try models of lazily generated families.\n    exhaustive: include the long tail of generated families and raise the parameter cap.\n    max_params: largest parameter count tried. ``None`` means ``n_active - 3`` when\n        ``families`` is explicit (you asked for those models; only the data can rule one\n        out), ``min(10, n_active - 3)`` when exhaustive, else\n        ``min(6, max(2, n_active // 3))``. Whatever the value, a model never gets more\n        than ``n_active - 3`` parameters. Every candidate the cap leaves out is listed in\n        the result's ``skipped`` with its parameter count.\n    n_starts: multistart count per candidate.\n    seed: base seed; a candidate's seed is derived from it and the candidate id, so\n        results do not depend on scheduling order.\n    time_limit: seconds allowed per candidate.\n    workers: worker processes; ``None`` means ``max(1, cpu_count - 1)`` and ``1`` runs\n        in-process.\n    cv_folds: folds of the cross-validation RMSE; ``None`` disables it.\n    staged_starts: fit every candidate from two starts first and give the full ``n_starts``\n        only to those that could still change the ranking (AICc within 10 of the best, or\n        not converged but with an SSE within three times the best converged SSE); the\n        rest keep their two-start outcome (``stage=\"screen\"``). Turn off to give every\n        candidate the full multistart.\n    custom_models: user equations to fit alongside the catalogue. They are always\n        candidates (neither ``families`` nor ``max_params`` filters them); the data\n        alone decides whether one can be fitted. Ids must be unique and must not\n        collide with a catalogue or polynomial id.\n    curve_top_n: how many top-ranked candidates (under each ranking criterion) get\n        their fitted curve and bands sampled into the result so a UI can plot without\n        refitting; ``0`` samples none.",
@@ -745,6 +1027,31 @@
         "title": "CandidateOutcome",
         "type": "object"
       },
+      "CountOut": {
+        "description": "One day of the overview's series.",
+        "properties": {
+          "active": {
+            "title": "Active",
+            "type": "integer"
+          },
+          "day": {
+            "format": "date",
+            "title": "Day",
+            "type": "string"
+          },
+          "signups": {
+            "title": "Signups",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "day",
+          "signups",
+          "active"
+        ],
+        "title": "CountOut",
+        "type": "object"
+      },
       "CrossValidation": {
         "additionalProperties": false,
         "description": "Outcome of one cross-validation run; ``None`` means a statistic is not defined.\n\n``fold_rmse`` holds the weighted held-out RMSE of each fold in fold order, with\n``None`` for a failed fold. ``rmse`` pools all held-out points and is ``None`` unless\nevery fold succeeded. ``n_failed`` counts failed folds and ``reasons`` names each one,\nso no fold is silently dropped or replaced. ``status`` is ``\"ok\"`` only when no fold\nfailed. Note that ``\"ok\"`` means the estimate is complete, not that the model is valid:\ncross-validation quantifies predictive accuracy, it does not confirm the model.",
@@ -1034,6 +1341,32 @@
           "n_total"
         ],
         "title": "DataSnapshot",
+        "type": "object"
+      },
+      "DatabaseOut": {
+        "description": "``size_bytes`` is the database's size on PostgreSQL and ``null`` elsewhere;\n``migration_head`` is the schema revision the database is at.",
+        "properties": {
+          "migration_head": {
+            "title": "Migration Head",
+            "type": "string"
+          },
+          "size_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size Bytes"
+          }
+        },
+        "required": [
+          "size_bytes",
+          "migration_head"
+        ],
+        "title": "DatabaseOut",
         "type": "object"
       },
       "DatasetDetailOut": {
@@ -1350,6 +1683,186 @@
         "title": "ErrorEventBatchIn",
         "type": "object"
       },
+      "ErrorEventDetailOut": {
+        "description": "An error event with everything stored about it.",
+        "properties": {
+          "app_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "App Version"
+          },
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "console_log": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Console Log"
+          },
+          "context_json": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context Json"
+          },
+          "error_type": {
+            "title": "Error Type",
+            "type": "string"
+          },
+          "fingerprint": {
+            "title": "Fingerprint",
+            "type": "string"
+          },
+          "first_seen_at": {
+            "title": "First Seen At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "last_seen_at": {
+            "title": "Last Seen At",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "method": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Method"
+          },
+          "occurrence_count": {
+            "title": "Occurrence Count",
+            "type": "integer"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Request Id"
+          },
+          "route": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Route"
+          },
+          "severity": {
+            "title": "Severity",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "stack": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stack"
+          },
+          "status": {
+            "enum": [
+              "new",
+              "acknowledged",
+              "resolved",
+              "ignored"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "status_code": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Code"
+          },
+          "user_agent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Agent"
+          }
+        },
+        "required": [
+          "id",
+          "source",
+          "category",
+          "severity",
+          "error_type",
+          "message",
+          "fingerprint",
+          "route",
+          "method",
+          "status_code",
+          "request_id",
+          "app_version",
+          "status",
+          "occurrence_count",
+          "first_seen_at",
+          "last_seen_at",
+          "stack",
+          "context_json",
+          "console_log",
+          "user_agent"
+        ],
+        "title": "ErrorEventDetailOut",
+        "type": "object"
+      },
       "ErrorEventIn": {
         "additionalProperties": false,
         "description": "One error as a browser reports it.\n\nThere is no ``source`` field and an unknown field is refused, so a report can never pass\nitself off as the server's. Nothing here identifies an account.",
@@ -1480,6 +1993,158 @@
           "message"
         ],
         "title": "ErrorEventIn",
+        "type": "object"
+      },
+      "ErrorEventOut": {
+        "description": "An error event as the console lists it: without the large texts.",
+        "properties": {
+          "app_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "App Version"
+          },
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "error_type": {
+            "title": "Error Type",
+            "type": "string"
+          },
+          "fingerprint": {
+            "title": "Fingerprint",
+            "type": "string"
+          },
+          "first_seen_at": {
+            "title": "First Seen At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "last_seen_at": {
+            "title": "Last Seen At",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "method": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Method"
+          },
+          "occurrence_count": {
+            "title": "Occurrence Count",
+            "type": "integer"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Request Id"
+          },
+          "route": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Route"
+          },
+          "severity": {
+            "title": "Severity",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "new",
+              "acknowledged",
+              "resolved",
+              "ignored"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "status_code": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Code"
+          }
+        },
+        "required": [
+          "id",
+          "source",
+          "category",
+          "severity",
+          "error_type",
+          "message",
+          "fingerprint",
+          "route",
+          "method",
+          "status_code",
+          "request_id",
+          "app_version",
+          "status",
+          "occurrence_count",
+          "first_seen_at",
+          "last_seen_at"
+        ],
+        "title": "ErrorEventOut",
+        "type": "object"
+      },
+      "ErrorStatusUpdateIn": {
+        "additionalProperties": false,
+        "description": "The new status of an error event.",
+        "properties": {
+          "status": {
+            "enum": [
+              "new",
+              "acknowledged",
+              "resolved",
+              "ignored"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "ErrorStatusUpdateIn",
         "type": "object"
       },
       "FitBundle": {
@@ -2205,6 +2870,83 @@
         "title": "InstallRecordIn",
         "type": "object"
       },
+      "InstallSummaryOut": {
+        "description": "The figures the admin console shows.",
+        "properties": {
+          "by_arch": {
+            "items": {
+              "$ref": "#/components/schemas/NameCount"
+            },
+            "title": "By Arch",
+            "type": "array"
+          },
+          "by_os": {
+            "items": {
+              "$ref": "#/components/schemas/NameCount"
+            },
+            "title": "By Os",
+            "type": "array"
+          },
+          "by_package": {
+            "items": {
+              "$ref": "#/components/schemas/NameCount"
+            },
+            "title": "By Package",
+            "type": "array"
+          },
+          "by_session": {
+            "items": {
+              "$ref": "#/components/schemas/NameCount"
+            },
+            "title": "By Session",
+            "type": "array"
+          },
+          "by_version": {
+            "items": {
+              "$ref": "#/components/schemas/NameCount"
+            },
+            "title": "By Version",
+            "type": "array"
+          },
+          "latest_release": {
+            "title": "Latest Release",
+            "type": "string"
+          },
+          "latest_share": {
+            "title": "Latest Share",
+            "type": "number"
+          },
+          "new_30d": {
+            "title": "New 30D",
+            "type": "integer"
+          },
+          "new_per_week": {
+            "items": {
+              "$ref": "#/components/schemas/WeekCount"
+            },
+            "title": "New Per Week",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "new_30d",
+          "latest_release",
+          "latest_share",
+          "by_version",
+          "by_os",
+          "by_arch",
+          "by_package",
+          "by_session",
+          "new_per_week"
+        ],
+        "title": "InstallSummaryOut",
+        "type": "object"
+      },
       "IssueOut": {
         "properties": {
           "code": {
@@ -2388,6 +3130,34 @@
           "finished_at"
         ],
         "title": "JobOut",
+        "type": "object"
+      },
+      "JobsOut": {
+        "properties": {
+          "queue_depth": {
+            "title": "Queue Depth",
+            "type": "integer"
+          },
+          "queue_max": {
+            "title": "Queue Max",
+            "type": "integer"
+          },
+          "running": {
+            "title": "Running",
+            "type": "boolean"
+          },
+          "workers": {
+            "title": "Workers",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "running",
+          "workers",
+          "queue_depth",
+          "queue_max"
+        ],
+        "title": "JobsOut",
         "type": "object"
       },
       "LoginIn": {
@@ -2576,6 +3346,25 @@
         "title": "ModelInfo",
         "type": "object"
       },
+      "NameCount": {
+        "description": "How many installations hold ``name``.",
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "count"
+        ],
+        "title": "NameCount",
+        "type": "object"
+      },
       "OAuthExchangeIn": {
         "additionalProperties": false,
         "properties": {
@@ -2633,6 +3422,147 @@
           "job_id"
         ],
         "title": "OpenRowOut",
+        "type": "object"
+      },
+      "OverviewOut": {
+        "description": "The figures of the console's front page.",
+        "properties": {
+          "accounts": {
+            "$ref": "#/components/schemas/AccountCountsOut"
+          },
+          "active_users": {
+            "$ref": "#/components/schemas/ActiveUsersOut"
+          },
+          "autofit_runs_24h": {
+            "title": "Autofit Runs 24H",
+            "type": "integer"
+          },
+          "installs": {
+            "$ref": "#/components/schemas/InstallSummaryOut"
+          },
+          "open_errors": {
+            "title": "Open Errors",
+            "type": "integer"
+          },
+          "series": {
+            "items": {
+              "$ref": "#/components/schemas/CountOut"
+            },
+            "title": "Series",
+            "type": "array"
+          }
+        },
+        "required": [
+          "accounts",
+          "active_users",
+          "installs",
+          "open_errors",
+          "autofit_runs_24h",
+          "series"
+        ],
+        "title": "OverviewOut",
+        "type": "object"
+      },
+      "PageOut_AdminUserOut_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AdminUserOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "minimum": 1.0,
+            "title": "Page",
+            "type": "integer"
+          },
+          "page_size": {
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size"
+        ],
+        "title": "PageOut[AdminUserOut]",
+        "type": "object"
+      },
+      "PageOut_AuditOut_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AuditOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "minimum": 1.0,
+            "title": "Page",
+            "type": "integer"
+          },
+          "page_size": {
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size"
+        ],
+        "title": "PageOut[AuditOut]",
+        "type": "object"
+      },
+      "PageOut_ErrorEventOut_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ErrorEventOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "minimum": 1.0,
+            "title": "Page",
+            "type": "integer"
+          },
+          "page_size": {
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size"
+        ],
+        "title": "PageOut[ErrorEventOut]",
         "type": "object"
       },
       "ParameterDefinition-Input": {
@@ -2872,6 +3802,58 @@
         "title": "PasswordChangeIn",
         "type": "object"
       },
+      "PlanAdminOut": {
+        "description": "A plan row with the limits that apply to it.",
+        "properties": {
+          "limits": {
+            "$ref": "#/components/schemas/PlanLimitsIn"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "limits"
+        ],
+        "title": "PlanAdminOut",
+        "type": "object"
+      },
+      "PlanLimitsIn": {
+        "additionalProperties": false,
+        "description": "A plan's four limits, each at least 1.",
+        "properties": {
+          "max_autofits_per_day": {
+            "minimum": 1.0,
+            "title": "Max Autofits Per Day",
+            "type": "integer"
+          },
+          "max_dataset_bytes": {
+            "minimum": 1.0,
+            "title": "Max Dataset Bytes",
+            "type": "integer"
+          },
+          "max_datasets": {
+            "minimum": 1.0,
+            "title": "Max Datasets",
+            "type": "integer"
+          },
+          "max_fits": {
+            "minimum": 1.0,
+            "title": "Max Fits",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "max_datasets",
+          "max_dataset_bytes",
+          "max_fits",
+          "max_autofits_per_day"
+        ],
+        "title": "PlanLimitsIn",
+        "type": "object"
+      },
       "PlanOut": {
         "properties": {
           "max_autofits_per_day": {
@@ -2903,6 +3885,20 @@
           "max_autofits_per_day"
         ],
         "title": "PlanOut",
+        "type": "object"
+      },
+      "PlanUpdateIn": {
+        "additionalProperties": false,
+        "description": "What to change on a plan.",
+        "properties": {
+          "limits": {
+            "$ref": "#/components/schemas/PlanLimitsIn"
+          }
+        },
+        "required": [
+          "limits"
+        ],
+        "title": "PlanUpdateIn",
         "type": "object"
       },
       "PointsOut": {
@@ -3815,6 +4811,42 @@
         "title": "RowCurve",
         "type": "object"
       },
+      "SystemOut": {
+        "properties": {
+          "current_release": {
+            "title": "Current Release",
+            "type": "string"
+          },
+          "database": {
+            "$ref": "#/components/schemas/DatabaseOut"
+          },
+          "jobs": {
+            "$ref": "#/components/schemas/JobsOut"
+          },
+          "started_at": {
+            "title": "Started At",
+            "type": "string"
+          },
+          "uptime_s": {
+            "title": "Uptime S",
+            "type": "number"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "current_release",
+          "started_at",
+          "uptime_s",
+          "jobs",
+          "database"
+        ],
+        "title": "SystemOut",
+        "type": "object"
+      },
       "TokenOut": {
         "properties": {
           "access_token": {
@@ -3961,6 +4993,26 @@
         ],
         "title": "VerifyEmailIn",
         "type": "object"
+      },
+      "WeekCount": {
+        "description": "How many installations were first seen in the week that starts on ``week_start``.",
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "week_start": {
+            "format": "date",
+            "title": "Week Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "week_start",
+          "count"
+        ],
+        "title": "WeekCount",
+        "type": "object"
       }
     },
     "securitySchemes": {
@@ -3977,6 +5029,840 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/admin/audit": {
+      "get": {
+        "description": "The audit rows matching the filters, newest first. ``from`` and ``to`` are IST dates,\nboth inclusive.",
+        "operationId": "audit_api_v1_admin_audit_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "user_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "action",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 50,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Action"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageOut_AuditOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "The audit trail, filtered and paged",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/errors": {
+      "get": {
+        "description": "The error events matching the filters, newest first. Nothing here names an account.",
+        "operationId": "errors_api_v1_admin_errors_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "new",
+                    "acknowledged",
+                    "resolved",
+                    "ignored"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "category",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 16,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Category"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageOut_ErrorEventOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Error events, filtered and paged",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/errors/{id}": {
+      "get": {
+        "description": "The event with its stack, context, console log and user agent.",
+        "operationId": "error_detail_api_v1_admin_errors__id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEventDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "One error event",
+        "tags": [
+          "admin"
+        ]
+      },
+      "patch": {
+        "description": "Audited as ``error.status_change``. A repeat of a resolved or ignored event reopens it.",
+        "operationId": "update_error_api_v1_admin_errors__id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ErrorStatusUpdateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEventOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Change an error event's status",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/errors/{id}/bundle": {
+      "get": {
+        "description": "Every field of the event, its stack, its context and its console lines.",
+        "operationId": "error_bundle_api_v1_admin_errors__id__bundle_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/markdown": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "One error event as a Markdown attachment",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/installs/summary": {
+      "get": {
+        "description": "What the desktop installations reported, counted the way ``modules.installs`` does.",
+        "operationId": "installs_api_v1_admin_installs_summary_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstallSummaryOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "The install figures",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/overview": {
+      "get": {
+        "description": "Accounts, active users, installs, open errors, Auto-fit runs and a ninety-day series.",
+        "operationId": "overview_api_v1_admin_overview_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OverviewOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "The figures of the console's front page",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/plans": {
+      "get": {
+        "description": "Every plan with the limits that apply to it, by name.",
+        "operationId": "plans_api_v1_admin_plans_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PlanAdminOut"
+                  },
+                  "title": "Response Plans Api V1 Admin Plans Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "The plan rows",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/plans/{name}": {
+      "patch": {
+        "description": "Sets the plan's four limits, each at least 1. Audited as ``plan.update``.",
+        "operationId": "update_plan_api_v1_admin_plans__name__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlanUpdateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanAdminOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Change a plan's limits",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/system": {
+      "get": {
+        "description": "How this instance is running.",
+        "operationId": "system_api_v1_admin_system_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Version, uptime, jobs and database",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/users": {
+      "get": {
+        "description": "The accounts matching the filters, newest first. ``q`` is a case-insensitive substring\nof the name or the address; ``plan`` is the resolved plan's name.",
+        "operationId": "users_api_v1_admin_users_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "plan",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 50,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Plan"
+            }
+          },
+          {
+            "in": "query",
+            "name": "role",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "member",
+                    "admin"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Role"
+            }
+          },
+          {
+            "in": "query",
+            "name": "active",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Active"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageOut_AdminUserOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Accounts, filtered and paged",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/users/{id}": {
+      "delete": {
+        "description": "The account and everything in it goes; the audit trail stays, anonymised.",
+        "operationId": "delete_user_api_v1_admin_users__id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Erase an account",
+        "tags": [
+          "admin"
+        ]
+      },
+      "get": {
+        "description": "The account, with the last fifty rows of its audit trail, newest first.",
+        "operationId": "user_detail_api_v1_admin_users__id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUserDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "One account and its audit trail",
+        "tags": [
+          "admin"
+        ]
+      },
+      "patch": {
+        "description": "Each change is audited. An administrator cannot change their own role or active flag.",
+        "operationId": "update_user_api_v1_admin_users__id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminUserUpdateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUserOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Change an account's role, plan or active flag",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/v1/auth/login": {
       "post": {
         "operationId": "login_api_v1_auth_login_post",

@@ -4,6 +4,240 @@
  */
 
 export interface paths {
+    "/api/v1/admin/audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The audit trail, filtered and paged
+         * @description The audit rows matching the filters, newest first. ``from`` and ``to`` are IST dates,
+         *     both inclusive.
+         */
+        get: operations["audit_api_v1_admin_audit_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/errors": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Error events, filtered and paged
+         * @description The error events matching the filters, newest first. Nothing here names an account.
+         */
+        get: operations["errors_api_v1_admin_errors_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/errors/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One error event
+         * @description The event with its stack, context, console log and user agent.
+         */
+        get: operations["error_detail_api_v1_admin_errors__id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Change an error event's status
+         * @description Audited as ``error.status_change``. A repeat of a resolved or ignored event reopens it.
+         */
+        patch: operations["update_error_api_v1_admin_errors__id__patch"];
+        trace?: never;
+    };
+    "/api/v1/admin/errors/{id}/bundle": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One error event as a Markdown attachment
+         * @description Every field of the event, its stack, its context and its console lines.
+         */
+        get: operations["error_bundle_api_v1_admin_errors__id__bundle_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/installs/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The install figures
+         * @description What the desktop installations reported, counted the way ``modules.installs`` does.
+         */
+        get: operations["installs_api_v1_admin_installs_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The figures of the console's front page
+         * @description Accounts, active users, installs, open errors, Auto-fit runs and a ninety-day series.
+         */
+        get: operations["overview_api_v1_admin_overview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/plans": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The plan rows
+         * @description Every plan with the limits that apply to it, by name.
+         */
+        get: operations["plans_api_v1_admin_plans_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/plans/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Change a plan's limits
+         * @description Sets the plan's four limits, each at least 1. Audited as ``plan.update``.
+         */
+        patch: operations["update_plan_api_v1_admin_plans__name__patch"];
+        trace?: never;
+    };
+    "/api/v1/admin/system": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Version, uptime, jobs and database
+         * @description How this instance is running.
+         */
+        get: operations["system_api_v1_admin_system_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Accounts, filtered and paged
+         * @description The accounts matching the filters, newest first. ``q`` is a case-insensitive substring
+         *     of the name or the address; ``plan`` is the resolved plan's name.
+         */
+        get: operations["users_api_v1_admin_users_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/users/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One account and its audit trail
+         * @description The account, with the last fifty rows of its audit trail, newest first.
+         */
+        get: operations["user_detail_api_v1_admin_users__id__get"];
+        put?: never;
+        post?: never;
+        /**
+         * Erase an account
+         * @description The account and everything in it goes; the audit trail stays, anonymised.
+         */
+        delete: operations["delete_user_api_v1_admin_users__id__delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Change an account's role, plan or active flag
+         * @description Each change is audited. An administrator cannot change their own role or active flag.
+         */
+        patch: operations["update_user_api_v1_admin_users__id__patch"];
+        trace?: never;
+    };
     "/api/v1/auth/login": {
         parameters: {
             query?: never;
@@ -731,6 +965,111 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AccountCountsOut */
+        AccountCountsOut: {
+            /** New 30D */
+            new_30d: number;
+            /** Total */
+            total: number;
+            /** Verified */
+            verified: number;
+        };
+        /**
+         * ActiveUsersOut
+         * @description Accounts active in the last 1, 7 and 30 days; today counts.
+         */
+        ActiveUsersOut: {
+            /** D1 */
+            d1: number;
+            /** D30 */
+            d30: number;
+            /** D7 */
+            d7: number;
+        };
+        /**
+         * AdminUserDetailOut
+         * @description An account and the last fifty rows of its audit trail, newest first.
+         */
+        AdminUserDetailOut: {
+            /** Audit */
+            audit: components["schemas"]["AuditOut"][];
+            user: components["schemas"]["AdminUserOut"];
+        };
+        /**
+         * AdminUserOut
+         * @description An account as the console lists it. ``plan`` is the resolved plan's name.
+         */
+        AdminUserOut: {
+            /** Created At */
+            created_at: string;
+            /** Email */
+            email: string;
+            /** Email Verified */
+            email_verified: boolean;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Is Active */
+            is_active: boolean;
+            /** Last Active On */
+            last_active_on: string | null;
+            /** Last Login At */
+            last_login_at: string | null;
+            /** Name */
+            name: string;
+            /** Plan */
+            plan: string;
+            /** Plan Override */
+            plan_override: string | null;
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "member" | "admin";
+            usage: components["schemas"]["UsageOut"];
+        };
+        /**
+         * AdminUserUpdateIn
+         * @description What to change on an account. ``plan_override`` set to ``null`` clears it; a key left
+         *     out keeps its value.
+         */
+        AdminUserUpdateIn: {
+            /** Is Active */
+            is_active?: boolean | null;
+            /** Plan Override */
+            plan_override?: string | null;
+            /** Role */
+            role?: ("member" | "admin") | null;
+        };
+        /**
+         * AuditOut
+         * @description One audit row.
+         */
+        AuditOut: {
+            /** Action */
+            action: string;
+            /** Created At */
+            created_at: string;
+            /** Detail */
+            detail: {
+                [key: string]: unknown;
+            };
+            /** Entity */
+            entity: string;
+            /** Entity Id */
+            entity_id: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Request Id */
+            request_id: string | null;
+            /** User Id */
+            user_id: string | null;
+        };
         /**
          * AutoFitConfig
          * @description Settings of one Auto-fit run.
@@ -1113,6 +1452,21 @@ export interface components {
             stage: "screen" | "final";
         };
         /**
+         * CountOut
+         * @description One day of the overview's series.
+         */
+        CountOut: {
+            /** Active */
+            active: number;
+            /**
+             * Day
+             * Format: date
+             */
+            day: string;
+            /** Signups */
+            signups: number;
+        };
+        /**
          * CrossValidation
          * @description Outcome of one cross-validation run; ``None`` means a statistic is not defined.
          *
@@ -1243,6 +1597,17 @@ export interface components {
             /** Y Name */
             y_name: string;
         };
+        /**
+         * DatabaseOut
+         * @description ``size_bytes`` is the database's size on PostgreSQL and ``null`` elsewhere;
+         *     ``migration_head`` is the schema revision the database is at.
+         */
+        DatabaseOut: {
+            /** Migration Head */
+            migration_head: string;
+            /** Size Bytes */
+            size_bytes: number | null;
+        };
         /** DatasetDetailOut */
         DatasetDetailOut: {
             /** Columns */
@@ -1363,6 +1728,60 @@ export interface components {
             events: components["schemas"]["ErrorEventIn"][];
         };
         /**
+         * ErrorEventDetailOut
+         * @description An error event with everything stored about it.
+         */
+        ErrorEventDetailOut: {
+            /** App Version */
+            app_version: string | null;
+            /** Category */
+            category: string;
+            /** Console Log */
+            console_log: string | null;
+            /** Context Json */
+            context_json: {
+                [key: string]: unknown;
+            } | null;
+            /** Error Type */
+            error_type: string;
+            /** Fingerprint */
+            fingerprint: string;
+            /** First Seen At */
+            first_seen_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Last Seen At */
+            last_seen_at: string;
+            /** Message */
+            message: string;
+            /** Method */
+            method: string | null;
+            /** Occurrence Count */
+            occurrence_count: number;
+            /** Request Id */
+            request_id: string | null;
+            /** Route */
+            route: string | null;
+            /** Severity */
+            severity: string;
+            /** Source */
+            source: string;
+            /** Stack */
+            stack: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "new" | "acknowledged" | "resolved" | "ignored";
+            /** Status Code */
+            status_code: number | null;
+            /** User Agent */
+            user_agent: string | null;
+        };
+        /**
          * ErrorEventIn
          * @description One error as a browser reports it.
          *
@@ -1403,6 +1822,61 @@ export interface components {
             stack?: string | null;
             /** User Agent */
             user_agent?: string | null;
+        };
+        /**
+         * ErrorEventOut
+         * @description An error event as the console lists it: without the large texts.
+         */
+        ErrorEventOut: {
+            /** App Version */
+            app_version: string | null;
+            /** Category */
+            category: string;
+            /** Error Type */
+            error_type: string;
+            /** Fingerprint */
+            fingerprint: string;
+            /** First Seen At */
+            first_seen_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Last Seen At */
+            last_seen_at: string;
+            /** Message */
+            message: string;
+            /** Method */
+            method: string | null;
+            /** Occurrence Count */
+            occurrence_count: number;
+            /** Request Id */
+            request_id: string | null;
+            /** Route */
+            route: string | null;
+            /** Severity */
+            severity: string;
+            /** Source */
+            source: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "new" | "acknowledged" | "resolved" | "ignored";
+            /** Status Code */
+            status_code: number | null;
+        };
+        /**
+         * ErrorStatusUpdateIn
+         * @description The new status of an error event.
+         */
+        ErrorStatusUpdateIn: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "new" | "acknowledged" | "resolved" | "ignored";
         };
         /**
          * FitBundle
@@ -1685,6 +2159,32 @@ export interface components {
             /** Session */
             session: string;
         };
+        /**
+         * InstallSummaryOut
+         * @description The figures the admin console shows.
+         */
+        InstallSummaryOut: {
+            /** By Arch */
+            by_arch: components["schemas"]["NameCount"][];
+            /** By Os */
+            by_os: components["schemas"]["NameCount"][];
+            /** By Package */
+            by_package: components["schemas"]["NameCount"][];
+            /** By Session */
+            by_session: components["schemas"]["NameCount"][];
+            /** By Version */
+            by_version: components["schemas"]["NameCount"][];
+            /** Latest Release */
+            latest_release: string;
+            /** Latest Share */
+            latest_share: number;
+            /** New 30D */
+            new_30d: number;
+            /** New Per Week */
+            new_per_week: components["schemas"]["WeekCount"][];
+            /** Total */
+            total: number;
+        };
         /** IssueOut */
         IssueOut: {
             /** Code */
@@ -1751,6 +2251,17 @@ export interface components {
              * @enum {string}
              */
             status: "queued" | "running" | "succeeded" | "failed" | "cancelled";
+        };
+        /** JobsOut */
+        JobsOut: {
+            /** Queue Depth */
+            queue_depth: number;
+            /** Queue Max */
+            queue_max: number;
+            /** Running */
+            running: boolean;
+            /** Workers */
+            workers: number;
         };
         /** LoginIn */
         LoginIn: {
@@ -1824,6 +2335,16 @@ export interface components {
             /** Variables */
             variables: string[];
         };
+        /**
+         * NameCount
+         * @description How many installations hold ``name``.
+         */
+        NameCount: {
+            /** Count */
+            count: number;
+            /** Name */
+            name: string;
+        };
         /** OAuthExchangeIn */
         OAuthExchangeIn: {
             /** Code */
@@ -1846,6 +2367,54 @@ export interface components {
              * Format: uuid
              */
             job_id: string;
+        };
+        /**
+         * OverviewOut
+         * @description The figures of the console's front page.
+         */
+        OverviewOut: {
+            accounts: components["schemas"]["AccountCountsOut"];
+            active_users: components["schemas"]["ActiveUsersOut"];
+            /** Autofit Runs 24H */
+            autofit_runs_24h: number;
+            installs: components["schemas"]["InstallSummaryOut"];
+            /** Open Errors */
+            open_errors: number;
+            /** Series */
+            series: components["schemas"]["CountOut"][];
+        };
+        /** PageOut[AdminUserOut] */
+        PageOut_AdminUserOut_: {
+            /** Items */
+            items: components["schemas"]["AdminUserOut"][];
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number;
+            /** Total */
+            total: number;
+        };
+        /** PageOut[AuditOut] */
+        PageOut_AuditOut_: {
+            /** Items */
+            items: components["schemas"]["AuditOut"][];
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number;
+            /** Total */
+            total: number;
+        };
+        /** PageOut[ErrorEventOut] */
+        PageOut_ErrorEventOut_: {
+            /** Items */
+            items: components["schemas"]["ErrorEventOut"][];
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number;
+            /** Total */
+            total: number;
         };
         /**
          * ParameterDefinition
@@ -1957,6 +2526,29 @@ export interface components {
             /** Refresh Token */
             refresh_token: string;
         };
+        /**
+         * PlanAdminOut
+         * @description A plan row with the limits that apply to it.
+         */
+        PlanAdminOut: {
+            limits: components["schemas"]["PlanLimitsIn"];
+            /** Name */
+            name: string;
+        };
+        /**
+         * PlanLimitsIn
+         * @description A plan's four limits, each at least 1.
+         */
+        PlanLimitsIn: {
+            /** Max Autofits Per Day */
+            max_autofits_per_day: number;
+            /** Max Dataset Bytes */
+            max_dataset_bytes: number;
+            /** Max Datasets */
+            max_datasets: number;
+            /** Max Fits */
+            max_fits: number;
+        };
         /** PlanOut */
         PlanOut: {
             /** Max Autofits Per Day */
@@ -1969,6 +2561,13 @@ export interface components {
             max_fits: number;
             /** Name */
             name: string;
+        };
+        /**
+         * PlanUpdateIn
+         * @description What to change on a plan.
+         */
+        PlanUpdateIn: {
+            limits: components["schemas"]["PlanLimitsIn"];
         };
         /**
          * PointsOut
@@ -2323,6 +2922,19 @@ export interface components {
             /** Y */
             y: number[];
         };
+        /** SystemOut */
+        SystemOut: {
+            /** Current Release */
+            current_release: string;
+            database: components["schemas"]["DatabaseOut"];
+            jobs: components["schemas"]["JobsOut"];
+            /** Started At */
+            started_at: string;
+            /** Uptime S */
+            uptime_s: number;
+            /** Version */
+            version: string;
+        };
         /** TokenOut */
         TokenOut: {
             /** Access Token */
@@ -2383,6 +2995,19 @@ export interface components {
             /** Token */
             token: string;
         };
+        /**
+         * WeekCount
+         * @description How many installations were first seen in the week that starts on ``week_start``.
+         */
+        WeekCount: {
+            /** Count */
+            count: number;
+            /**
+             * Week Start
+             * Format: date
+             */
+            week_start: string;
+        };
     };
     responses: never;
     parameters: never;
@@ -2392,6 +3017,419 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    audit_api_v1_admin_audit_get: {
+        parameters: {
+            query?: {
+                user_id?: string | null;
+                action?: string | null;
+                from?: string | null;
+                to?: string | null;
+                page?: number;
+                page_size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageOut_AuditOut_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    errors_api_v1_admin_errors_get: {
+        parameters: {
+            query?: {
+                status?: ("new" | "acknowledged" | "resolved" | "ignored") | null;
+                category?: string | null;
+                page?: number;
+                page_size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageOut_ErrorEventOut_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    error_detail_api_v1_admin_errors__id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEventDetailOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_error_api_v1_admin_errors__id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ErrorStatusUpdateIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEventOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    error_bundle_api_v1_admin_errors__id__bundle_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/markdown": string;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    installs_api_v1_admin_installs_summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstallSummaryOut"];
+                };
+            };
+        };
+    };
+    overview_api_v1_admin_overview_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OverviewOut"];
+                };
+            };
+        };
+    };
+    plans_api_v1_admin_plans_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanAdminOut"][];
+                };
+            };
+        };
+    };
+    update_plan_api_v1_admin_plans__name__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlanUpdateIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanAdminOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_api_v1_admin_system_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SystemOut"];
+                };
+            };
+        };
+    };
+    users_api_v1_admin_users_get: {
+        parameters: {
+            query?: {
+                q?: string | null;
+                plan?: string | null;
+                role?: ("member" | "admin") | null;
+                active?: boolean | null;
+                page?: number;
+                page_size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageOut_AdminUserOut_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    user_detail_api_v1_admin_users__id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUserDetailOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_user_api_v1_admin_users__id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_user_api_v1_admin_users__id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminUserUpdateIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUserOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     login_api_v1_auth_login_post: {
         parameters: {
             query?: never;

@@ -20,6 +20,7 @@ from conftest import make_settings
 from curvestudio_api import housekeeping
 from curvestudio_api.app import create_app
 from curvestudio_api.db import SessionFactory
+from curvestudio_api.deps import Ctx
 from curvestudio_api.logging_setup import LOGGER_NAME, log_fields
 from curvestudio_api.middleware import RequestContextMiddleware
 from curvestudio_api.modules.errors.capture import (
@@ -32,6 +33,7 @@ from curvestudio_api.modules.errors.capture import (
 )
 from curvestudio_api.modules.errors.models import ErrorEvent
 from curvestudio_api.modules.errors.service import record_error_event
+from curvestudio_api.routers import system as system_module
 from curvestudio_api.timeutil import utcnow
 
 API = "/api/v1"
@@ -142,6 +144,22 @@ def test_a_uuid_in_the_route_is_stored_as_a_template(
     template = mount_boom(client, "/boom/{item_id}/parts")
     assert client.get(f"{template.replace('{item_id}', UUID)}").status_code == 500
     assert [row.route for row in rows(client)] == ["/boom/{id}", "/boom/{item_id}/parts"]
+
+
+def test_a_crash_in_a_real_api_route_is_stored_with_its_full_template(
+    client_factory: Callable[..., TestClient], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The API's routes sit under a router with the ``/api/v1`` prefix, and this FastAPI keeps a
+    matched route's own path without it. The stored route is the full template."""
+
+    def _broken(ctx: Ctx) -> bool:
+        raise RuntimeError("boom inside a real handler")
+
+    monkeypatch.setattr(system_module, "_database_up", _broken)
+    client = client_factory()
+
+    assert client.get(f"{API}/health").status_code == 500
+    assert [row.route for row in rows(client)] == [f"{API}/health"]
 
 
 def test_capture_failure_never_changes_the_response(

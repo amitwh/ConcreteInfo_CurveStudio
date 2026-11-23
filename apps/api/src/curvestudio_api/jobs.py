@@ -198,6 +198,14 @@ class JobManager:
         with self._lock:
             return len(self._queue)
 
+    def worker_count(self) -> int:
+        """How many job processes may run at once."""
+        return self._workers
+
+    def queue_max(self) -> int:
+        """How many jobs may wait in the queue."""
+        return self._queue_max
+
     def queue_has_room(self) -> bool:
         return self.queue_size() < self._queue_max
 

@@ -21,11 +21,17 @@ def upgrade_to_head(engine: Engine) -> None:
     command.upgrade(_config(engine), "head")
 
 
+def current_revision(engine: Engine) -> str | None:
+    """The migration revision the database is at; ``None`` before the first one was applied."""
+    from alembic.runtime.migration import MigrationContext
+
+    with engine.connect() as connection:
+        return MigrationContext.configure(connection).get_current_revision()
+
+
 def current_revision_is_head(engine: Engine) -> bool:
     """Whether the database is at the newest migration (used by the readiness probe)."""
-    from alembic.runtime.migration import MigrationContext
     from alembic.script import ScriptDirectory
 
     head = ScriptDirectory.from_config(_config(engine)).get_current_head()
-    with engine.connect() as connection:
-        return MigrationContext.configure(connection).get_current_revision() == head
+    return current_revision(engine) == head

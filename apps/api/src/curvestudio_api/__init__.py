@@ -2,4 +2,8 @@
 
 __version__ = "0.11.1"
 
-__all__ = ["__version__"]
+API_PREFIX = "/api/v1"
+"""Where every API route lives. It is defined in this leaf module so that the application and
+the middleware share one constant without importing each other."""
+
+__all__ = ["API_PREFIX", "__version__"]

@@ -4,7 +4,7 @@ from dataclasses import asdict
 from typing import Annotated, Any, Literal, cast
 
 from fastapi import APIRouter, Query, Request, Response
-from sqlalchemy import delete, text, update
+from sqlalchemy import text, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -14,7 +14,8 @@ from curvestudio_api.deps import Ctx, CurrentUser, Db
 from curvestudio_api.errors import ApiError
 from curvestudio_api.logging_setup import get_logger
 from curvestudio_api.migrations import current_revision_is_head
-from curvestudio_api.orm import DEFAULT_PREFERENCES, AuditLog, Dataset, Fit, Job, RefreshToken, User
+from curvestudio_api.modules.admin.service import erase_account
+from curvestudio_api.orm import DEFAULT_PREFERENCES, RefreshToken, User
 from curvestudio_api.routers.auth import _limit, audit_failed_password_check
 from curvestudio_api.schemas import (
     DeleteMeIn,
@@ -230,14 +231,7 @@ def delete_me(body: DeleteMeIn, user: CurrentUser, ctx: Ctx, db: Db) -> Response
         raise _body_error(
             "confirm", "this does not match the part of your e-mail address before the @"
         )
-    ctx.jobs.cancel_for_user(user.id)
-    user_id = user.id
-    for table in (Job, Fit, Dataset, RefreshToken):
-        db.execute(delete(table).where(table.user_id == user_id))
-    db.execute(update(AuditLog).where(AuditLog.user_id == user_id).values(user_id=None))
-    db.delete(user)
-    db.flush()
-    audit.record(db, "user.delete", "user", user_id=None, entity_id=user_id)
+    erase_account(ctx, db, user.id, actor_id=None)
     db.commit()
     return Response(status_code=204)
 

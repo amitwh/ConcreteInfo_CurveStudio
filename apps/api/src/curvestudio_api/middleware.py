@@ -1,4 +1,5 @@
-"""ASGI middleware: request id + access log + security headers, and request body limits."""
+"""ASGI middleware: request id + access log + security headers + request statistics, and
+request body limits."""
 
 import logging
 import re
@@ -11,6 +12,7 @@ from starlette.datastructures import Headers, MutableHeaders
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from curvestudio_api import API_PREFIX
 from curvestudio_api.errors import ApiError, envelope
 from curvestudio_api.logging_setup import get_logger, log_fields, request_id_var
 from curvestudio_api.modules.errors.capture import CAPTURED_FIELD, capture_request_error
@@ -81,6 +83,8 @@ class RequestContextMiddleware:
             )
             await response(scope, receive, send_with_headers)
         finally:
+            duration_ms = round((time.perf_counter() - started) * 1000, 1)
+            _record(scope, state["status"], duration_ms)
             _log.log(
                 logging.INFO,
                 "request",
@@ -88,7 +92,7 @@ class RequestContextMiddleware:
                     method=scope["method"],
                     path=scope["path"],
                     status=state["status"],
-                    duration_ms=round((time.perf_counter() - started) * 1000, 1),
+                    duration_ms=duration_ms,
                 ),
             )
 
@@ -104,7 +108,7 @@ def _capture(scope: Scope, exc: Exception) -> bool:
     factory = getattr(context, "session_factory", None)
     if factory is None:
         return False
-    route = getattr(scope.get("route"), "path", None)
+    route = matched_route(scope)
     return capture_request_error(
         factory,
         exc=exc,
@@ -113,6 +117,47 @@ def _capture(scope: Scope, exc: Exception) -> bool:
         request_id=request_id_var.get(),
         user_agent=Headers(scope=scope).get("user-agent") or "",
     )
+
+
+def is_api_request(scope: Scope) -> bool:
+    """Whether the request addresses the API, as opposed to the web app's own pages and
+    assets, which one catch-all route serves."""
+    path = scope.get("path") or ""
+    return path == API_PREFIX or path.startswith(f"{API_PREFIX}/")
+
+
+def matched_route(scope: Scope) -> str | None:
+    """The route a request matched, as its template: ``/api/v1/datasets/{id}``.
+
+    ``None`` when it matched none. This FastAPI keeps an included router's routes nested, so a
+    matched route's own path has no ``API_PREFIX`` in it; for a request under the prefix it is
+    put back. A route mounted with its full path (a test's scratch route) already has it.
+    """
+    template = getattr(scope.get("route"), "path_format", None)
+    if template is None:
+        return None
+    if is_api_request(scope) and not template.startswith(f"{API_PREFIX}/"):
+        template = f"{API_PREFIX}{template}"
+    return template
+
+
+def _record(scope: Scope, status: int, duration_ms: float) -> None:
+    """Count the finished API request in the per-route statistics.
+
+    The request is already answered, so nothing here may change the response: never raises.
+    A scope without the application's ``Context`` (a bare ASGI app in a test) counts nothing,
+    and neither does a request that matched no route or is not under the API: the web app's
+    pages and assets are served by one catch-all route, and mixed with API calls their timings
+    would say nothing about the API. The route is stored as its template.
+    """
+    try:
+        context = getattr(getattr(scope.get("app"), "state", None), "ctx", None)
+        stats = getattr(context, "stats", None)
+        route = matched_route(scope) if is_api_request(scope) else None
+        if stats is not None and route is not None:
+            stats.record(route, duration_ms, error=status >= 500)
+    except Exception:
+        _log.warning("request statistics were not recorded", exc_info=True)
 
 
 class BodyLimitMiddleware:

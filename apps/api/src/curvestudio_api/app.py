@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from curvestudio_api import __version__
+from curvestudio_api import API_PREFIX, __version__
 from curvestudio_api.autofit_worker import run_autofit_job
 from curvestudio_api.db import make_engine, make_session_factory
 from curvestudio_api.deps import (
@@ -26,6 +26,8 @@ from curvestudio_api.logging_setup import LOGGER_NAME, configure_logging, get_lo
 from curvestudio_api.middleware import BodyLimitMiddleware, RequestContextMiddleware
 from curvestudio_api.migrations import upgrade_to_head
 from curvestudio_api.modules import register_models
+from curvestudio_api.modules.admin import router as admin
+from curvestudio_api.modules.admin.requeststats import RequestStats
 from curvestudio_api.modules.errors import router as error_events
 from curvestudio_api.modules.errors.capture import (
     install_error_log_handler,
@@ -39,7 +41,6 @@ from curvestudio_api.settings import Settings, load_jwt_keys
 from curvestudio_api.spa import mount_spa
 from curvestudio_api.worker import JobWorker, run_fit_job
 
-API_PREFIX = "/api/v1"
 JSON_BODY_LIMIT = 8 * 1024 * 1024
 MULTIPART_OVERHEAD = 1024 * 1024
 _log = get_logger("app")
@@ -83,7 +84,9 @@ def create_app(
         autofit_worker=autofit_worker,
         autofit_timeout_s=settings.autofit_timeout_s,
     )
-    housekeeper = Housekeeper(session_factory, settings.housekeeping_interval_s)
+    # What the middleware counts per route; the housekeeper empties it into the day's rows.
+    stats = RequestStats()
+    housekeeper = Housekeeper(session_factory, settings.housekeeping_interval_s, stats=stats)
     context = Context(
         settings=settings,
         engine=engine,
@@ -102,6 +105,7 @@ def create_app(
             worker=import_worker,
         ),
         failed_logins=DailyCap(),
+        stats=stats,
     )
 
     @asynccontextmanager
@@ -129,7 +133,7 @@ def create_app(
     install_error_handlers(app)
 
     api = APIRouter(prefix=API_PREFIX)
-    for module in (system, auth, oauth, datasets, fits, autofits, installs, error_events):
+    for module in (system, auth, oauth, datasets, fits, autofits, installs, error_events, admin):
         api.include_router(module.router)
     app.include_router(api)
     if settings.web_dist is not None:

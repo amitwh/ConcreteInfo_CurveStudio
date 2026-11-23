@@ -2,7 +2,8 @@
 
 import uuid
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Annotated
 
 from fastapi import Depends, Request
@@ -16,6 +17,7 @@ from curvestudio_api.errors import ApiError, not_found
 from curvestudio_api.importer import ImportRunner
 from curvestudio_api.jobs import JobManager
 from curvestudio_api.logging_setup import get_logger
+from curvestudio_api.modules.admin.requeststats import RequestStats
 from curvestudio_api.orm import Autofit, Dataset, Fit, Job, User, UserDailyActivity
 from curvestudio_api.proxy import client_address
 from curvestudio_api.ratelimit import DailyCap, SlidingWindowLimiter
@@ -46,6 +48,9 @@ class Context:
     error_limiter: SlidingWindowLimiter
     imports: ImportRunner
     failed_logins: DailyCap
+    stats: RequestStats
+    # When this application was built, which is when its process started serving it.
+    started_at: datetime = field(default_factory=utcnow)
 
 
 def get_context(request: Request) -> Context:
