@@ -93,9 +93,26 @@ Open the home page: a “Continue with …” button appears under the sign-in c
 | `redirect_uri_mismatch` | The URI in the provider console differs by scheme, host, port or trailing slash. Copy the exact callback line. |
 | Provider button missing | Client ID or secret empty in the running container (settings are frozen at start-up → redeploy). |
 | `oauth_error=state` on return | The state cookie expired (10 min) or the flow started in another browser/tab. Retry. |
-| `oauth_error=provider` | Token exchange or userinfo failed (wrong secret, disabled provider app, unverified email). Check the API log for `oauth` entries. |
+| `oauth_error=provider` | Token exchange or userinfo failed (wrong secret, disabled provider app, unverified email). Check the API log for `oauth` entries — for Microsoft, the `AADSTS…` code it names is decoded in the table below. |
 | Signed in to a different account | The provider's email differs from the one you registered with. Accounts are matched by email, not by provider identity. |
 | “invalid or expired” after sign-in | The app exchange code is single-use and valid for 120 s; reloading the callback page twice triggers this. Start again. |
+
+After any failed sign-in, the API log's `oauth microsoft callback failed:` line names the code, and the application's container log (Coolify) is the first place to look.
+
+*Microsoft (Entra ID) `AADSTS` error codes, each with the fix for this deployment. Verified against Microsoft's error-code reference, accessed 23/11/2026 (IST).*
+
+| Code | What Microsoft is saying | The fix here |
+|---|---|---|
+| `AADSTS50011` | The reply (redirect) address is missing, misconfigured, or doesn't match the reply addresses configured for the app. | The registration must contain the exact callback `https://curvestudio.concreteinfo.cloud/api/v1/auth/oauth/microsoft/callback` — same scheme, host and path, no trailing slash (add the `localhost` variant too for local runs). |
+| `AADSTS700016` | The application wasn't found in the directory/tenant; the identifier value may be misconfigured, or the request was sent to the wrong tenant. | Re-copy the Application (client) ID from the registration's Overview page into `CURVESTUDIO_OAUTH_MICROSOFT_CLIENT_ID` (not the Object ID or Directory ID), make `CURVESTUDIO_OAUTH_MICROSOFT_TENANT` match the directory that owns the app, and redeploy. |
+| `AADSTS7000215` | An invalid client secret was provided with the request. | The value in `CURVESTUDIO_OAUTH_MICROSOFT_CLIENT_SECRET` is wrong — most often the secret's **Secret ID** was copied instead of its **Value**. Copy the Value from *Certificates & secrets* and redeploy. |
+| `AADSTS7000218` | The request body must contain the parameter `client_assertion` or `client_secret`. | `CURVESTUDIO_OAUTH_MICROSOFT_CLIENT_SECRET` is empty in the running container. Set it in Coolify and redeploy — settings are read at start-up. |
+| `AADSTS7000222` | The provided client secret keys are expired; create new keys for the app. | The secret passed its expiry date (shown when it was created). Create a new client secret, copy its **Value**, update the env var and redeploy. |
+| `AADSTS50194` | The app isn't configured as a multitenant application, so the `/common` endpoint isn't supported for it. | The registration's supported account types and `CURVESTUDIO_OAUTH_MICROSOFT_TENANT` disagree. Keep `common` only with a multitenant registration (*Accounts in any organizational directory and personal Microsoft accounts*), or set the tenant to the directory (tenant) ID for a single-tenant app. |
+| `AADSTS65001` | The user or administrator hasn't consented to use the application. | A work/school tenant hasn't granted consent (or disallows user consent). Its admin grants it under **API permissions → Grant admin consent**; personal accounts consent at the sign-in prompt. |
+| `AADSTS53003` | Access has been blocked by Conditional Access policies; the policy doesn't allow token issuance. | The user's tenant policy (MFA, compliant device, location) blocks this app. The user completes the challenge (e.g. MFA) or their admin excludes the app — nothing to change in this deployment. |
+| `AADSTS54005` | The OAuth2 authorization code was already redeemed; retry with a new valid code. | The one-time authorization code was replayed (reload or Back on the callback URL). Start the sign-in again from the home page. |
+| `AADSTS9002313` | The request is malformed or invalid. | Generic `invalid_grant` from the token exchange. Start a fresh sign-in; if it persists, check the tenant/account-type pairing (`AADSTS50194` above). |
 
 ## Security notes
 
