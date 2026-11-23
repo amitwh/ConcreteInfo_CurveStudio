@@ -135,3 +135,13 @@ Every variable is documented inline in [`deploy/.env.example`](.env.example) and
   start-period is 40 s) or it crashed; check `docker compose ps` and `docker compose logs app`.
 - **Certificate errors** - port 80 must be reachable for the first Let's Encrypt issuance;
   confirm DNS points at this host.
+
+## Redirecting the old domains
+
+The app used to live at `curvestudio.concreteinfo.net` and `curvestudio.concreteinfo.co.in`.
+`deploy/redirect/` is a small Caddy image for those retired addresses: it answers both old
+domains with a permanent (301) redirect to `https://curvestudio.concreteinfo.cloud`,
+preserving the path and query, so old links keep working after the move. It deploys as its
+**own Coolify application on the old host** with both old domains attached - Dockerfile build
+pack pointing at `deploy/redirect/Dockerfile`, base directory `/` - put up once the old
+application on that host has stopped.

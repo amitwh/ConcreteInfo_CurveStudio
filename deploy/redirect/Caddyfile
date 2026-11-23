@@ -1,0 +1,3 @@
+curvestudio.concreteinfo.net, curvestudio.concreteinfo.co.in {
+	redir https://curvestudio.concreteinfo.cloud{uri} permanent
+}

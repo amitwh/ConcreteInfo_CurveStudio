@@ -155,3 +155,18 @@ def test_scripts_are_executable_and_strict(name: str) -> None:
 def test_readme_links_the_self_hosting_guide() -> None:
     text = (REPO / "README.md").read_text(encoding="utf-8")
     assert "deploy/README.md" in text, "the root README should link the self-hosting guide"
+
+
+def test_caddyfile_redirects_both_old_hosts_preserving_uri() -> None:
+    """The redirect service answers both retired addresses with a 301 that keeps the path."""
+    caddyfile = (DEPLOY / "redirect" / "Caddyfile").read_text(encoding="utf-8")
+    assert "curvestudio.concreteinfo.net" in caddyfile
+    assert "curvestudio.concreteinfo.co.in" in caddyfile
+    assert "redir https://curvestudio.concreteinfo.cloud{uri} permanent" in caddyfile
+
+
+def test_dockerfile_serves_the_caddyfile() -> None:
+    dockerfile = (DEPLOY / "redirect" / "Dockerfile").read_text(encoding="utf-8")
+    assert "FROM caddy:2-alpine" in dockerfile
+    assert "COPY Caddyfile /etc/caddy/Caddyfile" in dockerfile
+    assert "EXPOSE 80 443" in dockerfile
