@@ -30,12 +30,15 @@ export function readStoredTheme(): Theme | null {
   return stored === "light" || stored === "dark" ? stored : null;
 }
 
+/** The theme to start from: the explicit choice when there is one, else the system's. */
+export function preferredTheme(): Theme {
+  const stored = readStoredTheme();
+  if (stored !== null) return stored;
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
 export function ThemeProvider({ children }: { children: ReactNode }): ReactNode {
-  const [theme, setTheme] = useState<Theme>(() => {
-    const stored = readStoredTheme();
-    if (stored !== null) return stored;
-    return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-  });
+  const [theme, setTheme] = useState<Theme>(preferredTheme);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;

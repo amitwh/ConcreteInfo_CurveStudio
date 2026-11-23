@@ -22,6 +22,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../api/auth";
 import { api, type MeOut } from "../api/client";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import { Switch } from "../components/Switch";
 import { ErrorBox, Loading, apiErrorText } from "../components/States";
 import { fmtBytes, fmtInt } from "../format";
 
@@ -454,39 +455,6 @@ function PreferenceSection({
       />
       <p className="hint">{hint}</p>
     </SectionFrame>
-  );
-}
-
-/** An on/off switch named by the text beside it. */
-function Switch({
-  label,
-  checked,
-  disabled = false,
-  onChange,
-}: {
-  label: string;
-  checked: boolean;
-  disabled?: boolean;
-  onChange: () => void;
-}): ReactElement {
-  const labelId = useId();
-  return (
-    <div className="switch-row">
-      <button
-        type="button"
-        role="switch"
-        className="switch"
-        aria-checked={checked}
-        aria-labelledby={labelId}
-        disabled={disabled}
-        onClick={onChange}
-      >
-        <span className="switch__knob" aria-hidden="true" />
-      </button>
-      <span id={labelId} className="switch-row__label">
-        {label}
-      </span>
-    </div>
   );
 }
 

@@ -323,3 +323,167 @@ describe("abort support", () => {
     expect((err as DOMException).name).toBe("AbortError");
   });
 });
+
+describe("onServerError (a 5xx is handed to the error reporter before the error is thrown)", () => {
+  const DATASETS = `${API_BASE}/datasets`;
+
+  /** A Response as fetch hands one back: carrying the final URL and the server's headers. */
+  function serverAnswer(status: number, url: string, requestId: string | null): Response {
+    const response = jsonResponse(status, {
+      error: "INTERNAL_ERROR",
+      message: "the server tripped",
+      detail: {},
+    });
+    Object.defineProperty(response, "url", { value: url });
+    if (requestId !== null) response.headers.set("x-request-id", requestId);
+    return response;
+  }
+
+  /**
+   * An XMLHttpRequest as the client drives it, answered by the test: jsdom's own would
+   * put a real request on the wire.
+   */
+  class FakeXHR {
+    status = 0;
+    response = "";
+    responseURL = "";
+    upload: { onprogress: ((event: { lengthComputable: boolean }) => void) | null } = {
+      onprogress: null,
+    };
+    onload: (() => void) | null = null;
+    onerror: (() => void) | null = null;
+    onabort: (() => void) | null = null;
+    private headers: Record<string, string> = {};
+
+    open(_method: string, url: string): void {
+      this.responseURL = url;
+    }
+    setRequestHeader(): void {}
+    send(): void {}
+    abort(): void {}
+    addEventListener(): void {}
+    removeEventListener(): void {}
+    getResponseHeader(name: string): string | null {
+      return this.headers[name.toLowerCase()] ?? null;
+    }
+    reply(status: number, body: string, headers: Record<string, string>): void {
+      this.status = status;
+      this.response = body;
+      this.headers = headers;
+      this.onload?.();
+    }
+  }
+
+  it.each([500, 503])("is called for a %i with the response's URL and request id", async (status) => {
+    const onServerError = vi.fn();
+    api.onServerError = onServerError;
+    fetchMock.mockResolvedValue(serverAnswer(status, DATASETS, "req-7f3a"));
+    await expect(api.request("/datasets")).rejects.toMatchObject({ status });
+    expect(onServerError).toHaveBeenCalledTimes(1);
+    expect(onServerError).toHaveBeenCalledWith(
+      { status, url: DATASETS, requestId: "req-7f3a" },
+      "/datasets",
+    );
+  });
+
+  it("is called with a null request id when the server sent no header", async () => {
+    const onServerError = vi.fn();
+    api.onServerError = onServerError;
+    fetchMock.mockResolvedValue(serverAnswer(500, DATASETS, null));
+    await expect(api.request("/datasets")).rejects.toMatchObject({ status: 500 });
+    expect(onServerError).toHaveBeenCalledWith(
+      { status: 500, url: DATASETS, requestId: null },
+      "/datasets",
+    );
+  });
+
+  it.each([404, 422, 429])("is not called for a %i", async (status) => {
+    const onServerError = vi.fn();
+    api.onServerError = onServerError;
+    fetchMock.mockResolvedValue(serverAnswer(status, DATASETS, "req-1"));
+    await expect(api.request("/datasets")).rejects.toMatchObject({ status });
+    expect(onServerError).not.toHaveBeenCalled();
+  });
+
+  it("leaves the error the caller receives unchanged", async () => {
+    const answer = (): Response => serverAnswer(503, DATASETS, "req-1");
+    fetchMock.mockImplementation(() => Promise.resolve(answer()));
+    const withoutCallback = await api.request("/datasets").catch((e: unknown) => e);
+    api.onServerError = vi.fn();
+    const withCallback = await api.request("/datasets").catch((e: unknown) => e);
+    expect(withCallback).toBeInstanceOf(ApiError);
+    expect(withCallback).toEqual(withoutCallback);
+    expect((withCallback as ApiError).message).toBe("the server tripped");
+  });
+
+  it("resetForTests clears it", () => {
+    api.onServerError = vi.fn();
+    api.resetForTests();
+    expect(api.onServerError).toBeNull();
+  });
+
+  /** Route the client's uploads into a fake XHR; `next()` is the one it opened last. */
+  function fakeUploads(): () => FakeXHR {
+    const opened: FakeXHR[] = [];
+    vi.stubGlobal(
+      "XMLHttpRequest",
+      class extends FakeXHR {
+        constructor() {
+          super();
+          opened.push(this);
+        }
+      },
+    );
+    return (): FakeXHR => {
+      const xhr = opened[0];
+      expect(xhr, "the client opened one upload").toBeDefined();
+      return xhr as FakeXHR;
+    };
+  }
+
+  it("uploadDataset reports the same statuses with what the XMLHttpRequest has", async () => {
+    const onServerError = vi.fn();
+    api.onServerError = onServerError;
+    const xhr = fakeUploads();
+    const upload = api.uploadDataset(
+      new File(["a,b\n1,2\n"], "data.csv", { type: "text/csv" }),
+      {},
+    );
+    xhr().reply(
+      503,
+      JSON.stringify({ error: "UNAVAILABLE", message: "try later", detail: {} }),
+      { "x-request-id": "req-up" },
+    );
+    await expect(upload).rejects.toMatchObject({ status: 503, code: "UNAVAILABLE" });
+    expect(onServerError).toHaveBeenCalledTimes(1);
+    expect(onServerError).toHaveBeenCalledWith(
+      { status: 503, url: `${API_BASE}/datasets`, requestId: "req-up" },
+      "/datasets",
+    );
+  });
+
+  it("uploadDataset says nothing for a 413", async () => {
+    const onServerError = vi.fn();
+    api.onServerError = onServerError;
+    const xhr = fakeUploads();
+    const upload = api.uploadDataset(
+      new File(["a,b\n1,2\n"], "data.csv", { type: "text/csv" }),
+      {},
+    );
+    xhr().reply(413, JSON.stringify({ error: "TOO_LARGE", message: "too big", detail: {} }), {});
+    await expect(upload).rejects.toMatchObject({ status: 413 });
+    expect(onServerError).not.toHaveBeenCalled();
+  });
+
+  it("download reports the same statuses", async () => {
+    const onServerError = vi.fn();
+    api.onServerError = onServerError;
+    const url = `${API_BASE}/fits/f1/export`;
+    fetchMock.mockResolvedValue(serverAnswer(500, url, "req-dl"));
+    await expect(api.download("/fits/f1/export")).rejects.toMatchObject({ status: 500 });
+    expect(onServerError).toHaveBeenCalledWith(
+      { status: 500, url, requestId: "req-dl" },
+      "/fits/f1/export",
+    );
+  });
+});

@@ -1,9 +1,15 @@
+// First, always: it puts the error reporter's hooks in before any other module is evaluated.
+import "./lib/errorReporterBoot";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter } from "react-router-dom";
 import App from "./App";
 import { AuthProvider } from "./api/auth";
+import { API_BASE, api } from "./api/client";
+import { ErrorBoundary } from "./components/ErrorBoundary";
+import { ErrorReportConsent } from "./components/ErrorReportConsent";
+import { installErrorReporter, reportApiError } from "./lib/errorReporter";
 // Self-hosted variable fonts: the API serves a strict `default-src 'self'` CSP, so no
 // CDN (Google Fonts etc.) may be used. Vite fingerprints and emits the woff2 files.
 import "@fontsource-variable/inter";
@@ -24,12 +30,22 @@ const queryClient = new QueryClient({
 const root = document.getElementById("root");
 if (root === null) throw new Error("no #root element in index.html");
 
+// Anonymous error reports. The hooks went in with the first import above, so this is the
+// same installation again and adds nothing; it stands here with the line that follows it.
+// Every 5xx the API client gets is passed to the reporter, which knows when the server holds
+// the record already. What may leave is settled by ErrorReportConsent below.
+installErrorReporter({ apiBase: API_BASE });
+api.onServerError = reportApiError;
+
 createRoot(root).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
+        <ErrorReportConsent />
         <BrowserRouter>
-          <App />
+          <ErrorBoundary>
+            <App />
+          </ErrorBoundary>
         </BrowserRouter>
       </AuthProvider>
     </QueryClientProvider>

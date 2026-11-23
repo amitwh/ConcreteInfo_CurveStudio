@@ -28,7 +28,11 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }): ReactNode {
-  const [status, setStatus] = useState<AuthStatus>("loading");
+  // Without a stored refresh token there is no session to restore, so a visitor is known
+  // from the first render; "loading" means exactly that an account may be signed in.
+  const [status, setStatus] = useState<AuthStatus>(() =>
+    api.hasRefreshToken ? "loading" : "anon",
+  );
   const [user, setUser] = useState<MeOut | null>(null);
 
   useEffect(() => {

@@ -1,9 +1,15 @@
 /** /about — who makes CurveStudio, its licence, credits, version and source links. */
 
-import type { ReactElement } from "react";
+import { useSyncExternalStore, type ReactElement } from "react";
 import { Info } from "lucide-react";
 import { Link } from "react-router-dom";
-
+import { useAuth } from "../api/auth";
+import { Switch } from "../components/Switch";
+import {
+  errorReportsEnabled,
+  setErrorReportsEnabled,
+  subscribeConsent,
+} from "../lib/errorReporter";
 import otherProjects from "../content/other-projects.json";
 
 const APP_VERSION = __APP_VERSION__; // from package.json at build time
@@ -26,6 +32,13 @@ const CREDITS: Array<{ work: string; licence: string }> = [
 ];
 
 export function AboutPage(): ReactElement {
+  const { status, user } = useAuth();
+  const signedIn = status === "authed" && user !== null;
+  // Read live rather than copied at mount: the switch must show the setting that counts
+  // now, which for a visitor is the browser's own.
+  const reportsEnabled = useSyncExternalStore(subscribeConsent, errorReportsEnabled);
+  const toggleReports = (): void => setErrorReportsEnabled(!reportsEnabled);
+
   return (
     <main className="about-page">
       <section className="card">
@@ -175,6 +188,21 @@ export function AboutPage(): ReactElement {
           storage; that is the only browser state the app relies on. Deleting a dataset, a
           fit, or your account removes the corresponding records.
         </p>
+        {signedIn ? (
+          <p>
+            <strong>Error reports:</strong> signed in, the setting belongs to your account
+            and is on your profile (Profile → Privacy).
+          </p>
+        ) : (
+          <div className="about-error-reports">
+            <Switch label="Send error reports" checked={reportsEnabled} onChange={toggleReports} />
+            <p className="hint">
+              When something goes wrong in this web app, it can send an anonymous report (the
+              error, where it happened, and which browser) so we can fix it. Reports never
+              include your account, your projects or your data.
+            </p>
+          </div>
+        )}
         <p>
           <strong>Fair use:</strong> do not upload data you have no right to use, other
           people’s personal data without permission, or material that is unlawful, and do

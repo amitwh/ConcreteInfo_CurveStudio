@@ -841,6 +841,75 @@ textarea {
   margin: 0;
 }
 
+/* ---- Error recovery (the screen the error boundary shows) ---- */
+
+/* A full page with one card in the middle, like the auth pages; the app's header is gone. */
+.recovery {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem 1rem;
+}
+
+.recovery__card {
+  width: min(34rem, 100%);
+}
+
+.recovery__card h1 {
+  margin: 0 0 0.4rem;
+  font-size: 1.35rem;
+}
+
+.recovery__card > p {
+  margin: 0.5rem 0 0;
+}
+
+.recovery__reference {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.6rem;
+}
+
+.recovery__reference code {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--heading);
+  overflow-wrap: anywhere;
+}
+
+.recovery__actions {
+  margin-top: 1rem;
+}
+
+.recovery__note {
+  margin-top: 1.1rem;
+  padding-top: 1rem;
+  border-top: 1px dashed var(--border);
+}
+
+.recovery__note .field {
+  margin-bottom: 0.6rem;
+}
+
+/* A note is prose the user types, not code. */
+.recovery__note textarea {
+  font-family: var(--font-ui);
+}
+
+.recovery__note .alert {
+  margin: 0.6rem 0 0;
+}
+
+.recovery__card > .recovery__off {
+  margin-top: 1.1rem;
+  padding: 0.6rem 0.7rem;
+  border-radius: var(--radius);
+  background: var(--warning-weak);
+  color: var(--warning-text);
+  font-size: 0.9rem;
+}
+
 /* ---- Workspace layout ---- */
 
 .workspace {

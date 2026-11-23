@@ -10,15 +10,11 @@
  * on the server limits the blast radius of a stolen token.
  */
 
+import type { ServerErrorLike } from "../lib/errorReporter";
+import { API_BASE } from "./apiBase";
 import type { components } from "./schema";
 
-/**
- * Where the API lives. Same origin (`/api/v1`) by default; a static-only deployment can
- * point the built SPA at another host with `VITE_API_BASE` (for example
- * `VITE_API_BASE=https://api.example.com/api/v1`), and the API then lists that origin in
- * `CURVESTUDIO_CORS_ORIGINS`.
- */
-export const API_BASE = String(import.meta.env.VITE_API_BASE ?? "/api/v1").replace(/\/+$/, "");
+export { API_BASE };
 
 /** Must match the API's CURVESTUDIO_MAX_UPLOAD_BYTES default (apps/api/.env.example). */
 export const MAX_UPLOAD_BYTES = 20_000_000;
@@ -147,6 +143,11 @@ export interface UploadProgress {
 class ApiClient {
   /** Set by the AuthProvider; invoked when the session is definitively dead. */
   onAuthFailure: (() => void) | null = null;
+  /**
+   * Set at startup with the error reporter's `reportApiError`. Invoked for every answer of
+   * 500 and above, before the error is thrown to the caller, which is told nothing about it.
+   */
+  onServerError: ((response: ServerErrorLike, path: string) => void) | null = null;
 
   private accessToken: string | null = null;
   private refreshInFlight: Promise<boolean> | null = null;
@@ -179,6 +180,17 @@ class ApiClient {
   resetForTests(): void {
     this.clearTokens();
     this.onAuthFailure = null;
+    this.onServerError = null;
+  }
+
+  /** Hand a 5xx answer to the error reporter; the body is not its business. */
+  private noteServerError(
+    status: number,
+    url: string,
+    requestId: string | null,
+    path: string,
+  ): void {
+    if (status >= 500) this.onServerError?.({ status, url, requestId }, path);
   }
 
   /** Exchange the stored refresh token for a fresh pair; single-flight. */
@@ -233,6 +245,12 @@ class ApiClient {
         if (await this.refreshNow()) return call(true);
         // refreshNow already cleared tokens and fired onAuthFailure on rejection.
       }
+      this.noteServerError(
+        response.status,
+        response.url,
+        response.headers.get("x-request-id"),
+        path,
+      );
       if (!response.ok) throw await toApiError(response);
       if (response.status === 204) return undefined as T;
       return (await response.json()) as T;
@@ -419,6 +437,12 @@ class ApiClient {
               }
               return;
             }
+            this.noteServerError(
+              xhr.status,
+              xhr.responseURL,
+              xhr.getResponseHeader("x-request-id"),
+              "/datasets",
+            );
             let body: unknown = null;
             try {
               body = JSON.parse(String(xhr.response));
@@ -470,6 +494,12 @@ class ApiClient {
       if (isAbortError(error)) throw error;
       throw networkError();
     }
+    this.noteServerError(
+      response.status,
+      response.url,
+      response.headers.get("x-request-id"),
+      path,
+    );
     if (!response.ok) throw await toApiError(response);
     const disposition = response.headers.get("content-disposition");
     const match = disposition?.match(/filename="?([^";]+)"?/);
