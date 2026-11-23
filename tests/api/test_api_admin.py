@@ -25,6 +25,8 @@ from curvestudio_api.app import create_app
 from curvestudio_api.middleware import is_api_request, matched_route
 from curvestudio_api.migrations import _config
 from curvestudio_api.modules.admin import service
+from curvestudio_api.modules.admin.models import RequestStatDaily
+from curvestudio_api.modules.admin.requeststats import BUCKET_COUNT, P50, P95, bucket_of, percentile
 from curvestudio_api.modules.errors.models import ErrorEvent
 from curvestudio_api.modules.errors.service import record_error_event
 from curvestudio_api.modules.installs.models import InstallEvent, InstallRecord
@@ -215,12 +217,13 @@ CONTRACT_ROUTES = {
     ("GET", f"{ADMIN}/errors/{{id}}/bundle"),
     ("GET", f"{ADMIN}/audit"),
     ("GET", f"{ADMIN}/system"),
+    ("GET", f"{ADMIN}/system/latency"),
     ("GET", f"{ADMIN}/plans"),
     ("PATCH", f"{ADMIN}/plans/{{name}}"),
 }
 
 
-def test_the_admin_routes_are_exactly_the_fourteen_of_the_contract() -> None:
+def test_the_admin_routes_are_exactly_the_fifteen_of_the_contract() -> None:
     """A parametrised test over an empty table is skipped, not failed: this one makes sure the
     table read from the application is the contract's, so the guard test below covers every
     admin route there is."""
@@ -1155,3 +1158,84 @@ def test_the_matched_route_is_read_as_its_full_template() -> None:
 
     assert matched_route(cast("Scope", {"path": "/nope", "route": None})) is None
     assert is_api_request(cast("Scope", {"path": "/api/v10/health", "route": None})) is False
+
+
+def test_route_latency_reads_the_percentiles_off_the_summed_days(
+    client_factory: Callable[..., TestClient], settings_factory: Callable[..., Settings]
+) -> None:
+    """Over a window the days' histograms are summed and the percentiles read off the sum.
+    They are never an average of the days' percentiles: a slow day and a fast day do not make
+    a medium one."""
+    client, admin = admin_app(client_factory, settings_factory)
+    today = utcnow().astimezone(IST).date()
+    fast = [0] * BUCKET_COUNT
+    fast[bucket_of(5)] = 10
+    slow = [0] * BUCKET_COUNT
+    slow[bucket_of(2_000)] = 10
+    with client.app.state.ctx.session_factory() as db:
+        for day, histogram, errors, slowest in (
+            (today, fast, 1, 6),
+            (today - timedelta(days=1), slow, 0, 2_100),
+            (today - timedelta(days=6), fast, 0, 6),  # in a week, not in a day
+            (today - timedelta(days=29), slow, 0, 2_100),  # in 30 days, not in a week
+            (today - timedelta(days=30), fast, 0, 6),  # in no window
+            (today - timedelta(days=40), slow, 0, 2_100),
+        ):
+            db.add(
+                RequestStatDaily(
+                    day=day,
+                    route_template="/api/v1/a",
+                    count=20,
+                    errors=errors,
+                    histogram=histogram,
+                    p50_ms=0,
+                    p95_ms=0,
+                    max_ms=slowest,
+                )
+            )
+        db.add(
+            RequestStatDaily(
+                day=today,
+                route_template="/api/v1/b",
+                count=3,
+                errors=0,
+                histogram=[0] * BUCKET_COUNT,
+                p50_ms=0,
+                p95_ms=0,
+                max_ms=0,
+            )
+        )
+        db.commit()
+
+    def window(days: int | None) -> list[dict[str, Any]]:
+        response = client.get(
+            f"{ADMIN}/system/latency", params={} if days is None else {"days": days}, headers=admin
+        )
+        assert response.status_code == 200, response.text
+        return response.json()
+
+    by_route = {row["route_template"]: row for row in window(1)}
+    assert by_route["/api/v1/a"] == {
+        "route_template": "/api/v1/a",
+        "count": 20,
+        "errors": 1,
+        "p50_ms": percentile(fast, P50),
+        "p95_ms": percentile(fast, P95),
+        "max_ms": 6,
+    }
+    assert window(None)[0]["count"] == 20  # the default window is one day
+
+    # a week ending today holds six days ago: two fast days and one slow
+    a_week = {row["route_template"]: row for row in window(7)}["/api/v1/a"]
+    summed = [2 * x + y for x, y in zip(fast, slow, strict=True)]
+    assert (a_week["count"], a_week["errors"], a_week["max_ms"]) == (60, 1, 2_100)
+    assert a_week["p50_ms"] == percentile(summed, P50)
+    assert a_week["p95_ms"] == percentile(summed, P95)
+    assert a_week["p95_ms"] != (percentile(fast, P95) + percentile(slow, P95)) // 2
+
+    # 30 days hold 29 days ago, and nothing older
+    assert {row["route_template"]: row for row in window(30)}["/api/v1/a"]["count"] == 80
+    assert [row["route_template"] for row in window(7)] == ["/api/v1/a", "/api/v1/b"]
+
+    refused = client.get(f"{ADMIN}/system/latency", params={"days": 2}, headers=admin)
+    assert refused.status_code == 422 and refused.json()["error"] == "VALIDATION_ERROR"

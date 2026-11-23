@@ -3,6 +3,7 @@ event never carries an account identifier here: there is none to carry."""
 
 import uuid
 from datetime import date
+from enum import IntEnum
 from typing import Any, Literal, Self
 
 from pydantic import BaseModel, Field, model_validator
@@ -171,6 +172,27 @@ class SystemOut(BaseModel):
     uptime_s: float
     jobs: JobsOut
     database: DatabaseOut
+
+
+class LatencyWindow(IntEnum):
+    """The windows the latency report may cover, in days; each ends with today. An integer
+    enum rather than a ``Literal``, because a query parameter arrives as text and has to be
+    read as its number."""
+
+    DAY = 1
+    WEEK = 7
+    MONTH = 30
+
+
+class RouteLatencyOut(BaseModel):
+    """One route template over a window: its requests and their timings in milliseconds."""
+
+    route_template: str
+    count: int
+    errors: int
+    p50_ms: int
+    p95_ms: int
+    max_ms: int
 
 
 class PlanLimitsIn(_Body):

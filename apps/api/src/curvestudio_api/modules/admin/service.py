@@ -19,6 +19,8 @@ from curvestudio_api import __version__, audit, quotas
 from curvestudio_api.deps import Context
 from curvestudio_api.errors import ApiError, not_found
 from curvestudio_api.migrations import current_revision
+from curvestudio_api.modules.admin.models import RequestStatDaily
+from curvestudio_api.modules.admin.requeststats import BUCKET_COUNT, P50, P95, percentile
 from curvestudio_api.modules.admin.schemas import (
     DEFAULT_PAGE_SIZE,
     AccountCountsOut,
@@ -39,6 +41,7 @@ from curvestudio_api.modules.admin.schemas import (
     PlanLimitsIn,
     PlanUpdateIn,
     Role,
+    RouteLatencyOut,
     SystemOut,
 )
 from curvestudio_api.modules.errors.models import ErrorEvent
@@ -618,6 +621,47 @@ def system(ctx: Context) -> SystemOut:
         ),
         database=DatabaseOut(size_bytes=_database_size(ctx.engine), migration_head=revision or ""),
     )
+
+
+def route_latency(db: Session, *, days: int, now: datetime | None = None) -> list[RouteLatencyOut]:
+    """Each route template over the last ``days`` IST days, today included, most requests first.
+
+    The days' histograms are summed and the percentiles are read off that sum: an average of
+    daily percentiles is not a percentile (one slow day and one fast day do not make a medium
+    one). The slowest request is the largest the days recorded. A route with no request in the
+    window is left out.
+    """
+    first = (now or utcnow()).astimezone(IST).date() - timedelta(days=days - 1)
+    rows = db.execute(
+        select(
+            RequestStatDaily.route_template,
+            RequestStatDaily.count,
+            RequestStatDaily.errors,
+            RequestStatDaily.histogram,
+            RequestStatDaily.max_ms,
+        ).where(RequestStatDaily.day >= first)
+    )
+    histograms: dict[str, list[int]] = {}
+    totals: dict[str, list[int]] = {}
+    for route, count, errors, histogram, slowest in rows:
+        summed = histograms.setdefault(route, [0] * BUCKET_COUNT)
+        for bucket, seen in enumerate(histogram):
+            summed[bucket] += seen
+        running = totals.setdefault(route, [0, 0, 0])
+        running[0] += count
+        running[1] += errors
+        running[2] = max(running[2], slowest)
+    return [
+        RouteLatencyOut(
+            route_template=route,
+            count=totals[route][0],
+            errors=totals[route][1],
+            p50_ms=percentile(histograms[route], P50),
+            p95_ms=percentile(histograms[route], P95),
+            max_ms=totals[route][2],
+        )
+        for route in sorted(totals, key=lambda route: (-totals[route][0], route))
+    ]
 
 
 def _database_size(engine: Engine) -> int | None:

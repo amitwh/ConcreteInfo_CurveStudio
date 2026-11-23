@@ -3160,6 +3160,16 @@
         "title": "JobsOut",
         "type": "object"
       },
+      "LatencyWindow": {
+        "description": "The windows the latency report may cover, in days; each ends with today. An integer\nenum rather than a ``Literal``, because a query parameter arrives as text and has to be\nread as its number.",
+        "enum": [
+          1,
+          7,
+          30
+        ],
+        "title": "LatencyWindow",
+        "type": "integer"
+      },
       "LoginIn": {
         "additionalProperties": false,
         "properties": {
@@ -4710,6 +4720,45 @@
         "title": "ResidualSet",
         "type": "object"
       },
+      "RouteLatencyOut": {
+        "description": "One route template over a window: its requests and their timings in milliseconds.",
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "errors": {
+            "title": "Errors",
+            "type": "integer"
+          },
+          "max_ms": {
+            "title": "Max Ms",
+            "type": "integer"
+          },
+          "p50_ms": {
+            "title": "P50 Ms",
+            "type": "integer"
+          },
+          "p95_ms": {
+            "title": "P95 Ms",
+            "type": "integer"
+          },
+          "route_template": {
+            "title": "Route Template",
+            "type": "string"
+          }
+        },
+        "required": [
+          "route_template",
+          "count",
+          "errors",
+          "p50_ms",
+          "p95_ms",
+          "max_ms"
+        ],
+        "title": "RouteLatencyOut",
+        "type": "object"
+      },
       "RowCurve": {
         "additionalProperties": false,
         "description": "A fitted curve at ``CURVE_POINTS`` x values with its 95 % bands.\n\nThe x range is the data range plus a 5 % margin on each side, trimmed on a side where\nthe model is not defined (``ln(x)`` below zero, say). The band lists are ``None`` when\nthe fit has no covariance; ``bands_reason`` then says why. Bands are pointwise.",
@@ -5580,6 +5629,58 @@
           }
         ],
         "summary": "Version, uptime, jobs and database",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/system/latency": {
+      "get": {
+        "description": "The median and the 95th percentile per route template, read off the window's summed\nhistograms. Templates only, never raw paths.",
+        "operationId": "system_latency_api_v1_admin_system_latency_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/LatencyWindow",
+              "default": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RouteLatencyOut"
+                  },
+                  "title": "Response System Latency Api V1 Admin System Latency Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Latency per route over the last 1, 7 or 30 days",
         "tags": [
           "admin"
         ]

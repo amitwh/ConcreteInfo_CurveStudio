@@ -189,6 +189,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/system/latency": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Latency per route over the last 1, 7 or 30 days
+         * @description The median and the 95th percentile per route template, read off the window's summed
+         *     histograms. Templates only, never raw paths.
+         */
+        get: operations["system_latency_api_v1_admin_system_latency_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/users": {
         parameters: {
             query?: never;
@@ -2263,6 +2284,14 @@ export interface components {
             /** Workers */
             workers: number;
         };
+        /**
+         * LatencyWindow
+         * @description The windows the latency report may cover, in days; each ends with today. An integer
+         *     enum rather than a ``Literal``, because a query parameter arrives as text and has to be
+         *     read as its number.
+         * @enum {integer}
+         */
+        LatencyWindow: 1 | 7 | 30;
         /** LoginIn */
         LoginIn: {
             /** Email */
@@ -2894,6 +2923,24 @@ export interface components {
             x: number[];
         };
         /**
+         * RouteLatencyOut
+         * @description One route template over a window: its requests and their timings in milliseconds.
+         */
+        RouteLatencyOut: {
+            /** Count */
+            count: number;
+            /** Errors */
+            errors: number;
+            /** Max Ms */
+            max_ms: number;
+            /** P50 Ms */
+            p50_ms: number;
+            /** P95 Ms */
+            p95_ms: number;
+            /** Route Template */
+            route_template: string;
+        };
+        /**
          * RowCurve
          * @description A fitted curve at ``CURVE_POINTS`` x values with its 95 % bands.
          *
@@ -3295,6 +3342,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SystemOut"];
+                };
+            };
+        };
+    };
+    system_latency_api_v1_admin_system_latency_get: {
+        parameters: {
+            query?: {
+                days?: components["schemas"]["LatencyWindow"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RouteLatencyOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

@@ -26,11 +26,13 @@ from curvestudio_api.modules.admin.schemas import (
     ErrorStatus,
     ErrorStatusUpdateIn,
     InstallSummaryOut,
+    LatencyWindow,
     OverviewOut,
     PageOut,
     PlanAdminOut,
     PlanUpdateIn,
     Role,
+    RouteLatencyOut,
     SystemOut,
 )
 
@@ -195,6 +197,19 @@ def audit(
 def system(user: AdminUser, ctx: Ctx) -> SystemOut:
     """How this instance is running."""
     return service.system(ctx)
+
+
+@router.get(
+    "/system/latency",
+    response_model=list[RouteLatencyOut],
+    summary="Latency per route over the last 1, 7 or 30 days",
+)
+def system_latency(
+    user: AdminUser, db: Db, days: LatencyWindow = LatencyWindow.DAY
+) -> list[RouteLatencyOut]:
+    """The median and the 95th percentile per route template, read off the window's summed
+    histograms. Templates only, never raw paths."""
+    return service.route_latency(db, days=days.value)
 
 
 @router.get("/plans", response_model=list[PlanAdminOut], summary="The plan rows")
