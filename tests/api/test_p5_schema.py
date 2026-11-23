@@ -15,14 +15,17 @@ import pytest
 from alembic import command
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, func, inspect, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from conftest import make_settings
 from curvestudio_api.app import JSON_BODY_LIMIT, create_app
+from curvestudio_api.db import make_session_factory
 from curvestudio_api.deps import ERROR_REPORTS_PER_HOUR, INSTALL_RECORDS_PER_HOUR
 from curvestudio_api.errors import ApiError
 from curvestudio_api.middleware import BodyLimitMiddleware
 from curvestudio_api.migrations import _config, upgrade_to_head
+from curvestudio_api.modules.errors.models import ErrorEvent
 from curvestudio_api.modules.installs.models import InstallEvent, InstallRecord
 from curvestudio_api.ratelimit import SlidingWindowLimiter
 from curvestudio_api.settings import Settings
@@ -93,14 +96,11 @@ COLUMNS = {
 }
 INDEXES = {
     "install_events": {"ix_install_events_install_record_id"},
-    "error_events": {
-        "ix_error_events_fingerprint",
-        "ix_error_events_status",
-        "ix_error_events_last_seen_at",
-    },
+    "error_events": {"ix_error_events_status", "ix_error_events_last_seen_at"},
 }
 UNIQUE_CONSTRAINTS = {
     "install_records": {"uq_install_records_install_key"},
+    "error_events": {"uq_error_events_fingerprint"},  # one row per error (0011)
     "request_stats_daily": {"uq_request_stats_daily_day"},
 }
 FOREIGN_KEYS = {"install_events": {"fk_install_events_install_record_id_install_records"}}
@@ -158,6 +158,67 @@ def test_migration_0009_round_trip(tmp_path: Path) -> None:
 
 def test_migration_0010_round_trip(tmp_path: Path) -> None:
     _round_trip(_upgraded_engine(tmp_path), "0010", "0009", ["request_stats_daily"])
+
+
+def _fingerprint_unique_constraint(engine: Engine) -> set[str]:
+    """The names of the unique constraints on ``error_events.fingerprint``."""
+    return {
+        item["name"]
+        for item in inspect(engine).get_unique_constraints("error_events")
+        if item["column_names"] == ["fingerprint"]
+    }
+
+
+def test_migration_0011_round_trip(tmp_path: Path) -> None:
+    """The plain fingerprint index becomes the unique constraint; the rollback puts the plain
+    index back and takes the constraint away."""
+    engine = _upgraded_engine(tmp_path)
+    assert _fingerprint_unique_constraint(engine) == {"uq_error_events_fingerprint"}
+    command.downgrade(_config(engine), "0010")
+    assert _fingerprint_unique_constraint(engine) == set()
+    assert "ix_error_events_fingerprint" in {
+        index["name"] for index in inspect(engine).get_indexes("error_events")
+    }
+    upgrade_to_head(engine)
+    _assert_complete(engine, ["error_events"])
+    assert _fingerprint_unique_constraint(engine) == {"uq_error_events_fingerprint"}
+
+
+def _same_error() -> ErrorEvent:
+    return ErrorEvent(
+        source="client",
+        category="crash",
+        severity="error",
+        error_type="TypeError",
+        message="boom",
+        fingerprint="0" * 64,
+        status="new",
+        occurrence_count=1,
+        first_seen_at=utcnow(),
+        last_seen_at=utcnow(),
+    )
+
+
+def test_migration_0011_leaves_one_row_per_fingerprint(tmp_path: Path) -> None:
+    """A database at 0010 may already hold two rows for one error: they are collapsed before
+    the unique constraint is created, and a third with the same fingerprint is then refused."""
+    engine = _upgraded_engine(tmp_path)
+    command.downgrade(_config(engine), "0010")
+    factory = make_session_factory(engine)
+    with factory() as db:
+        db.add_all([_same_error(), _same_error()])
+        db.commit()
+    with factory() as db:
+        assert len(list(db.scalars(select(ErrorEvent)))) == 2
+
+    upgrade_to_head(engine)
+
+    with factory() as db:
+        rows = list(db.scalars(select(ErrorEvent)))
+        assert len(rows) == 1
+        with pytest.raises(IntegrityError):
+            db.add(_same_error())
+            db.flush()
 
 
 def test_an_install_event_is_deleted_with_its_record(tmp_path: Path) -> None:
@@ -267,7 +328,10 @@ def test_a_body_over_sixty_four_kilobytes_to_the_errors_route_is_refused(
 ) -> None:
     client = client_factory()
     _assert_refused_by(_post(client, f"{API}/errors", 65 * 1024), 65_536)
-    assert _post(client, f"{API}/errors", 65_536).status_code == 404
+    # Within the limit the body reaches the handler, which refuses the unknown "pad" field.
+    within = _post(client, f"{API}/errors", 65_536)
+    assert within.status_code == 422
+    assert within.json()["error"] == "VALIDATION_ERROR"
 
 
 def test_other_paths_keep_the_default_body_limit(

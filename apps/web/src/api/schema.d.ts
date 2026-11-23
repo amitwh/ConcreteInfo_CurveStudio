@@ -408,6 +408,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/errors": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Report one error event, or a batch of up to ten
+         * @description Record what a browser reported.
+         *
+         *     An address may report twenty times an hour. A repeat of an error already stored is rolled
+         *     up. What the user typed (``description``) is kept in the event's context. Nothing in a
+         *     report identifies an account. The answer is 204 with no body.
+         */
+        post: operations["report_errors_api_v1_errors_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/fits/{fit_id}": {
         parameters: {
             query?: never;
@@ -1329,6 +1353,56 @@ export interface components {
             email: string;
             /** Verified */
             verified: boolean;
+        };
+        /**
+         * ErrorEventBatchIn
+         * @description Several events in one report.
+         */
+        ErrorEventBatchIn: {
+            /** Events */
+            events: components["schemas"]["ErrorEventIn"][];
+        };
+        /**
+         * ErrorEventIn
+         * @description One error as a browser reports it.
+         *
+         *     There is no ``source`` field and an unknown field is refused, so a report can never pass
+         *     itself off as the server's. Nothing here identifies an account.
+         */
+        ErrorEventIn: {
+            /** App Version */
+            app_version?: string | null;
+            /**
+             * Category
+             * @enum {string}
+             */
+            category: "crash" | "ui" | "network";
+            /** Console Log */
+            console_log?: string | null;
+            /** Context */
+            context?: {
+                [key: string]: unknown;
+            };
+            /** Description */
+            description?: string | null;
+            /** Error Type */
+            error_type: string;
+            /** Message */
+            message: string;
+            /** Request Id */
+            request_id?: string | null;
+            /** Route */
+            route?: string | null;
+            /**
+             * Severity
+             * @default error
+             * @enum {string}
+             */
+            severity: "error" | "fatal";
+            /** Stack */
+            stack?: string | null;
+            /** User Agent */
+            user_agent?: string | null;
         };
         /**
          * FitBundle
@@ -3063,6 +3137,37 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["JobCreatedOut"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    report_errors_api_v1_errors_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ErrorEventBatchIn"] | components["schemas"]["ErrorEventIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

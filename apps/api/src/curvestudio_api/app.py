@@ -1,5 +1,6 @@
 """The FastAPI application factory."""
 
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -21,10 +22,15 @@ from curvestudio_api.housekeeping import Housekeeper
 from curvestudio_api.import_worker import ImportWorker, import_process_main
 from curvestudio_api.importer import ImportRunner
 from curvestudio_api.jobs import JobManager
-from curvestudio_api.logging_setup import configure_logging, get_logger
+from curvestudio_api.logging_setup import LOGGER_NAME, configure_logging, get_logger
 from curvestudio_api.middleware import BodyLimitMiddleware, RequestContextMiddleware
 from curvestudio_api.migrations import upgrade_to_head
 from curvestudio_api.modules import register_models
+from curvestudio_api.modules.errors import router as error_events
+from curvestudio_api.modules.errors.capture import (
+    install_error_log_handler,
+    set_default_error_capture_sink,
+)
 from curvestudio_api.modules.installs import router as installs
 from curvestudio_api.ratelimit import DailyCap, SlidingWindowLimiter
 from curvestudio_api.routers import auth, autofits, datasets, fits, oauth, system
@@ -63,6 +69,9 @@ def create_app(
         )
     engine = make_engine(settings)
     session_factory = make_session_factory(engine)
+    # Errors the server captures itself go to this app's database; see modules/errors/capture.
+    set_default_error_capture_sink(session_factory)
+    install_error_log_handler(logging.getLogger(LOGGER_NAME))
     jobs = JobManager(
         session_factory,
         workers=settings.job_workers,
@@ -120,7 +129,7 @@ def create_app(
     install_error_handlers(app)
 
     api = APIRouter(prefix=API_PREFIX)
-    for module in (system, auth, oauth, datasets, fits, autofits, installs):
+    for module in (system, auth, oauth, datasets, fits, autofits, installs, error_events):
         api.include_router(module.router)
     app.include_router(api)
     if settings.web_dist is not None:

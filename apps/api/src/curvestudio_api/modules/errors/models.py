@@ -23,7 +23,9 @@ class ErrorEvent(Timestamps, Base):
     severity: Mapped[str] = mapped_column(String(8))
     error_type: Mapped[str] = mapped_column(String(200))
     message: Mapped[str] = mapped_column(Text)
-    fingerprint: Mapped[str] = mapped_column(String(64), index=True)
+    # Unique: one row per error. Two callers reporting the same new error at once both insert;
+    # the second is turned away here and continues as a repeat of the first (service.py).
+    fingerprint: Mapped[str] = mapped_column(String(64), unique=True)
     stack: Mapped[str | None] = mapped_column(Text, default=None)
     route: Mapped[str | None] = mapped_column(String(200), default=None)
     method: Mapped[str | None] = mapped_column(String(8), default=None)

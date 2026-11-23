@@ -8,6 +8,7 @@ from sqlalchemy import and_, delete, or_
 
 from curvestudio_api.db import SessionFactory
 from curvestudio_api.logging_setup import get_logger
+from curvestudio_api.modules.errors.capture import bind_error_capture_sink
 from curvestudio_api.orm import Job, RefreshToken
 from curvestudio_api.timeutil import utcnow
 
@@ -74,6 +75,8 @@ class Housekeeper:
             self._thread = None
 
     def _run(self) -> None:
+        # A failure logged on this thread is recorded into this housekeeper's own database.
+        bind_error_capture_sink(self._sessions)
         while not self._stop.wait(self._interval_s):
             try:
                 result = purge(self._sessions)

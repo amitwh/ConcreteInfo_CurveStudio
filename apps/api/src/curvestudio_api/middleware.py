@@ -13,6 +13,8 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from curvestudio_api.errors import ApiError, envelope
 from curvestudio_api.logging_setup import get_logger, log_fields, request_id_var
+from curvestudio_api.modules.errors.capture import CAPTURED_FIELD, capture_request_error
+from curvestudio_api.modules.errors.service import route_template
 
 # The client-side PDF renderer needs three narrow allowances:
 #   * `'wasm-unsafe-eval'` instantiates its WebAssembly text-layout engine (compilation
@@ -67,8 +69,11 @@ class RequestContextMiddleware:
 
         try:
             await self.app(scope, receive, send_with_headers)
-        except Exception:
-            _log.exception("unhandled error")
+        except Exception as exc:
+            # Recorded first; the record then says whether that worked, so the log handler
+            # writes it only when this did not. Neither step may change the response.
+            captured = _capture(scope, exc)
+            _log.exception("unhandled error", extra=log_fields(**{CAPTURED_FIELD: captured}))
             if state["started"]:
                 raise
             response = JSONResponse(
@@ -86,6 +91,28 @@ class RequestContextMiddleware:
                     duration_ms=round((time.perf_counter() - started) * 1000, 1),
                 ),
             )
+
+
+def _capture(scope: Scope, exc: Exception) -> bool:
+    """Record ``exc`` as a fatal server event: ``True`` when a row was written.
+
+    Never raises: a scope without the application's ``Context`` (a bare ASGI app in a test)
+    records nothing, and the hook itself swallows its own failures. The route is stored as its
+    template; a request that matched no route has none.
+    """
+    context = getattr(getattr(scope.get("app"), "state", None), "ctx", None)
+    factory = getattr(context, "session_factory", None)
+    if factory is None:
+        return False
+    route = getattr(scope.get("route"), "path", None)
+    return capture_request_error(
+        factory,
+        exc=exc,
+        method=scope["method"],
+        route=route_template(route) if route is not None else None,
+        request_id=request_id_var.get(),
+        user_agent=Headers(scope=scope).get("user-agent") or "",
+    )
 
 
 class BodyLimitMiddleware:

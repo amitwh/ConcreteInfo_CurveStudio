@@ -41,6 +41,7 @@ from curvestudio_api import audit
 from curvestudio_api.autofit_worker import run_autofit_job, run_open_row_job
 from curvestudio_api.db import SessionFactory
 from curvestudio_api.logging_setup import get_logger, log_fields
+from curvestudio_api.modules.errors.capture import bind_error_capture_sink
 from curvestudio_api.orm import Autofit, Dataset, Fit, Job
 from curvestudio_api.timeutil import utcnow
 from curvestudio_api.worker import PROGRESS, STARTED, JobWorker, job_process_main, run_fit_job
@@ -256,6 +257,8 @@ class JobManager:
     # -- scheduler -----------------------------------------------------------------------------
 
     def _run(self) -> None:
+        # A failure logged on this thread is recorded into this manager's own database.
+        bind_error_capture_sink(self._sessions)
         while not self._stop.is_set():
             try:
                 self._watchdog()
