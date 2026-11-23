@@ -107,6 +107,13 @@ def test_providers_lists_only_configured_providers(
     assert listed.json() == {"providers": ["google"]}
 
 
+def test_microsoft_scopes_are_oidc_only() -> None:
+    """Microsoft needs only openid/email/profile for the userinfo read (OAUTH_SETUP.md)."""
+    assert oauth._PROVIDERS["microsoft"].scopes == "openid email profile"
+    assert oauth._PROVIDERS["google"].scopes == "openid email profile"
+    assert oauth._PROVIDERS["linkedin"].scopes == "openid profile email"
+
+
 def test_start_redirects_with_state_and_pkce_and_sets_the_flow_cookie(
     client_factory: Callable[..., TestClient],
     settings_factory: Callable[..., Settings],

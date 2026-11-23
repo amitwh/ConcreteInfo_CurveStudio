@@ -66,7 +66,7 @@ _PROVIDERS: dict[str, _Provider] = {
         authorize_url="https://login.microsoftonline.com/{tenant}/oauth2/v2.0/authorize",
         token_url="https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token",
         userinfo_url="https://graph.microsoft.com/oidc/userinfo",
-        scopes="openid email profile User.Read",
+        scopes="openid email profile",
     ),
     "linkedin": _Provider(
         authorize_url="https://www.linkedin.com/oauth/v2/authorization",

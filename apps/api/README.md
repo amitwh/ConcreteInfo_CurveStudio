@@ -100,7 +100,7 @@ Step-by-step console setup: [`OAUTH_SETUP.md`](OAUTH_SETUP.md).
 Setup: create an OAuth client per provider and set `CURVESTUDIO_OAUTH_GOOGLE_CLIENT_ID/SECRET`,
 `CURVESTUDIO_OAUTH_MICROSOFT_CLIENT_ID/SECRET` (+ `CURVESTUDIO_OAUTH_MICROSOFT_TENANT`, default
 `common`), `CURVESTUDIO_OAUTH_LINKEDIN_CLIENT_ID/SECRET`. The scopes are fixed: Google
-`openid email profile`, Microsoft `openid email profile User.Read`, LinkedIn `openid profile
+`openid email profile`, Microsoft `openid email profile`, LinkedIn `openid profile
 email` (the app needs the "Sign In with LinkedIn using OpenID Connect" product). The redirect URI is derived
 from `CURVESTUDIO_APP_URL`; the provider compares it byte for byte, so the web app and the API
 must share an origin.
