@@ -2,6 +2,7 @@
 
 import base64
 import hashlib
+import logging
 from collections.abc import Callable
 from datetime import timedelta
 from typing import Any
@@ -245,6 +246,35 @@ def test_provider_error_redirects_to_login(
     assert denied.headers["location"] == f"{APP_URL}/login?oauth_error=provider"
 
 
+def test_callback_log_carries_the_provider_error_code(
+    client_factory: Callable[..., TestClient],
+    settings_factory: Callable[..., Settings],
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The provider's own error code (AADSTS…) must reach the callback warning log."""
+
+    def failing(
+        url: str, data: dict[str, str] | None = None, headers: dict[str, str] | None = None
+    ) -> dict[str, Any]:
+        del url, data, headers
+        raise oauth.OAuthError(
+            "the provider returned HTTP 401 (invalid_client: AADSTS7000215: "
+            "Invalid client secret is provided.)"
+        )
+
+    client = client_factory(oauth_settings(settings_factory))
+    monkeypatch.setattr(oauth, "_http_json", failing)
+    _, state = start(client, "microsoft")
+
+    with caplog.at_level(logging.WARNING, logger="curvestudio_api.routers.oauth"):
+        redirect = callback(client, "microsoft", state=state)
+
+    assert redirect.status_code == 302
+    assert redirect.headers["location"] == f"{APP_URL}/login?oauth_error=provider"
+    assert "AADSTS7000215" in caplog.text
+
+
 def test_unverified_google_identity_is_rejected(
     client_factory: Callable[..., TestClient],
     settings_factory: Callable[..., Settings],
@@ -378,3 +408,94 @@ def test_http_error_keeps_the_provider_reason(monkeypatch) -> None:
     assert "HTTP 401" in str(caught.value)
     assert "invalid_client" in str(caught.value)
     assert "AADSTS7000215" in str(caught.value)
+
+
+def test_exchange_error_keeps_the_cause_text(
+    settings_factory: Callable[..., Settings], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The token endpoint's failure reason rides along in the exchange error message."""
+
+    def failing(
+        url: str, data: dict[str, str] | None = None, headers: dict[str, str] | None = None
+    ) -> dict[str, Any]:
+        del url, data, headers
+        raise oauth.OAuthError("the provider returned HTTP 502")
+
+    monkeypatch.setattr(oauth, "_http_json", failing)
+    settings = oauth_settings(settings_factory)
+    with pytest.raises(oauth.OAuthExchangeError) as caught:
+        oauth.exchange_code(
+            "microsoft",
+            settings,
+            "auth-code",
+            oauth.callback_url(settings, "microsoft"),
+            "verifier",
+        )
+    message = str(caught.value)
+    assert "rejected the token exchange" in message
+    assert "HTTP 502" in message
+
+
+def test_exchange_error_keeps_network_cause(
+    settings_factory: Callable[..., Settings], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def unreachable(
+        url: str, data: dict[str, str] | None = None, headers: dict[str, str] | None = None
+    ) -> dict[str, Any]:
+        del url, data, headers
+        raise oauth.OAuthError("could not reach the provider")
+
+    monkeypatch.setattr(oauth, "_http_json", unreachable)
+    settings = oauth_settings(settings_factory)
+    with pytest.raises(oauth.OAuthExchangeError) as caught:
+        oauth.exchange_code(
+            "microsoft",
+            settings,
+            "auth-code",
+            oauth.callback_url(settings, "microsoft"),
+            "verifier",
+        )
+    message = str(caught.value)
+    assert "rejected the token exchange" in message
+    assert "could not reach the provider" in message
+
+
+def test_exchange_error_logs_when_no_access_token(
+    settings_factory: Callable[..., Settings], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A token response without ``access_token`` still names the rejected exchange."""
+
+    def no_token(
+        url: str, data: dict[str, str] | None = None, headers: dict[str, str] | None = None
+    ) -> dict[str, Any]:
+        del url, data, headers
+        return {"token_type": "bearer"}
+
+    monkeypatch.setattr(oauth, "_http_json", no_token)
+    settings = oauth_settings(settings_factory)
+    with pytest.raises(oauth.OAuthExchangeError) as caught:
+        oauth.exchange_code(
+            "microsoft",
+            settings,
+            "auth-code",
+            oauth.callback_url(settings, "microsoft"),
+            "verifier",
+        )
+    assert "rejected the token exchange" in str(caught.value)
+
+
+def test_identity_error_keeps_the_cause_text(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The userinfo failure reason rides along in the identity error message."""
+
+    def failing(
+        url: str, data: dict[str, str] | None = None, headers: dict[str, str] | None = None
+    ) -> dict[str, Any]:
+        del url, data, headers
+        raise oauth.OAuthError("the provider returned HTTP 401")
+
+    monkeypatch.setattr(oauth, "_http_json", failing)
+    with pytest.raises(oauth.OAuthIdentityError) as caught:
+        oauth.fetch_identity("microsoft", "provider-access-token")
+    message = str(caught.value)
+    assert "could not read the provider profile" in message
+    assert "HTTP 401" in message

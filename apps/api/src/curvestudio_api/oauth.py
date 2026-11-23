@@ -180,10 +180,10 @@ def exchange_code(
     try:
         payload = _http_json(url, data=form)
     except OAuthError as exc:
-        raise OAuthExchangeError("the provider rejected the token exchange") from exc
+        raise OAuthExchangeError(f"the provider rejected the token exchange: {exc}") from exc
     access_token = payload.get("access_token")
     if not isinstance(access_token, str) or not access_token:
-        raise OAuthExchangeError("the provider returned no access token")
+        raise OAuthExchangeError("the provider rejected the token exchange: no access token")
     return payload
 
 
@@ -201,7 +201,7 @@ def fetch_identity(provider: str, access_token: str) -> dict[str, Any]:
     try:
         data = _http_json(config.userinfo_url, headers={"Authorization": f"Bearer {access_token}"})
     except OAuthError as exc:
-        raise OAuthIdentityError("could not read the provider profile") from exc
+        raise OAuthIdentityError(f"could not read the provider profile: {exc}") from exc
     return _identity(provider, data)
 
 
