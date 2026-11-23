@@ -248,34 +248,51 @@ def test_the_seed_is_stated_only_where_it_plays_a_part() -> None:
     assert "with random seed 3." in methods_text(grown, spec=GROWTH).paragraph
 
 
-def test_the_paragraph_states_the_bounds_the_specification_set() -> None:
+def test_the_paragraph_states_the_bounds_the_parameters_were_fitted_within() -> None:
     data = line_xy()
     one_parameter = FitSpec(
         model=CustomRef(equation="k*x", parameters=["k"]), bounds={"k": (0.0, 5.0)}
     )
     lower_only = CUSTOM_LINE.model_copy(update={"bounds": {"a": (0.0, None)}})
-    for spec, sentence in (
-        (one_parameter, "The parameters were bounded: k in (0, 5)."),
-        (BOUNDED_LINE, "The parameters were bounded: a in (0, 5), b < 10."),
-        (lower_only, "The parameters were bounded: a > 0."),
+    # a registered model's declared bound (its decay rate may not go below 0) belongs to the
+    # model as fitted, so it is stated; the engine's bounds are inclusive and written so
+    t = np.linspace(0.0, 6.0, 40)
+    decay = _xy(t, 3.0 * np.exp(-0.8 * t) + 1.0 + np.random.default_rng(0).normal(0.0, 0.05, 40))
+    declared = FitSpec(model=RegisteredRef(id="exp_decay_offset"))
+    for bundle, spec, sentence in (
+        (
+            fit_dataset(data, one_parameter),
+            one_parameter,
+            "The parameters were bounded: k in [0, 5].",
+        ),
+        (
+            fit_dataset(data, BOUNDED_LINE),
+            BOUNDED_LINE,
+            "The parameters were bounded: a in [0, 5], b <= 10.",
+        ),
+        (fit_dataset(data, lower_only), lower_only, "The parameters were bounded: a >= 0."),
+        (fit_dataset(decay, declared), declared, "The parameters were bounded: b >= 0."),
     ):
-        bundle = fit_dataset(data, spec)
         assert bundle.result.status.value == "converged"
         for style in STYLES:
             paragraph = methods_text(bundle, spec=spec, style=style).paragraph
             # straight after the sentence that says what was fitted and how
             assert paragraph.split(". ")[1] + "." == sentence
 
-    # no bounds, both ends open, a registered model's bounds that are only declared (its
-    # decay rate may not go below 0), weights without bounds: nothing is said
+    # the model's declared bound is stated without a specification too ...
+    decay_bundle = fit_dataset(decay, declared)
+    assert "The parameters were bounded: b >= 0." in methods_text(decay_bundle).paragraph
+    # ... and a specification replaces it for the parameter it names: both ends open, nothing
+    widened = declared.model_copy(update={"bounds": {"b": (None, None)}})
+    widened_bundle = fit_dataset(decay, widened)
+    assert widened_bundle.result.status.value == "converged"
+    assert "bounded" not in methods_text(widened_bundle, spec=widened).paragraph
+
+    # no bounds, both ends open, weights without bounds: nothing is said
     open_both = CUSTOM_LINE.model_copy(update={"bounds": {"a": (None, None)}})
-    declared = FitSpec(model=RegisteredRef(id="exp_decay_offset"))
-    t = np.linspace(0.0, 6.0, 40)
-    decay = _xy(t, 3.0 * np.exp(-0.8 * t) + 1.0 + np.random.default_rng(0).normal(0.0, 0.05, 40))
     for bundle, spec in (
         (fit_dataset(data, CUSTOM_LINE), CUSTOM_LINE),
         (fit_dataset(data, open_both), open_both),
-        (fit_dataset(decay, declared), declared),
         (weighted_quadratic(), USED),
     ):
         assert bundle.result.status.value == "converged"
@@ -710,6 +727,11 @@ def test_a_fit_that_did_not_converge_is_refused(scenarios) -> None:
             call(bundle)
         assert caught.value.code == "FIT_NOT_CONVERGED_INPUT"
         assert bundle.result.status.value in caught.value.message
+    # refused for that first, as fit_view and predict refuse it, whatever specification is
+    # paired with it: a foreign one does not turn it into a mismatch
+    with pytest.raises(ToolError) as caught:
+        methods_text(bundle, spec=FitSpec(model=PolynomialRef(degree=3)))
+    assert caught.value.code == "FIT_NOT_CONVERGED_INPUT"
 
 
 def test_the_same_fit_gives_the_same_text(scenarios) -> None:

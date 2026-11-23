@@ -4,8 +4,9 @@
 :class:`MethodsText` in one of three styles. It fits nothing, reads and writes no file and
 touches no network. Every number in the text is one the fit result carries, rounded by one
 rule, or one of a few named counts and settings: the observations used, the interval level,
-the seed, the version, and the bounds the specification set. Nothing is guessed: what the
-text needed and did not get is listed in ``missing``, each entry a code and a sentence.
+the seed, the version, and the bounds the parameters were fitted within. Nothing is
+guessed: what the text needed and did not get is listed in ``missing``, each entry a code
+and a sentence.
 
 The module follows its seams: :mod:`._methods_numbers` names the model that was fitted and
 rounds its estimates; this module writes the paragraph, lays out the equation and the table
@@ -14,6 +15,7 @@ escaped for LaTeX in that style. What only the author knows (the instrument, the
 size, the cleaning) is listed in ``to_complete``, never written for them.
 """
 
+import math
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
@@ -155,24 +157,43 @@ def _setting(value: float) -> str:
     return f"{value:.15g}"
 
 
-def _bounds_sentence(spec: FitSpec | None) -> str:
-    """The bounds the specification set on the parameters; ``""`` when it set none.
+def _effective_bounds(
+    model: _Model, spec: FitSpec | None
+) -> dict[str, tuple[float | None, float | None]]:
+    """The bounds each parameter was fitted within.
 
-    An open end (``None``) is left out, so a parameter with one end free reads ``a > 0`` or
-    ``b < 10``, and one with both free is not named. The bounds a registered model declares
-    are the model's, not the specification's, and are not spoken of here.
+    A registered model's declared bounds are the model's own (a rate that may not go below
+    zero); the specification's replace them for the parameters it names. A polynomial has
+    none by nature, and a custom equation has only the specification's.
     """
-    if spec is None:
-        return ""
+    bounds: dict[str, tuple[float | None, float | None]] = {}
+    if model.registered is not None:
+        bounds = {p.name: (p.lower, p.upper) for p in model.registered.parameters}
+    if spec is not None:
+        bounds.update(spec.bounds)
+    return bounds
+
+
+def _bounds_sentence(model: _Model, spec: FitSpec | None) -> str:
+    """The bounds the parameters were fitted within; ``""`` when none is finite.
+
+    The engine's bounds are inclusive, so they are written ``a >= 0``, ``b <= 10`` and
+    ``k in [0, 5]``. An open end is left out, so a parameter with one end free reads ``a >= 0``
+    or ``b <= 10``, and one with both free is not named.
+    """
     bounded: list[str] = []
-    for name, (lower, upper) in spec.bounds.items():
-        if lower is None:
-            if upper is not None:
-                bounded.append(f"{name} < {_setting(upper)}")
-        elif upper is None:
-            bounded.append(f"{name} > {_setting(lower)}")
-        else:
-            bounded.append(f"{name} in ({_setting(lower)}, {_setting(upper)})")
+    for name, (lower, upper) in _effective_bounds(model, spec).items():
+        if (
+            lower is not None
+            and upper is not None
+            and math.isfinite(lower)
+            and math.isfinite(upper)
+        ):
+            bounded.append(f"{name} in [{_setting(lower)}, {_setting(upper)}]")
+        elif lower is not None and math.isfinite(lower):
+            bounded.append(f"{name} >= {_setting(lower)}")
+        elif upper is not None and math.isfinite(upper):
+            bounded.append(f"{name} <= {_setting(upper)}")
     if not bounded:
         return ""
     return f"The parameters were bounded: {', '.join(bounded)}."
@@ -294,7 +315,7 @@ def _paragraph(
         f"{model.description[0].upper()}{model.description[1:]} was fitted to {n} "
         f"observations by {_estimator(result, weighting)}{solver}."
     ]
-    bounded = _bounds_sentence(spec)
+    bounded = _bounds_sentence(model, spec)
     if bounded:
         sentences.append(bounded)
     left_out = _left_out(bundle, missing)
@@ -459,10 +480,11 @@ def methods_text(
 
     Args:
         bundle: a fit that converged.
-        spec: the specification the fit ran with, checked against the fit before anything
-            else. It says whether the weights were used and what bounds it set; without it
-            the text relies on what the result records, says nothing of the bounds, and
-            lists ``NO_SPEC`` in ``missing``.
+        spec: the specification the fit ran with, checked against the fit once the fit is
+            known to have converged. It says whether the weights were used, and its bounds
+            replace a registered model's declared ones; without it the text relies on what
+            the result records and on the model's declared bounds, and lists ``NO_SPEC`` in
+            ``missing``.
         style: ``"text"`` (plain lines), ``"markdown"`` or ``"latex"`` for the equation and
             the table. The paragraph is the same text in every style, escaped for LaTeX in
             that style. In LaTeX the equation is a complete display (``\\[``, an
@@ -479,20 +501,20 @@ def methods_text(
         and what is missing.
 
     Raises:
-        ToolError: ``MODEL_MISMATCH`` for a specification that is not the one the fit was
-            computed with (it is checked before anything else). ``FIT_NOT_CONVERGED_INPUT``
-            for a fit that did not converge: there are no estimates to report.
-            ``INVALID_LEVEL`` for a ``level`` outside 0 and 1, and ``NO_STATISTICS`` for a
-            fit that carries none.
+        ToolError: ``FIT_NOT_CONVERGED_INPUT`` for a fit that did not converge (it is checked
+            first, as ``fit_view`` and ``predict`` check it): there are no estimates to
+            report. ``MODEL_MISMATCH`` for a specification that is not the one the fit was
+            computed with. ``INVALID_LEVEL`` for a ``level`` outside 0 and 1, and
+            ``NO_STATISTICS`` for a fit that carries none.
     """
     result = bundle.result
-    require_matching_spec(result, spec)
     if result.status is not FitStatus.CONVERGED:
         raise ToolError(
             "FIT_NOT_CONVERGED_INPUT",
             f"the fit is {result.status.value} ({result.termination_reason}): a fit that did "
             "not converge has no estimates to report",
         )
+    require_matching_spec(result, spec)
     if not 0.0 < level < 1.0:
         raise ToolError("INVALID_LEVEL", f"level must lie strictly between 0 and 1, got {level!r}")
     model = _fitted_model(result)

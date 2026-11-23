@@ -180,14 +180,12 @@ def test_cross_validation_refuses_a_specification_that_is_not_the_fit_s(scenario
     # its own specification is accepted
     assert cross_validate(grown, GROWTH).status == "ok"
 
-    # the check comes first: a fit that did not converge is refused for its own specification
-    # only, and for a foreign one as a mismatch
-    with pytest.raises(ToolError) as caught:
-        cross_validate(scenarios.non_converged(), QUADRATIC)
-    assert caught.value.code == "MODEL_MISMATCH"
-    with pytest.raises(ToolError) as caught:
-        cross_validate(scenarios.non_converged(), UNIDENTIFIABLE)
-    assert caught.value.code == "FIT_NOT_CONVERGED_INPUT"
+    # a fit that did not converge is refused for that first, as fit_view and predict refuse
+    # it, whatever specification is paired with it
+    for spec in (QUADRATIC, UNIDENTIFIABLE):
+        with pytest.raises(ToolError) as caught:
+            cross_validate(scenarios.non_converged(), spec)
+        assert caught.value.code == "FIT_NOT_CONVERGED_INPUT"
 
     # a polynomial through the origin is a polynomial of its degree to a specification
     origin, _ = _origin_bundle()
@@ -280,3 +278,24 @@ def test_with_cross_validation_the_audit_detects_overfitting(scenarios) -> None:
     audit = audit_fit(line, spec=LINE)
     verdict = next(check.verdict for check in audit.checks if check.id == "cross_validation")
     assert verdict is Verdict.NOT_APPLICABLE
+
+
+def test_the_data_as_uploaded_are_right_for_a_fit_that_ignored_its_weights() -> None:
+    # A fit that ignored its weights recorded the fingerprint of the data without them, so
+    # data= is compared only after the specification's weight choice has been made.
+    x = np.linspace(0.0, 10.0, COMPACT_MAX_POINTS + 1)
+    weights = 1.0 / (1.0 + x) ** 2
+    weighted = _xy(x, 1.0 + 0.5 * x - 0.03 * x**2, weights, tag="uploaded")
+    ignored = QUADRATIC.model_copy(update={"use_weights": False})
+    compact = fit_dataset(weighted, ignored, compact=True)
+    assert compact.data.subsampled
+
+    result = cross_validate(compact, ignored, data=weighted)
+
+    assert result.status == "ok"
+    assert result == cross_validate(fit_dataset(weighted, ignored), ignored)
+    # the comparison is still made after that choice: other data are refused for this fit too
+    other = _xy(weighted.x, weighted.y + 1.0, weights, tag="other")
+    with pytest.raises(ToolError) as caught:
+        cross_validate(compact, ignored, data=other)
+    assert caught.value.code == "DATA_MISMATCH"
