@@ -10,7 +10,7 @@ specification, so every fold is fitted with the fit's own bounds, loss and weigh
 from typing import Literal
 
 from curvestudio.data import XY
-from curvestudio.fitting import FitStatus
+from curvestudio.fitting import FitResult, FitStatus
 from curvestudio.statistics import (
     CrossValidation,
     StatisticsError,
@@ -32,6 +32,29 @@ def _active_points(data: XY) -> int:
     return int((data.weights > 0.0).sum())
 
 
+def _require_fitted_data(result: FitResult, data: XY) -> None:
+    """Refuse ``data`` that are not the ones ``result`` was computed from.
+
+    The core makes the same comparison at the top of ``build_view``, but not as a function
+    of its own, so these are its two tests: the fingerprint the fit recorded, and the row
+    count.
+
+    Raises:
+        ToolError: ``DATA_MISMATCH``.
+    """
+    rows = int(data.x.size)
+    if data.fingerprint != result.provenance.dataset_fingerprint:
+        raise ToolError(
+            "DATA_MISMATCH", "the data are not the ones this fit was computed from (fingerprint)"
+        )
+    if len(result.fitted) != rows or len(result.residuals) != rows:
+        raise ToolError(
+            "DATA_MISMATCH",
+            f"the data are not the ones this fit was computed from: they have {rows} rows, "
+            f"the fit covers {len(result.fitted)}",
+        )
+
+
 def cross_validate(
     bundle: FitBundle,
     spec: FitSpec,
@@ -47,9 +70,10 @@ def cross_validate(
         spec: the specification the fit ran with. The fitter is the one the workflow uses
             for it (:func:`~curvestudio.workflow.fitter_for`), given the stored fit, so each
             fold is fitted with the fit's own bounds, loss, starting values and weights.
-        data: the data to cross-validate. The default is what the bundle carries; a compact
-            bundle (``bundle.data.subsampled``) holds only a subsample and needs the full
-            data here.
+        data: the data to cross-validate, when given: they must be the ones the fit was
+            computed from, as the fit recorded them. The default is what the bundle carries,
+            which always is; a compact bundle (``bundle.data.subsampled``) holds only a
+            subsample and needs the full data here.
         folds: the number of folds (5 by default), or ``"loo"`` for leave-one-out, which
             needs at most ``LOO_MAX_N`` active points.
         seed: the seed that decides the folds. The default is the fit's own
@@ -63,10 +87,11 @@ def cross_validate(
         ToolError: ``MODEL_MISMATCH`` for a specification that is not the one the fit was
             computed with (it is checked before anything else); ``FIT_NOT_CONVERGED_INPUT``
             for a fit that did not converge; ``DATA_REQUIRED`` for a compact bundle without
-            ``data``; ``INVALID_FOLDS`` for a count below 2 or above the number of active
-            points, or for ``"loo"`` above ``LOO_MAX_N``; and, with its own code, anything
-            the workflow refuses in the specification (``INVALID_SPEC``, ``UNKNOWN_MODEL``,
-            ...) or the core in the settings (``INVALID_SEED``, ...).
+            ``data``; ``DATA_MISMATCH`` for ``data`` that are not the ones the fit was
+            computed from; ``INVALID_FOLDS`` for a count below 2 or above the number of
+            active points, or for ``"loo"`` above ``LOO_MAX_N``; and, with its own code,
+            anything the workflow refuses in the specification (``INVALID_SPEC``,
+            ``UNKNOWN_MODEL``, ...) or the core in the settings (``INVALID_SEED``, ...).
     """
     result = bundle.result
     require_matching_spec(result, spec)
@@ -83,6 +108,8 @@ def cross_validate(
             "the full data the fit was computed from",
         )
     xy = snapshot_xy(bundle) if data is None else data
+    if data is not None:
+        _require_fitted_data(result, data)
     try:
         fitter, fitted = fitter_for(spec, xy, result=result)
     except WorkflowError as exc:

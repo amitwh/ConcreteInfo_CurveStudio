@@ -213,6 +213,22 @@ def test_cross_validation_refuses_what_it_cannot_use(scenarios, monkeypatch) -> 
     assert restored.status == "ok"
     assert restored == cross_validate(fit_dataset(big, LINE), LINE)
 
+    # data= must be the data the fit was computed from. Another dataset of the same size
+    # fails the fingerprint the fit recorded; the same data with another row count fails
+    # the row count.
+    points = big.x.size
+    other_x = np.linspace(0.0, 10.0, points)
+    other = _xy(other_x, 3.0 * other_x + 1.0 + np.sin(other_x), tag="other")
+    with pytest.raises(ToolError) as caught:
+        cross_validate(compact, LINE, data=other)
+    assert caught.value.code == "DATA_MISMATCH"
+    assert "fingerprint" in caught.value.message
+    shortened = XY(big.x[:-1], big.y[:-1], None, big.x_name, big.y_name, big.fingerprint)
+    with pytest.raises(ToolError) as caught:
+        cross_validate(compact, LINE, data=shortened)
+    assert caught.value.code == "DATA_MISMATCH"
+    assert "rows" in caught.value.message
+
     bundle = fit_dataset(scenarios.quadratic_xy(40, seed=0), QUADRATIC)
     for folds in (0, 1, 41):
         with pytest.raises(ToolError) as caught:
