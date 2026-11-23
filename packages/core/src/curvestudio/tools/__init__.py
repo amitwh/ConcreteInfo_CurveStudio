@@ -8,7 +8,9 @@ from curvestudio.tools.audit import (
     SimplerModel,
     Verdict,
     audit_fit,
+    expected_cv_ratio,
 )
+from curvestudio.tools.cross_validation import cross_validate
 
 __all__ = [
     "AuditCheck",
@@ -18,4 +20,6 @@ __all__ = [
     "ToolError",
     "Verdict",
     "audit_fit",
+    "cross_validate",
+    "expected_cv_ratio",
 ]
