@@ -207,3 +207,37 @@ def test_summary_sheet_carries_a_faint_italic_disclaimer(
     assert cell.font.size == 8
     assert cell.font.color is not None
     assert str(cell.font.color.rgb).upper() == "FFA6A6A6"
+
+
+IDENTITY = "Amit Haridas, ConcreteInfo"
+
+
+def test_xlsx_byline_is_in_every_print_header(
+    poly_bundle: FitBundleFactory, tmp_path: Path
+) -> None:
+    fit_to_xlsx(poly_bundle(), tmp_path / "fit.xlsx", byline=IDENTITY)
+    wb = load(tmp_path / "fit.xlsx")
+    for sheet in wb.worksheets:
+        assert sheet.oddHeader.center.text == f"Prepared by {IDENTITY}"  # the writer adds the words
+        assert sheet.oddHeader.center.size == 7  # the footer's size and colour
+        assert "808080" in str(sheet.oddHeader.center.color)
+    assert wb.properties.creator == "CurveStudio", "the byline changes no workbook property"
+
+
+@pytest.mark.parametrize("byline", [None, "", "   "], ids=["none", "empty", "blank"])
+def test_xlsx_without_byline_has_no_header(
+    poly_bundle: FitBundleFactory, tmp_path: Path, byline: str | None
+) -> None:
+    fit_to_xlsx(poly_bundle(), tmp_path / "fit.xlsx", byline=byline)
+    for sheet in load(tmp_path / "fit.xlsx").worksheets:
+        assert not sheet.oddHeader.center.text
+        assert sheet.oddFooter.center.text, "the footer is untouched either way"
+
+
+def test_xlsx_byline_doubles_ampersands_and_strips_control_characters(
+    poly_bundle: FitBundleFactory, tmp_path: Path
+) -> None:
+    """'&' is a header command in Excel, and a control byte makes the sheet XML malformed."""
+    fit_to_xlsx(poly_bundle(), tmp_path / "fit.xlsx", byline="Amy, R&D\x1b Labs")
+    for sheet in load(tmp_path / "fit.xlsx").worksheets:  # loading back proves the XML parses
+        assert sheet.oddHeader.center.text == "Prepared by Amy, R&&D Labs"

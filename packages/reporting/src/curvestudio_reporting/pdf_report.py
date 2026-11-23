@@ -1,10 +1,10 @@
 """``fit_to_pdf``: the human-readable report, built with reportlab platypus.
 
-Layout: title, identification block (fingerprint, seed, versions, IST date),
-equation, parameter table with SE and CI, statistics table, the fit and residual
-figures, and an "Assumptions and limitations" section that includes the exact
-information-criteria convention. A fit that did not converge gets a red
-first-page warning and **no** figures of the fit — nothing that could pass for a
+Layout: title, the optional "Prepared by" byline, identification block (fingerprint,
+seed, versions, IST date), equation, parameter table with SE and CI, statistics table,
+the fit and residual figures, and an "Assumptions and limitations" section that
+includes the exact information-criteria convention. A fit that did not converge gets a
+red first-page warning and **no** figures of the fit — nothing that could pass for a
 result. User-controlled strings that reach reportlab's *paragraph parser* (which
 reads XML-ish markup) are XML-escaped there — names and equations can contain
 ``<`` and ``&``. Table cells are escaped ``Paragraph`` objects too: long cell
@@ -56,7 +56,13 @@ from curvestudio_plotting import (
     residual_figure,
     save_figure,
 )
-from curvestudio_reporting.csv_report import sanitise, statistics_rows, subsampled_note
+from curvestudio_reporting.csv_report import (
+    PREPARED_BY,
+    byline_text,
+    sanitise,
+    statistics_rows,
+    subsampled_note,
+)
 from curvestudio_reporting.meta import (
     TOOL_NAME,
     assumptions_text,
@@ -85,6 +91,8 @@ _WATERMARK_FONT_SIZE = 34
 _FOOTER_FONT_SIZE = 6.5
 _FOOTER_ALPHA = 0.75
 _FOOTER_GREY = colors.HexColor("#666666")
+_BYLINE_FONT_SIZE = 8.5
+_BYLINE_LEADING = 10.5
 #: The footer baseline, 18 pt (~6.4 mm) above the page bottom: below the 0.7 in content
 #: margin, so the disclaimer can never collide with body text or a figure.
 _FOOTER_Y = 18.0
@@ -139,8 +147,15 @@ def _decorate_page(canvas: Canvas, _doc: SimpleDocTemplate) -> None:
     canvas.restoreState()
 
 
-def fit_to_pdf(bundle: FitBundle, target: Path | BinaryIO) -> None:
-    """Write the PDF report for ``bundle`` to ``target`` (a path or binary stream)."""
+def fit_to_pdf(bundle: FitBundle, target: Path | BinaryIO, *, byline: str | None = None) -> None:
+    """Write the PDF report for ``bundle`` to ``target`` (a path or binary stream).
+
+    ``byline`` is the identity text alone (a name, an organisation, or both). When it is
+    set, the report prints "Prepared by <byline>" in a small muted style directly under
+    the title and the identity alone becomes the document's author. Without one the title
+    is followed by the report as it has always been, with the tool as the author.
+    """
+    shown = byline_text(byline)
     filename: str | BinaryIO = str(target) if isinstance(target, Path) else target
     document = SimpleDocTemplate(
         filename,
@@ -150,16 +165,18 @@ def fit_to_pdf(bundle: FitBundle, target: Path | BinaryIO) -> None:
         topMargin=_MARGIN,
         bottomMargin=_MARGIN,
         title="CurveStudio fit report",
-        author=TOOL_NAME,
+        author=TOOL_NAME if shown is None else shown,
         # read at call time so a caller can flip rl_config.pageCompression
         pageCompression=rl_config.pageCompression,
     )
     # reportlab 5 builds one page template per callback; passing them to build() is the
     # supported hook (the constructor ignores unknown keyword arguments such as these)
-    document.build(_flowables(bundle), onFirstPage=_decorate_page, onLaterPages=_decorate_page)
+    document.build(
+        _flowables(bundle, shown), onFirstPage=_decorate_page, onLaterPages=_decorate_page
+    )
 
 
-def _flowables(bundle: FitBundle) -> list[Flowable]:
+def _flowables(bundle: FitBundle, byline: str | None = None) -> list[Flowable]:
     styles = getSampleStyleSheet()
     for style in styles.byName.values():  # DejaVu everywhere, not just the tables
         style.fontName = _BODY_FONT
@@ -168,12 +185,19 @@ def _flowables(bundle: FitBundle) -> list[Flowable]:
         parent=styles["Heading2"],
         textColor=colors.HexColor("#B2182B"),
     )
+    byline_style = ParagraphStyle(  # after the loop: it copies the body style as it now is
+        "Byline",
+        parent=styles["BodyText"],
+        fontSize=_BYLINE_FONT_SIZE,
+        leading=_BYLINE_LEADING,
+        textColor=_FOOTER_GREY,
+    )
     result = bundle.result
     converged = result.status is FitStatus.CONVERGED
-    story: list[Flowable] = [
-        Paragraph(escape("CurveStudio fit report"), styles["Title"]),
-        Spacer(1, 10),
-    ]
+    story: list[Flowable] = [Paragraph(escape("CurveStudio fit report"), styles["Title"])]
+    if byline is not None:
+        story.append(Paragraph(escape(f"{PREPARED_BY}{byline}"), byline_style))
+    story.append(Spacer(1, 10))
 
     if not converged:
         banner = escape(

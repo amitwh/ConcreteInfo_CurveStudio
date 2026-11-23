@@ -54,6 +54,24 @@ def safe_text(text: str) -> str:
     return neutralise(sanitise(text))
 
 
+PREPARED_BY = "Prepared by "
+"""The words each report puts in front of the identity. ``curvestudio_plotting`` carries the
+same literal separately: the import contracts forbid plotting importing reporting."""
+
+
+def byline_text(byline: str | None) -> str | None:
+    """The identity a report's byline names, or ``None`` when there is none.
+
+    ``byline`` is the identity text alone ("Alice", "Lab" or "Alice, Lab"), never the
+    "Prepared by" words: each renderer adds those, here and in the web report. Unset,
+    empty and whitespace-only all mean no byline. It is user-typed text like any other,
+    so control characters are stripped and the surrounding whitespace trimmed.
+    """
+    if byline is None:
+        return None
+    return sanitise(byline).strip() or None
+
+
 def subsampled_note(data: DataSnapshot) -> str | None:
     """The visible note when the exported rows are a subsample of what was fitted.
 

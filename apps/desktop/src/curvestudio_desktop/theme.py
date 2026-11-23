@@ -21,6 +21,13 @@ Preference = Literal["system", "light", "dark"]
 
 THEME_SETTINGS_KEY = "appearance/theme"
 DEFAULT_PREFERENCE: Preference = "system"
+THEME_CHOICES: tuple[tuple[Preference, str], ...] = (
+    ("system", "&System"),
+    ("light", "&Light"),
+    ("dark", "&Dark"),
+)
+"""The theme choices in display order, for the View → Theme menu and the Preferences dialog.
+The labels carry menu mnemonics; a combo box shows them without the ``&``."""
 
 _INTER = "Inter"
 _MONO = "JetBrains Mono"
@@ -249,6 +256,7 @@ __all__ = [
     "DARK_TOKENS",
     "DEFAULT_PREFERENCE",
     "LIGHT_TOKENS",
+    "THEME_CHOICES",
     "THEME_SETTINGS_KEY",
     "Preference",
     "Scheme",

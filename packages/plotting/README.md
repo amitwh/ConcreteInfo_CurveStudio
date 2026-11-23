@@ -12,6 +12,9 @@ Builds `matplotlib.figure.Figure` objects (never `pyplot` global state) from a
   histogram) built from the diagnostics data, with "n/a" panels where a piece is
   undefined;
 - `save_figure` — deterministic PNG/SVG/PDF export (no timestamps in the output,
-  SVG text as paths).
+  SVG text as paths);
+- `add_byline` — prints "Prepared by <identity>", small and muted, along the top
+  edge of a figure from either builder (the argument is the identity text alone;
+  nothing is drawn or reserved when it is blank).
 
 Licence: AGPL-3.0-or-later, like the rest of CurveStudio.

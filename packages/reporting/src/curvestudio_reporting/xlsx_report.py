@@ -4,7 +4,8 @@ Sheets: Summary (identification, equation, status, warnings, conventions),
 Parameters, Observations, Statistics and Plot (the embedded fit figure). Numbers
 are real numeric cells; undefined values stay empty with a note. Text cells are
 neutralised against spreadsheet formula injection, and the workbook properties
-are pinned to a fixed epoch so two exports differ only by their content.
+are pinned to a fixed epoch so two exports differ only by their content. An
+optional "Prepared by" byline prints in every sheet's page header.
 """
 
 import io
@@ -21,8 +22,10 @@ from curvestudio.fitting import FitStatus
 from curvestudio.workflow import FitBundle, format_equation
 from curvestudio_plotting import fit_figure, save_figure
 from curvestudio_reporting.csv_report import (
+    PREPARED_BY,
     StatValue,
     aligned,
+    byline_text,
     safe_text,
     statistics_rows,
     subsampled_note,
@@ -52,8 +55,14 @@ _FOOTER_COLOR = "808080"
 _DISCLAIMER_FONT = Font(color="FFA6A6A6", italic=True, size=8)
 
 
-def fit_to_xlsx(bundle: FitBundle, target: Path | BinaryIO) -> None:
-    """Write the workbook for ``bundle`` to ``target`` (a path or binary stream)."""
+def fit_to_xlsx(bundle: FitBundle, target: Path | BinaryIO, *, byline: str | None = None) -> None:
+    """Write the workbook for ``bundle`` to ``target`` (a path or binary stream).
+
+    ``byline`` is the identity text alone (a name, an organisation, or both). When it is
+    set, "Prepared by <byline>" prints in the centre of every sheet's page header, in the
+    footer's size and colour. Without one the sheets carry no header, as before; nothing
+    else in the workbook depends on it.
+    """
     workbook = Workbook()
     _fix_properties(workbook)
     summary = workbook.active
@@ -64,17 +73,23 @@ def fit_to_xlsx(bundle: FitBundle, target: Path | BinaryIO) -> None:
     _write_observations(workbook.create_sheet("Observations"), bundle)
     _write_statistics(workbook.create_sheet("Statistics"), bundle)
     _write_plot(workbook.create_sheet("Plot"), bundle)
-    _decorate_sheets(workbook)
+    _decorate_sheets(workbook, byline_text(byline))
     workbook.save(target)
 
 
-def _decorate_sheets(workbook: Workbook) -> None:
-    """Print the brand line and disclaimer in every sheet's page footer."""
+def _decorate_sheets(workbook: Workbook, byline: str | None = None) -> None:
+    """Print the brand line and disclaimer in every sheet's page footer; a byline in its header."""
     footer = f"{WATERMARK_TEXT} — {DISCLAIMER_TEXT}"
+    # '&' introduces a header command in Excel (&B is bold, && a literal ampersand)
+    header = None if byline is None else f"{PREPARED_BY}{byline}".replace("&", "&&")
     for sheet in workbook.worksheets:
         sheet.oddFooter.center.text = footer
         sheet.oddFooter.center.size = _FOOTER_FONT_SIZE
         sheet.oddFooter.center.color = _FOOTER_COLOR
+        if header is not None:  # untouched without a byline: the file then stays as it was
+            sheet.oddHeader.center.text = header
+            sheet.oddHeader.center.size = _FOOTER_FONT_SIZE
+            sheet.oddHeader.center.color = _FOOTER_COLOR
 
 
 def _fix_properties(workbook: Workbook) -> None:

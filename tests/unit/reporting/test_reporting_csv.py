@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from curvestudio.workflow import FitBundle
 from curvestudio_reporting import observations_csv, parameters_csv, statistics_csv
+from curvestudio_reporting.csv_report import byline_text
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -163,3 +164,12 @@ def test_observations_csv_flags_a_subsampled_export(compact_bundle: FitBundle) -
     )
     assert table[-1] == [note, "", "", "", ""], "the note must be the last CSV row"
     assert len(table) == 2 + len(compact_bundle.data.x)  # header + rows + note
+
+
+def test_byline_text_normalises_the_identity_text() -> None:
+    """The byline argument is the identity alone ("Alice", "Lab"); this is its one normaliser."""
+    assert byline_text(None) is None
+    assert byline_text("") is None
+    assert byline_text("   \t\n") is None, "whitespace-only means no byline"
+    assert byline_text("  Alice , Lab \x1b ") == "Alice , Lab"
+    assert byline_text("\x1b") is None, "nothing printable is left: no byline"

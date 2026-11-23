@@ -14,7 +14,13 @@ from typing import cast
 
 from curvestudio.discovery import AutoFitResult, RankBy
 from curvestudio.workflow import FitBundle, format_equation
-from curvestudio_plotting import FigureFormat, fit_figure, residual_figure, save_figure
+from curvestudio_plotting import (
+    FigureFormat,
+    add_byline,
+    fit_figure,
+    residual_figure,
+    save_figure,
+)
 from curvestudio_reporting import (
     fit_to_json,
     fit_to_pdf,
@@ -90,20 +96,22 @@ def export_ranking_csv(target: Path, result: AutoFitResult, rank_by: RankBy) -> 
     target.write_text(ranking_csv(result, rank_by), encoding="utf-8", newline="")
 
 
-def export_fit(target: Path, bundle: FitBundle) -> None:
+def export_fit(target: Path, bundle: FitBundle, *, byline: str | None = None) -> None:
     """Write one fit's report; the suffix picks the format (csv writes the three tables).
 
     A ``.csv`` export writes ``<stem>.csv`` (parameters) plus ``<stem>_statistics.csv`` and
     ``<stem>_observations.csv``: the reporting layer deliberately produces three plain
     tables rather than one multi-section file, and the desktop export keeps that shape.
+    A set ``byline`` is the identity text (a name, an organisation, or both); the PDF
+    report and the workbook print it as a "Prepared by …" line. JSON and CSV carry none.
     """
     suffix = target.suffix.lower()
     if suffix == ".json":
         target.write_text(fit_to_json(bundle), encoding="utf-8")
     elif suffix == ".xlsx":
-        fit_to_xlsx(bundle, target)
+        fit_to_xlsx(bundle, target, byline=byline)
     elif suffix == ".pdf":
-        fit_to_pdf(bundle, target)
+        fit_to_pdf(bundle, target, byline=byline)
     elif suffix == ".csv":
         target.write_text(parameters_csv(bundle), encoding="utf-8", newline="")
         target.with_name(f"{target.stem}_statistics.csv").write_text(
@@ -116,12 +124,20 @@ def export_fit(target: Path, bundle: FitBundle) -> None:
         raise ValueError(f"unsupported export format {suffix!r}; use .json .xlsx .pdf or .csv")
 
 
-def export_publication_plot(target: Path, bundle: FitBundle, residuals: bool = False) -> None:
-    """The Matplotlib publication figure of the fit (or its residual panels) as PNG/SVG/PDF."""
+def export_publication_plot(
+    target: Path, bundle: FitBundle, residuals: bool = False, *, byline: str | None = None
+) -> None:
+    """The Matplotlib publication figure of the fit (or its residual panels) as PNG/SVG/PDF.
+
+    A set ``byline`` is the identity text (a name, an organisation, or both); the figure
+    prints it as a "Prepared by …" line along its top edge.
+    """
     fmt = target.suffix.lower().lstrip(".")
     if fmt not in ("png", "svg", "pdf"):
         raise ValueError(f"unsupported plot format {target.suffix!r}; use .png .svg or .pdf")
     figure = residual_figure(bundle) if residuals else fit_figure(bundle)
+    if byline and byline.strip():  # "set": neither missing nor blank
+        add_byline(figure, byline)
     save_figure(figure, target, cast("FigureFormat", fmt))
 
 

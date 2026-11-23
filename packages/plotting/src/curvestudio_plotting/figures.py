@@ -16,6 +16,8 @@ from typing import Any, BinaryIO, Literal
 import matplotlib
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
+from matplotlib.layout_engine import ConstrainedLayoutEngine
+from matplotlib.transforms import Affine2D
 
 from curvestudio.diagnostics import ResidualSet
 from curvestudio.fitting import FitStatus
@@ -50,6 +52,18 @@ WATERMARK_ALPHA = 0.22
 _WATERMARK_COLOR = "#464646"
 _WATERMARK_FONT_SIZE = 6
 
+_BYLINE_COLOR = "#666666"
+#: The words :func:`add_byline` puts in front of the identity. ``curvestudio_reporting`` carries
+#: the same literal separately (``PREPARED_BY``): the import contracts forbid plotting
+#: importing reporting, so the two packages duplicate the text by design rather than sharing it.
+_BYLINE_PREFIX = "Prepared by "
+_BYLINE_FONT_SIZE = 7
+_BYLINE_TOP_IN = 0.03
+"""The byline's top edge below the figure's top edge, in inches (about 2 pt)."""
+_BYLINE_BAND_IN = 0.27
+"""The band :func:`add_byline` takes from the layout: the top offset, one 7 pt line and
+about a line of clear space under it. In inches, so both figure heights get the same spacing."""
+
 PANEL_TITLES = ("Residuals vs fitted", "Residuals vs x", "Normal Q-Q", "Histogram")
 
 _RC_LOCK = threading.Lock()
@@ -81,6 +95,51 @@ def _watermark(fig: Figure) -> None:
         color=_WATERMARK_COLOR,
         alpha=WATERMARK_ALPHA,
     )
+
+
+def add_byline(fig: Figure, byline: str) -> None:
+    """Print "Prepared by <byline>" as one small muted line along the figure's top edge.
+
+    ``byline`` is the identity text alone (a name, an organisation, or both), as the
+    reports' ``byline`` argument is; the words in front of it are added here.
+
+    The figure must use a constrained layout (both builders do), which leaves a plain
+    :meth:`~matplotlib.figure.Figure.text` no room of its own: the byline reserves the
+    top band from the layout engine and draws inside it, and the axes and their titles
+    settle below. A plain constrained layout pins an automatic suptitle
+    (``fit_figure(title=…)``) a fixed distance under the figure's top edge while
+    reserving its room under the layout rect; shifting the title by the band keeps both
+    true, with the title directly above the axes instead of inside the band. Call it
+    once the figure is built and before :func:`save_figure`.
+
+    A blank ``byline`` draws nothing and reserves nothing.
+    """
+    identity = " ".join(_clean(byline).split())  # one line, whatever line breaks were pasted in
+    if not identity:
+        return
+    engine = fig.get_layout_engine()
+    if not isinstance(engine, ConstrainedLayoutEngine):
+        raise TypeError("add_byline needs a figure built with a constrained layout")
+    height_in = fig.get_figheight()
+    band = _BYLINE_BAND_IN / height_in
+    fig.text(
+        0.5,
+        1 - _BYLINE_TOP_IN / height_in,
+        f"{_BYLINE_PREFIX}{identity}",
+        ha="center",
+        va="top",
+        fontsize=_BYLINE_FONT_SIZE,
+        color=_BYLINE_COLOR,
+        parse_math=False,
+    )
+    # two private reads, neither with a public getter in this matplotlib: the suptitle
+    # and the engine's compressed flag
+    suptitle = fig._suptitle  # type: ignore[attr-defined]
+    compressed = engine._compress  # type: ignore[attr-defined]
+    if suptitle is not None and not compressed:
+        # the compressed variant places the title from the layout itself, below the band
+        suptitle.set_transform(Affine2D().translate(0, -band) + suptitle.get_transform())
+    engine.set(rect=(0, 0, 1, 1 - band))
 
 
 def fit_figure(

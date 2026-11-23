@@ -20,6 +20,7 @@ from reportlab.platypus import Table
 
 from curvestudio.workflow import FitBundle, format_equation
 from curvestudio_reporting import fit_to_pdf
+from curvestudio_reporting.meta import TOOL_NAME
 from curvestudio_reporting.pdf_report import (
     _WIDTH,
     DISCLAIMER_TEXT,
@@ -352,3 +353,44 @@ def test_diagnostics_notes_end_in_a_single_full_stop(
     assert notes, "a converged bundle carries diagnostics notes"
     assert ".." not in notes, "no doubled full stop where joined limitations end in one"
     assert notes.endswith(".")
+
+
+# -- the optional "Prepared by" byline --------------------------------------------------------
+
+
+@pytest.mark.parametrize("byline", [None, "", "   "], ids=["none", "empty", "blank"])
+def test_pdf_without_byline_has_none_and_keeps_the_tool_author(
+    poly_bundle: FitBundleFactory, tmp_path: Path, uncompressed: None, byline: str | None
+) -> None:
+    target = tmp_path / "fit.pdf"
+    fit_to_pdf(poly_bundle(), target, byline=byline)
+    data = target.read_bytes()
+    text = norm(pdf_text(data))
+    assert "Prepared by" not in text
+    assert "CurveStudio fit report generated_at" in text  # the table follows the title directly
+    assert f"/Author ({TOOL_NAME})".encode() in data
+
+
+def test_pdf_byline_prints_under_the_title_and_sets_the_author(
+    poly_bundle: FitBundleFactory, tmp_path: Path, uncompressed: None
+) -> None:
+    target = tmp_path / "fit.pdf"
+    identity = "<b>Amit Haridas</b> & Co"  # the identity text: user text, escaped, never markup
+    fit_to_pdf(poly_bundle(), target, byline=identity)
+    data = target.read_bytes()
+    text = norm(pdf_text(data))
+    shown = (
+        f"Prepared by {identity}"  # the renderer adds the words; the author is the identity alone
+    )
+    assert f"CurveStudio fit report {shown} generated_at" in text, "directly under the title"
+    assert f"/Author ({identity})".encode() in data
+
+
+def test_pdf_byline_strips_control_characters(
+    poly_bundle: FitBundleFactory, tmp_path: Path, uncompressed: None
+) -> None:
+    target = tmp_path / "fit.pdf"
+    fit_to_pdf(poly_bundle(), target, byline="Amit\x1b Haridas\x00")  # must not crash
+    text = norm(pdf_text(target.read_bytes()))
+    assert "CurveStudio fit report Prepared by Amit Haridas generated_at" in text
+    assert b"/Author (Amit Haridas)" in target.read_bytes()

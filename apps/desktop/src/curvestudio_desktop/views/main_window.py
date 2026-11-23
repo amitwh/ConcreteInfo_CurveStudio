@@ -6,6 +6,7 @@ axes, reset, export) delegate to PlotView. Nothing here computes anything.
 """
 
 from collections.abc import Callable, Sequence
+from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
@@ -36,7 +37,9 @@ from curvestudio_desktop.controllers.analysis_jobs import AutoFitLive
 from curvestudio_desktop.controllers.project import ProjectController
 from curvestudio_desktop.controllers.selection import SelectionController
 from curvestudio_desktop.jobs import JobHandle, JobRunner
+from curvestudio_desktop.profile import report_identity
 from curvestudio_desktop.theme import (
+    THEME_CHOICES,
     Preference,
     Scheme,
     apply_theme,
@@ -51,6 +54,7 @@ from curvestudio_desktop.views.fit_summary import model_identity
 from curvestudio_desktop.views.icons import app_icon, icon
 from curvestudio_desktop.views.import_dialog import ClipboardImportDialog, ImportDialog
 from curvestudio_desktop.views.plot_view import OverlayCurve, PlotView
+from curvestudio_desktop.views.preferences_dialog import PreferencesDialog
 from curvestudio_desktop.views.project_tree import ProjectDock, ProjectTree
 
 if TYPE_CHECKING:
@@ -69,11 +73,6 @@ _EXPANDED_PREFIX = "main_window/expanded/"
 _SHOW_TOP3_KEY = "view/showTop3"
 _COLLAPSED_EXTENT = 40
 _UNBOUNDED = 16777215  # QWIDGETSIZE_MAX
-_THEME_CHOICES: tuple[tuple[Preference, str], ...] = (
-    ("system", "&System"),
-    ("light", "&Light"),
-    ("dark", "&Dark"),
-)
 #: Where each panel belongs. View → Panels re-homes a panel here, so a panel that was
 #: floated, closed or docked into a neighbour's slot always comes back to its own place.
 _DOCK_HOME: dict[str, Qt.DockWidgetArea] = {
@@ -237,6 +236,11 @@ class MainWindow(QMainWindow):
         )
         self.action_undo.triggered.connect(lambda: self.controller.undo())
 
+        self.action_preferences = self._action(
+            "Preferences…", QKeySequence("Ctrl+,"), "Report byline and theme"
+        )
+        self.action_preferences.triggered.connect(self.open_preferences)
+
         self.action_log_x = self._action("&Log x-axis", None, "Logarithmic x-axis", checkable=True)
         self.action_log_x.toggled.connect(self.plot_view.set_log_x)
         self.action_log_y = self._action("Log &y-axis", None, "Logarithmic y-axis", checkable=True)
@@ -297,7 +301,7 @@ class MainWindow(QMainWindow):
         self._theme_group = QActionGroup(self)
         self._theme_group.setExclusive(True)
         self._theme_actions: dict[str, QAction] = {}
-        for preference, label in _THEME_CHOICES:
+        for preference, label in THEME_CHOICES:
             theme_action = self._action(label, None, f"Use the {preference} theme")
             theme_action.setCheckable(True)
             theme_action.setChecked(preference == self._theme_preference)
@@ -365,6 +369,8 @@ class MainWindow(QMainWindow):
 
         edit_menu = bar.addMenu("&Edit")
         edit_menu.addAction(self.action_undo)
+        edit_menu.addSeparator()
+        edit_menu.addAction(self.action_preferences)
 
         view_menu = bar.addMenu("&View")
         self._view_menu = view_menu
@@ -393,7 +399,7 @@ class MainWindow(QMainWindow):
         view_menu.addSeparator()
         view_menu.addAction(self.action_reset_layout)
         theme_menu = view_menu.addMenu("&Theme")
-        for preference, _label in _THEME_CHOICES:
+        for preference, _label in THEME_CHOICES:
             theme_menu.addAction(self._theme_actions[preference])
 
         self.help_menu = bar.addMenu("&Help")
@@ -1368,11 +1374,11 @@ class MainWindow(QMainWindow):
         )
         if target is None:
             return
+        # the byline is read here (QSettings stays on the GUI thread); the worker gets text
+        byline = report_identity(self._settings).byline()
         self._run_job(
             f"Exporting {target.name}",
-            exports.export_fit,
-            target,
-            bundle,
+            partial(exports.export_fit, target, bundle, byline=byline),
             on_result=lambda _done: self.statusBar().showMessage(f"Exported {target.name}"),
             on_error=lambda exc: self.controller.messenger.show_error("Export failed", str(exc)),
         )
@@ -1413,11 +1419,10 @@ class MainWindow(QMainWindow):
         )
         if target is None:
             return
+        byline = report_identity(self._settings).byline()
         self._run_job(
             f"Exporting {target.name}",
-            exports.export_publication_plot,
-            target,
-            bundle,
+            partial(exports.export_publication_plot, target, bundle, byline=byline),
             on_result=lambda _done: self.statusBar().showMessage(f"Exported {target.name}"),
             on_error=lambda exc: self.controller.messenger.show_error("Export failed", str(exc)),
         )
@@ -1449,6 +1454,15 @@ class MainWindow(QMainWindow):
         app = QApplication.instance()
         if app is not None:
             cast("QApplication", app).aboutQt()
+
+    def open_preferences(self) -> None:
+        """Edit → Preferences…: the report byline and the theme; OK applies the theme at once.
+
+        The dialog itself stores both. Re-applying the theme here (without storing it a
+        second time) repaints the window and moves the View → Theme check marks.
+        """
+        if PreferencesDialog(self, settings=self._settings).exec():
+            self.apply_theme_preference(theme_preference(self._settings), persist=False)
 
     def open_help(self, section: str | None = None) -> None:
         """Open (or reuse) the non-modal help browser, optionally at a named section."""

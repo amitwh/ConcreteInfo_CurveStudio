@@ -154,6 +154,7 @@ imported data as a formula.
 | New / Open / Save / Save as | Ctrl+N / Ctrl+O / Ctrl+S / Ctrl+Shift+S |
 | Import data / Import from clipboard | Ctrl+I / Ctrl+Shift+V |
 | Undo | Ctrl+Z |
+| Preferences… (report byline and theme) | Ctrl+, |
 | Reset view (fit the plot to the data) | Ctrl+R |
 | Details (full result of the selected row or active fit) | Ctrl+D |
 | Export plot | Ctrl+E |

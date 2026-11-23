@@ -488,6 +488,7 @@ export const HELP_SECTIONS: HelpSection[] = [
             [code("Ctrl+I"), " / ", code("Ctrl+Shift+V")],
           ],
           [["Undo"], [code("Ctrl+Z")]],
+          [["Preferences… (report byline and theme)"], [code("Ctrl+,")]],
           [["Reset view (fit the plot to the data)"], [code("Ctrl+R")]],
           [
             ["Details (full result of the selected row or active fit)"],

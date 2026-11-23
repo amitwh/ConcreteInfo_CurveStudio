@@ -443,6 +443,9 @@ QLabel#summaryMetricCaption {
 QLabel#summaryMetricValue {
     color: $heading;
 }
+QLabel#preferencesHint {
+    color: $muted;
+}
 QLabel#detailsMetrics {
     color: $text;
 }

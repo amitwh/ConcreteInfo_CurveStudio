@@ -13,6 +13,11 @@ Reports for a CurveStudio fit, rendered from a `curvestudio.workflow.FitBundle`:
   statistics tables, fit and residual figures, assumptions and limitations; a
   fit that did not converge gets a first-page red warning and no fit figure.
 
+`fit_to_xlsx` and `fit_to_pdf` also take an optional `byline`: the identity text
+alone (a name, an organisation, or both). "Prepared by <byline>" prints under the
+PDF's title, where the identity alone is also set as the author, and in the centre
+of every sheet's print header; without one both files are as they have always been.
+
 Text safety: every cell that could be read as a spreadsheet formula
 (`= + - @`, also behind leading whitespace) is neutralised with a leading
 apostrophe, XML-illegal control characters are stripped, and long strings are
