@@ -132,6 +132,16 @@ def compact_line() -> FitBundle:
     return fit_dataset(_xy(x, 2.0 * x + 1.0), LINE, compact=True)
 
 
+UNDERSCORED = FitSpec(model=CustomRef(equation="-k_1*exp(-k_2*x)", parameters=["k_1", "k_2"]))
+
+
+def underscored_xy() -> XY:
+    """Data for a decay whose parameters are named with an underscore."""
+    x = np.linspace(0.0, 4.0, 30)
+    y = -2.0 * np.exp(-0.5 * x) + np.random.default_rng(0).normal(0.0, 0.01, 30)
+    return _xy(x, y)
+
+
 # -- what it states -------------------------------------------------------------------------------
 
 
@@ -284,7 +294,9 @@ def test_the_interval_level_is_the_one_asked_for() -> None:
     clean = fit_dataset(quadratic_xy(), QUADRATIC)
     for style in STYLES:
         text = methods_text(clean, spec=QUADRATIC, style=style, level=0.99)
-        assert "99 % confidence intervals" in text.paragraph
+        assert (
+            "99 \\% confidence intervals" if style == "latex" else "99 % confidence intervals"
+        ) in text.paragraph
         assert ("99 \\%" if style == "latex" else "99 %") in text.table
     for level in (0.0, 1.0, 1.5, -0.5, math.nan):
         with pytest.raises(ToolError) as caught:
@@ -411,6 +423,27 @@ def test_every_number_in_the_methods_text_comes_from_the_result() -> None:
 # -- its form -------------------------------------------------------------------------------------
 
 
+LATEX_ESCAPES = (
+    (r"\textbackslash{}", "\\"),
+    (r"\textasciitilde{}", "~"),
+    (r"\textasciicircum{}", "^"),
+    (r"\%", "%"),
+    (r"\$", "$"),
+    (r"\#", "#"),
+    (r"\&", "&"),
+    (r"\_", "_"),
+    (r"\{", "{"),
+    (r"\}", "}"),
+)
+
+
+def _unescaped(text: str) -> str:
+    """``text`` with each escaped LaTeX character put back as it was written."""
+    for escaped, plain in LATEX_ESCAPES:
+        text = text.replace(escaped, plain)
+    return text
+
+
 def _spans(line: str) -> list[tuple[int, int]]:
     """Where each cell of a line of the text table starts and ends."""
     spans: list[tuple[int, int]] = []
@@ -439,6 +472,7 @@ def test_each_style_is_well_formed() -> None:
         (custom, CUSTOM_LINE),
         (without_uncertainty(custom), CUSTOM_LINE),
         (without_uncertainty(custom, which="all"), CUSTOM_LINE),
+        (fit_dataset(underscored_xy(), UNDERSCORED), UNDERSCORED),
     )
     for bundle, spec in cases:
         k = len(bundle.result.parameters)
@@ -457,6 +491,13 @@ def test_each_style_is_well_formed() -> None:
         assert markdown.paragraph == ordinary
 
         latex = methods_text(bundle, spec=spec, style="latex")
+        # the same text, escaped for LaTeX: a bare % would comment the rest of the line out,
+        # and an underscore in a name would not compile. The text writes "95 %"; LaTeX has
+        # it as "95 \%", which typesets the same.
+        assert ("95 \\%" in latex.paragraph) is ("95 %" in ordinary)
+        assert re.findall(r"(?<!\\)%", latex.paragraph) == []
+        assert "k\\_1" in latex.paragraph or "_" not in ordinary
+        assert _unescaped(latex.paragraph) == ordinary
         for block in (latex.table, latex.equation):
             assert block.count("{") == block.count("}")
             assert _environments_closed(block)
@@ -470,7 +511,6 @@ def test_each_style_is_well_formed() -> None:
         assert latex.equation.count(" &= ") == k + 1
         assert latex.equation.count(" \\\\\n") == k + 1
         assert ("\\pm" in latex.equation) is with_error
-        assert latex.paragraph == ordinary
 
         text = methods_text(bundle, spec=spec, style="text")
         lines = text.table.splitlines()
@@ -552,17 +592,15 @@ def test_the_same_fit_gives_the_same_text(scenarios) -> None:
 
 @pytest.mark.skipif(shutil.which("pdflatex") is None, reason="no TeX engine is installed")
 def test_the_latex_compiles(tmp_path: Path) -> None:
-    """What no check on shape can say: a TeX engine accepts the equation and the table.
+    """What no check on shape can say: a TeX engine accepts the paragraph, equation and table.
 
     A name with an underscore, a negative estimate, a value that could not be determined: each
-    is set in the wrong mode by a naive table, and only the compiler says so.
+    is set in the wrong mode by a naive table, and only the compiler says so. (A bare ``%`` in
+    a paragraph is not an error to the compiler, which is why that one is asserted directly.)
     """
-    x = np.linspace(0.0, 4.0, 30)
-    y = -2.0 * np.exp(-0.5 * x) + np.random.default_rng(0).normal(0.0, 0.01, 30)
-    underscored = FitSpec(model=CustomRef(equation="-k_1*exp(-k_2*x)", parameters=["k_1", "k_2"]))
     clean = fit_dataset(quadratic_xy(), QUADRATIC)
     cases = (
-        (fit_dataset(_xy(x, y), underscored), underscored),
+        (fit_dataset(underscored_xy(), UNDERSCORED), UNDERSCORED),
         (weighted_quadratic(), USED),
         (fit_dataset(growth_xy(), GROWTH), GROWTH),
         (without_uncertainty(clean), QUADRATIC),
@@ -571,7 +609,14 @@ def test_the_latex_compiles(tmp_path: Path) -> None:
     parts = [r"\documentclass{article}", r"\usepackage{amsmath,booktabs}", r"\begin{document}"]
     for bundle, spec in cases:
         text = methods_text(bundle, spec=spec, style="latex")
-        parts += [r"\begin{equation*}", text.equation, r"\end{equation*}", text.table]
+        parts += [
+            r"\par",
+            text.paragraph,
+            r"\begin{equation*}",
+            text.equation,
+            r"\end{equation*}",
+            text.table,
+        ]
     parts.append(r"\end{document}")
     (tmp_path / "methods.tex").write_text("\n".join(parts), encoding="utf-8")
 

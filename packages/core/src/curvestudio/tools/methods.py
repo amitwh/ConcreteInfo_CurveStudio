@@ -9,9 +9,9 @@ in ``missing``, each entry a code and a sentence.
 
 The module follows its seams: :mod:`._methods_numbers` names the model that was fitted and
 rounds its estimates; this module writes the paragraph, lays out the equation and the table
-in each style, and holds the public names. The paragraph is the same in every style. What
-only the author knows (the instrument, the sample size, the cleaning) is listed in
-``to_complete``, never written for them.
+in each style, and holds the public names. The paragraph is the same text in every style,
+escaped for LaTeX in that style. What only the author knows (the instrument, the sample
+size, the cleaning) is listed in ``to_complete``, never written for them.
 """
 
 from typing import Literal
@@ -81,14 +81,17 @@ _LATEX_TEXT = str.maketrans(
         "~": r"\textasciitilde{}",
     }
 )
-"""Escapes that let an equation written in the core's syntax stand as LaTeX text."""
+"""Escapes for the characters LaTeX reserves (a bare ``%`` comments out the rest of a
+line, an underscore outside mathematics does not compile), so that a sentence, or an
+equation written in the core's syntax, stands in LaTeX text."""
 
 
 class MethodsText(BaseModel):
     """The methods text of one fit, in one style.
 
-    ``paragraph`` states what was fitted and how. ``equation`` and ``table`` give the
-    estimates with their standard errors and confidence intervals. ``citation_curvestudio``
+    ``paragraph`` states what was fitted and how: the same text in every style, escaped for
+    LaTeX in the ``latex`` style. ``equation`` and ``table`` give the estimates with their
+    standard errors and confidence intervals. ``citation_curvestudio``
     cites the software and ``citation_model`` the model's sources, one per string.
     ``to_complete`` lists what only the author can write, and ``missing`` what the text needed
     and did not get: each entry is a code, a colon and a sentence.
@@ -425,7 +428,8 @@ def methods_text(
             without it the text relies on what the result records and lists ``NO_SPEC`` in
             ``missing``.
         style: ``"text"`` (plain lines), ``"markdown"`` or ``"latex"`` for the equation and
-            the table. The paragraph is the same in every style. In LaTeX the equation is an
+            the table. The paragraph is the same text in every style, escaped for LaTeX in
+            that style. In LaTeX the equation is an
             ``aligned`` block that belongs inside a math environment, and the table a
             ``tabular`` with ``booktabs`` rules (``amsmath`` and ``booktabs`` are needed).
         level: the confidence level of the intervals the fit's parameters carry, stated in the
@@ -458,6 +462,8 @@ def methods_text(
     missing = _Missing()
     percent = f"{100.0 * level:.6g}"
     paragraph, version = _paragraph(bundle, result, model, spec, shown, percent, missing)
+    if style == "latex":
+        paragraph = paragraph.translate(_LATEX_TEXT)
     return MethodsText(
         paragraph=paragraph,
         equation=_equation(result, model, shown, style),
