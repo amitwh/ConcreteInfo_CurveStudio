@@ -533,7 +533,7 @@ export interface paths {
         };
         /**
          * Me
-         * @description The signed-in user with the resolved plan's limits and what the user has used so far.
+         * @description The signed-in user: profile, preferences, the resolved plan's limits and usage so far.
          */
         get: operations["me_api_v1_me_get"];
         put?: never;
@@ -542,11 +542,81 @@ export interface paths {
          * Delete Me
          * @description Delete the account and everything in it.
          *
-         *     Datasets, fits, jobs and refresh tokens are removed (running jobs are stopped first). The
-         *     audit trail is kept but anonymised: ``audit_logs.user_id`` is set to NULL, the one change
-         *     the append-only trigger allows. A final ``user.delete`` row records that it happened.
+         *     The body must carry the part of the e-mail address before the ``@``; without it, or with
+         *     the wrong words, nothing is deleted, revoked or cancelled. Datasets, fits, jobs and refresh
+         *     tokens are removed (running jobs are stopped first). The audit trail is kept but
+         *     anonymised: ``audit_logs.user_id`` is set to NULL, the one change the append-only trigger
+         *     allows. A final ``user.delete`` row records that it happened.
          */
         delete: operations["delete_me_api_v1_me_delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Update Me
+         * @description Change the displayed name. The name the account already has writes nothing.
+         */
+        patch: operations["update_me_api_v1_me_patch"];
+        trace?: never;
+    };
+    "/api/v1/me/password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Change Password
+         * @description Set a new password and sign out every other session.
+         *
+         *     The current password must be given. The session whose refresh token is presented is the
+         *     one that stays signed in. A wrong current password is refused and audited under the same
+         *     daily cap as failed sign-ins.
+         */
+        post: operations["change_password_api_v1_me_password_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/preferences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Update Preferences
+         * @description Change one or both preferences; the ones not named keep their value.
+         */
+        put: operations["update_preferences_api_v1_me_preferences_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/sessions/revoke-all": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Revoke All Sessions
+         * @description Sign out every other session; the one holding ``refresh_token`` stays signed in.
+         */
+        post: operations["revoke_all_sessions_api_v1_me_sessions_revoke_all_post"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1175,6 +1245,14 @@ export interface components {
             y_column: string;
         };
         /**
+         * DeleteMeIn
+         * @description Deleting the account is confirmed by typing the part of the address before the ``@``.
+         */
+        DeleteMeIn: {
+            /** Confirm */
+            confirm: string;
+        };
+        /**
          * DiagnosticTest
          * @description One statistical test applied to the residuals of a fit.
          *
@@ -1576,10 +1654,23 @@ export interface components {
              * Format: uuid
              */
             id: string;
+            /** Last Login At */
+            last_login_at: string | null;
             /** Name */
             name: string;
             plan: components["schemas"]["PlanOut"];
+            preferences: components["schemas"]["PreferencesOut"];
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "member" | "admin";
             usage: components["schemas"]["UsageOut"];
+        };
+        /** MeUpdateIn */
+        MeUpdateIn: {
+            /** Name */
+            name: string;
         };
         /** MessageOut */
         MessageOut: {
@@ -1725,6 +1816,26 @@ export interface components {
             /** Upper */
             upper: number | null;
         };
+        /**
+         * PasswordChangeIn
+         * @description The current password proves who is asking; ``refresh_token`` names the one session
+         *     that stays signed in once the password has changed. The policy on ``new_password`` runs
+         *     in the handler, where the address is known.
+         */
+        PasswordChangeIn: {
+            /**
+             * Current Password
+             * Format: password
+             */
+            current_password: string;
+            /**
+             * New Password
+             * Format: password
+             */
+            new_password: string;
+            /** Refresh Token */
+            refresh_token: string;
+        };
         /** PlanOut */
         PlanOut: {
             /** Max Dataset Bytes */
@@ -1796,6 +1907,23 @@ export interface components {
             x: (number | null)[];
             /** Y */
             y: (number | null)[];
+        };
+        /** PreferencesOut */
+        PreferencesOut: {
+            /** Error Reports */
+            error_reports: boolean;
+            /** Report Byline */
+            report_byline: boolean;
+        };
+        /**
+         * PreferencesUpdateIn
+         * @description The preferences to change; a key that is not named keeps its value.
+         */
+        PreferencesUpdateIn: {
+            /** Error Reports */
+            error_reports?: boolean | null;
+            /** Report Byline */
+            report_byline?: boolean | null;
         };
         /**
          * ProgressOut
@@ -3133,7 +3261,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeleteMeIn"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             204: {
@@ -3141,6 +3273,147 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_me_api_v1_me_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MeUpdateIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    change_password_api_v1_me_password_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordChangeIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_preferences_api_v1_me_preferences_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PreferencesUpdateIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_all_sessions_api_v1_me_sessions_revoke_all_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RefreshIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
             };
         };
     };

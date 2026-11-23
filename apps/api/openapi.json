@@ -1181,6 +1181,21 @@
         "title": "DatasetOut",
         "type": "object"
       },
+      "DeleteMeIn": {
+        "additionalProperties": false,
+        "description": "Deleting the account is confirmed by typing the part of the address before the ``@``.",
+        "properties": {
+          "confirm": {
+            "title": "Confirm",
+            "type": "string"
+          }
+        },
+        "required": [
+          "confirm"
+        ],
+        "title": "DeleteMeIn",
+        "type": "object"
+      },
       "DiagnosticTest": {
         "additionalProperties": false,
         "description": "One statistical test applied to the residuals of a fit.\n\n``statistic``, ``p_value`` and ``df`` are ``None`` when the test does not produce them:\na test that does not apply, or a statistic-only test such as the Durbin-Watson.\n``status`` is ``\"ok\"`` when the test was computed and ``\"not_applicable\"`` when the\ndata cannot support it; ``reason`` then says why.  ``reason`` may also carry a note on\nhow a test was computed (a clamped lag, for instance) while ``status`` is ``\"ok\"``.\n\n``null_hypothesis`` states what the test assumes, ``assumptions`` what it needs for\nthe result to mean anything and ``limitations`` what it cannot show.  ``note`` is the\nsame on every result.",
@@ -2208,12 +2223,34 @@
             "title": "Id",
             "type": "string"
           },
+          "last_login_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Login At"
+          },
           "name": {
             "title": "Name",
             "type": "string"
           },
           "plan": {
             "$ref": "#/components/schemas/PlanOut"
+          },
+          "preferences": {
+            "$ref": "#/components/schemas/PreferencesOut"
+          },
+          "role": {
+            "enum": [
+              "member",
+              "admin"
+            ],
+            "title": "Role",
+            "type": "string"
           },
           "usage": {
             "$ref": "#/components/schemas/UsageOut"
@@ -2225,10 +2262,27 @@
           "name",
           "created_at",
           "email_verified",
+          "role",
+          "preferences",
+          "last_login_at",
           "plan",
           "usage"
         ],
         "title": "MeOut",
+        "type": "object"
+      },
+      "MeUpdateIn": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "MeUpdateIn",
         "type": "object"
       },
       "MessageOut": {
@@ -2574,6 +2628,41 @@
         "title": "ParameterInfo",
         "type": "object"
       },
+      "PasswordChangeIn": {
+        "additionalProperties": false,
+        "description": "The current password proves who is asking; ``refresh_token`` names the one session\nthat stays signed in once the password has changed. The policy on ``new_password`` runs\nin the handler, where the address is known.",
+        "properties": {
+          "current_password": {
+            "format": "password",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Current Password",
+            "type": "string",
+            "writeOnly": true
+          },
+          "new_password": {
+            "format": "password",
+            "maxLength": 128,
+            "minLength": 10,
+            "title": "New Password",
+            "type": "string",
+            "writeOnly": true
+          },
+          "refresh_token": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Refresh Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "current_password",
+          "new_password",
+          "refresh_token"
+        ],
+        "title": "PasswordChangeIn",
+        "type": "object"
+      },
       "PlanOut": {
         "properties": {
           "max_dataset_bytes": {
@@ -2826,6 +2915,54 @@
           "band_reason"
         ],
         "title": "Prediction",
+        "type": "object"
+      },
+      "PreferencesOut": {
+        "properties": {
+          "error_reports": {
+            "title": "Error Reports",
+            "type": "boolean"
+          },
+          "report_byline": {
+            "title": "Report Byline",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "error_reports",
+          "report_byline"
+        ],
+        "title": "PreferencesOut",
+        "type": "object"
+      },
+      "PreferencesUpdateIn": {
+        "additionalProperties": false,
+        "description": "The preferences to change; a key that is not named keeps its value.",
+        "properties": {
+          "error_reports": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Reports"
+          },
+          "report_byline": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Report Byline"
+          }
+        },
+        "title": "PreferencesUpdateIn",
         "type": "object"
       },
       "ProgressOut": {
@@ -5091,11 +5228,31 @@
     },
     "/api/v1/me": {
       "delete": {
-        "description": "Delete the account and everything in it.\n\nDatasets, fits, jobs and refresh tokens are removed (running jobs are stopped first). The\naudit trail is kept but anonymised: ``audit_logs.user_id`` is set to NULL, the one change\nthe append-only trigger allows. A final ``user.delete`` row records that it happened.",
+        "description": "Delete the account and everything in it.\n\nThe body must carry the part of the e-mail address before the ``@``; without it, or with\nthe wrong words, nothing is deleted, revoked or cancelled. Datasets, fits, jobs and refresh\ntokens are removed (running jobs are stopped first). The audit trail is kept but\nanonymised: ``audit_logs.user_id`` is set to NULL, the one change the append-only trigger\nallows. A final ``user.delete`` row records that it happened.",
         "operationId": "delete_me_api_v1_me_delete",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeleteMeIn"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "204": {
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "security": [
@@ -5109,7 +5266,7 @@
         ]
       },
       "get": {
-        "description": "The signed-in user with the resolved plan's limits and what the user has used so far.",
+        "description": "The signed-in user: profile, preferences, the resolved plan's limits and usage so far.",
         "operationId": "me_api_v1_me_get",
         "responses": {
           "200": {
@@ -5129,6 +5286,192 @@
           }
         ],
         "summary": "Me",
+        "tags": [
+          "auth"
+        ]
+      },
+      "patch": {
+        "description": "Change the displayed name. The name the account already has writes nothing.",
+        "operationId": "update_me_api_v1_me_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MeUpdateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Me",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/me/password": {
+      "post": {
+        "description": "Set a new password and sign out every other session.\n\nThe current password must be given. The session whose refresh token is presented is the\none that stays signed in. A wrong current password is refused and audited under the same\ndaily cap as failed sign-ins.",
+        "operationId": "change_password_api_v1_me_password_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordChangeIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Change Password",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/me/preferences": {
+      "put": {
+        "description": "Change one or both preferences; the ones not named keep their value.",
+        "operationId": "update_preferences_api_v1_me_preferences_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreferencesUpdateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Preferences",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/me/sessions/revoke-all": {
+      "post": {
+        "description": "Sign out every other session; the one holding ``refresh_token`` stays signed in.",
+        "operationId": "revoke_all_sessions_api_v1_me_sessions_revoke_all_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Revoke All Sessions",
         "tags": [
           "auth"
         ]

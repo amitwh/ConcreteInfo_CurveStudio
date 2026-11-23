@@ -130,6 +130,53 @@ class ResetPasswordIn(_Body):
         return _secret_utf8(value)
 
 
+class MeUpdateIn(_Body):
+    name: str
+
+    @field_validator("name")
+    @classmethod
+    def _name_text(cls, value: str) -> str:
+        """Surrounding spaces are dropped; what is left must be 1 to 100 characters."""
+        value = _require_utf8(value).strip()
+        if not 1 <= len(value) <= 100:
+            raise ValueError("the name must be between 1 and 100 characters")
+        return value
+
+
+class PreferencesUpdateIn(_Body):
+    """The preferences to change; a key that is not named keeps its value."""
+
+    error_reports: bool | None = None
+    report_byline: bool | None = None
+
+    @model_validator(mode="after")
+    def _names_a_preference(self) -> PreferencesUpdateIn:
+        if self.error_reports is None and self.report_byline is None:
+            raise ValueError("at least one preference is required")
+        return self
+
+
+class PasswordChangeIn(_Body):
+    """The current password proves who is asking; ``refresh_token`` names the one session
+    that stays signed in once the password has changed. The policy on ``new_password`` runs
+    in the handler, where the address is known."""
+
+    current_password: SecretStr = Field(min_length=1, max_length=128)
+    new_password: SecretStr = Field(min_length=10, max_length=128)
+    refresh_token: str = Field(min_length=1, max_length=512)
+
+    @field_validator("current_password", "new_password")
+    @classmethod
+    def _password_text(cls, value: SecretStr) -> SecretStr:
+        return _secret_utf8(value)
+
+
+class DeleteMeIn(_Body):
+    """Deleting the account is confirmed by typing the part of the address before the ``@``."""
+
+    confirm: str
+
+
 class EmailVerificationOut(BaseModel):
     email: str
     verified: bool
@@ -160,7 +207,15 @@ class UsageOut(BaseModel):
     fits: int
 
 
+class PreferencesOut(BaseModel):
+    error_reports: bool
+    report_byline: bool
+
+
 class MeOut(UserOut):
+    role: Literal["member", "admin"]
+    preferences: PreferencesOut
+    last_login_at: IstDatetime | None
     plan: PlanOut
     usage: UsageOut
 

@@ -193,6 +193,31 @@ def _audit_failed_login(ctx: Ctx, db: Session, user: User | None, email: str, ip
     )
 
 
+def audit_failed_password_check(ctx: Ctx, db: Session, user: User, ip: str) -> None:
+    """Audit a refused current-password check (the change-password endpoint).
+
+    It draws on the same daily budget as failed sign-ins for that account and address, so a
+    guessing run that alternates the two endpoints still leaves at most
+    ``FAILED_LOGIN_ROWS_PER_DAY`` rows and one ``auth.password_check_failed_capped`` marker.
+    """
+    digest = _email_digest(user.email)
+    count = ctx.failed_logins.hit(f"{digest}|{ip}")
+    if count > FAILED_LOGIN_ROWS_PER_DAY + 1:
+        return
+    action = (
+        "auth.password_check_failed"
+        if count <= FAILED_LOGIN_ROWS_PER_DAY
+        else "auth.password_check_failed_capped"
+    )
+    audit.record(
+        db,
+        action,
+        "user",
+        user_id=user.id,
+        detail={"email_digest": digest, "ip_digest": _email_digest(ip)},
+    )
+
+
 @router.post("/register", status_code=201, response_model=UserOut)
 def register(
     body: RegisterIn, request: Request, background: BackgroundTasks, ctx: Ctx, db: Db

@@ -263,6 +263,17 @@ def test_cors_is_an_explicit_allowlist(
         headers={"Origin": "https://app.example.org", "Access-Control-Request-Method": "GET"},
     )
     assert allowed.headers["access-control-allow-origin"] == "https://app.example.org"
+    # the profile endpoints' methods pass a preflight: each is named in the allowed methods
+    for method, path in (("PATCH", f"{API}/me"), ("PUT", f"{API}/me/preferences")):
+        preflight = client.options(
+            path,
+            headers={
+                "Origin": "https://app.example.org",
+                "Access-Control-Request-Method": method,
+            },
+        )
+        assert preflight.status_code == 200, method
+        assert method in preflight.headers["access-control-allow-methods"]
     denied = client.get(f"{API}/health", headers={"Origin": "https://evil.example"})
     assert "access-control-allow-origin" not in denied.headers
     same_origin = client_factory().get(

@@ -282,7 +282,9 @@ def test_delete_me_erases_the_account_and_anonymises_the_audit_trail(
     client_factory: Callable[..., TestClient],
 ) -> None:
     client = client_factory()
-    victim, bystander = signup(client), signup(client)
+    victim_email, bystander_email = new_email(), new_email()
+    victim, bystander = signup(client, victim_email), signup(client, bystander_email)
+    typed = {"confirm": victim_email.split("@", 1)[0]}
     victim_id = uuid.UUID(client.get(f"{API}/me", headers=victim).json()["id"])
     bystander_id = uuid.UUID(client.get(f"{API}/me", headers=bystander).json()["id"])
     mine = upload(client, victim, linear_csv()).json()
@@ -312,7 +314,7 @@ def test_delete_me_erases_the_account_and_anonymises_the_audit_trail(
         before = len(db.scalars(select(AuditLog).where(AuditLog.user_id == victim_id)).all())
     assert before >= 3  # register, login, dataset.create
 
-    assert client.delete(f"{API}/me", headers=victim).status_code == 204
+    assert client.request("DELETE", f"{API}/me", headers=victim, json=typed).status_code == 204
 
     # the account and everything in it are gone
     assert client.get(f"{API}/me", headers=victim).status_code == 401
@@ -348,7 +350,8 @@ def test_delete_me_stops_running_jobs(
     import api_job_workers
 
     client = client_factory(job_worker=api_job_workers.sleeping_worker)
-    headers = signup(client)
+    email = new_email()
+    headers = signup(client, email)
     dataset: dict[str, Any] = upload(client, headers, linear_csv()).json()
     job = client.post(
         f"{API}/datasets/{dataset['id']}/fits",
@@ -359,7 +362,8 @@ def test_delete_me_stops_running_jobs(
     while client.get(f"{API}/jobs/{job}", headers=headers).json()["status"] != "running":
         assert time.monotonic() < deadline
         time.sleep(0.05)
-    assert client.delete(f"{API}/me", headers=headers).status_code == 204
+    typed = {"confirm": email.split("@", 1)[0]}
+    assert client.request("DELETE", f"{API}/me", headers=headers, json=typed).status_code == 204
     import multiprocessing
 
     deadline = time.monotonic() + 10
