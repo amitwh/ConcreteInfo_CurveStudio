@@ -2,9 +2,10 @@
  * Routes and the application shell.
  *
  * Signed in, everything lives under one splat route so the workspace stays mounted while
- * Help or About is open — those two open as overlays over the workspace, and their URLs
- * still work for deep links and the back button. Signed out, Help and About stay ordinary
- * pages behind a slim brand header.
+ * Help, About or the profile is open — those three open as overlays over the workspace,
+ * and their URLs still work for deep links and the back button. Signed out, Help and About
+ * stay ordinary pages behind a slim brand header (the profile needs a session, so a
+ * visitor who opens its URL lands on the home page).
  *
  * Workspaces (the named tabs under the header) are held here: each remembers the dataset
  * it shows and its analysis mode, so switching tabs returns to exactly where you were.
@@ -13,7 +14,7 @@
 import { useCallback, useEffect, useState, type ReactElement } from "react";
 import { Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "./api/auth";
-import { AppNav } from "./components/AppNav";
+import { AppNav, type Overlay } from "./components/AppNav";
 import { Modal } from "./components/Modal";
 import { Loading } from "./components/States";
 import { ThemeProvider } from "./components/ThemeToggle";
@@ -22,6 +23,7 @@ import { HelpPage } from "./pages/HelpPage";
 import { ForgotPasswordPage } from "./pages/ForgotPasswordPage";
 import { HomePage } from "./pages/HomePage";
 import { OAuthCallbackPage } from "./pages/OAuthCallbackPage";
+import { ProfilePage } from "./pages/ProfilePage";
 import { RegisterPage } from "./pages/RegisterPage";
 import { ResetPasswordPage } from "./pages/ResetPasswordPage";
 import { VerifyEmailPage } from "./pages/VerifyEmailPage";
@@ -37,10 +39,11 @@ import {
   updateWorkspace,
 } from "./workspace/workspaces";
 
-/** Which overlay the URL asks for (Help and About are overlays over the workspace). */
-export function overlayFor(pathname: string): "help" | "about" | null {
+/** Which overlay the URL asks for (Help, About and the profile open over the workspace). */
+export function overlayFor(pathname: string): Overlay {
   if (pathname === "/help") return "help";
   if (pathname === "/about") return "about";
+  if (pathname === "/profile") return "profile";
   return null;
 }
 
@@ -135,6 +138,11 @@ export function AuthenticatedApp(): ReactElement {
           <AboutPage />
         </Modal>
       )}
+      {overlay === "profile" && (
+        <Modal title="Your profile" variant="sheet" onClose={closeOverlay}>
+          <ProfilePage />
+        </Modal>
+      )}
     </>
   );
 }
@@ -148,7 +156,7 @@ export default function App(): ReactElement {
           <Loading label="Restoring session…" />
         ) : status === "authed" ? (
           <Routes>
-            {/* One splat route: navigating to /help or /about must not remount the workspace. */}
+            {/* One splat route: opening /help, /about or /profile must not remount the workspace. */}
             <Route path="*" element={<AuthenticatedApp />} />
           </Routes>
         ) : (

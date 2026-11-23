@@ -27,6 +27,7 @@ vi.mock("./pages/WorkspacePage", () => ({
 }));
 vi.mock("./pages/HelpPage", () => ({ HelpPage: () => <p>Help body</p> }));
 vi.mock("./pages/AboutPage", () => ({ AboutPage: () => <p>About body</p> }));
+vi.mock("./pages/ProfilePage", () => ({ ProfilePage: () => <p>Profile body</p> }));
 
 afterEach(cleanup);
 
@@ -39,9 +40,10 @@ function renderApp(path = "/"): void {
 }
 
 describe("overlayFor", () => {
-  it("maps the two documentation URLs to their overlays and everything else to none", () => {
+  it("maps the overlay URLs to their overlays and everything else to none", () => {
     expect(overlayFor("/help")).toBe("help");
     expect(overlayFor("/about")).toBe("about");
+    expect(overlayFor("/profile")).toBe("profile");
     expect(overlayFor("/")).toBeNull();
     expect(overlayFor("/anything")).toBeNull();
   });
@@ -72,6 +74,25 @@ describe("App shell", () => {
     await user.click(screen.getByRole("button", { name: "Close" }));
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(screen.getByTestId("workspace")).toBeTruthy();
+  });
+
+  it("opens the profile over the workspace without unmounting it", async () => {
+    const user = userEvent.setup();
+    renderApp("/profile");
+    const dialog = screen.getByRole("dialog", { name: "Your profile" });
+    expect(dialog.className).toContain("modal__panel--sheet");
+    expect(screen.getByText("Profile body")).toBeTruthy();
+    // the main interface is still there, underneath the overlay
+    expect(screen.getByTestId("workspace")).toBeTruthy();
+    // an overlay is open, so the Workspace link is no longer the current page
+    expect(screen.getByRole("link", { name: "Workspace" }).getAttribute("aria-current")).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByTestId("workspace")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Workspace" }).getAttribute("aria-current")).toBe(
+      "page",
+    );
   });
 
   it("shows the workspace tabs and starts a second workspace", async () => {

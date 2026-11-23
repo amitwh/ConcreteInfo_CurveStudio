@@ -35,6 +35,9 @@
   --warning-text: #6c4a00;
   --danger: #b42318;
   --danger-weak: rgba(180, 35, 24, 0.08);
+  /* A danger button filled with colour (the confirm button of a destructive dialog). */
+  --danger-solid: #b42318;
+  --danger-solid-hover: #8f1d13;
   --info: hsl(199, 89%, 48%);
   --focus: #e5461f;
 
@@ -68,6 +71,9 @@ html[data-theme="dark"] {
   --warning-text: #e8c56a;
   --danger: #f2b8b5;
   --danger-weak: rgba(242, 184, 181, 0.12);
+  /* --danger is a light text colour here; the filled button needs one white text sits on. */
+  --danger-solid: #c13a27;
+  --danger-solid-hover: #a93220;
   --info: hsl(199, 89%, 60%);
   --shadow: none;
 }
@@ -256,6 +262,13 @@ html[data-theme="dark"] .app-header {
   min-width: 0;
 }
 
+/* The account chip opens the account menu, so it is a button: the avatar, then the name
+   over the e-mail (the e-mail alone when the account has no name). */
+.account-wrap {
+  position: relative;
+  flex: none;
+}
+
 .account {
   display: inline-flex;
   align-items: center;
@@ -265,6 +278,15 @@ html[data-theme="dark"] .app-header {
   border: 1px solid var(--border);
   border-radius: 999px;
   background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.account:hover,
+.account[aria-expanded="true"] {
+  border-color: var(--accent);
 }
 
 .account__avatar {
@@ -281,10 +303,101 @@ html[data-theme="dark"] .app-header {
   text-transform: uppercase;
 }
 
+.account__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.15;
+}
+
+.account__name {
+  color: var(--heading);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
 .account__email {
   color: var(--muted);
-  font-size: 0.8rem;
+  font-size: 0.72rem;
   min-width: 0;
+}
+
+.account__chevron {
+  flex: none;
+  width: 0.9rem;
+  height: 0.9rem;
+  color: var(--muted);
+  transition: transform 150ms ease;
+}
+
+.account[aria-expanded="true"] .account__chevron {
+  transform: rotate(180deg);
+}
+
+/* The account menu: the account as a header, then Profile and Sign out. */
+.account-menu {
+  position: absolute;
+  top: calc(100% + 0.4rem);
+  right: 0;
+  z-index: 30;
+  min-width: 15rem;
+  max-width: calc(100vw - 1rem);
+  padding: 0.35rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 12px 32px rgba(13, 11, 9, 0.18);
+}
+
+.account-menu__header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.05rem;
+  margin: 0;
+  padding: 0.45rem 0.6rem 0.5rem;
+  border-bottom: 1px solid var(--border);
+  overflow-wrap: anywhere;
+}
+
+.account-menu__name {
+  color: var(--heading);
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.account-menu__email {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.account-menu__item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  margin-top: 0.15rem;
+  padding: 0.45rem 0.6rem;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.88rem;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.account-menu__item .icon {
+  width: 1rem;
+  height: 1rem;
+  opacity: 0.8;
+}
+
+.account-menu__item:hover,
+.account-menu__item:focus-visible {
+  background: var(--accent-weak);
+  color: var(--accent-dark);
 }
 
 .btn--install .btn__label {
@@ -600,6 +713,19 @@ textarea {
 .btn--danger {
   border-color: var(--danger);
   color: var(--danger);
+}
+
+/* The filled danger button: for the one action in a dialog that cannot be taken back. */
+.btn--danger-solid {
+  background: var(--danger-solid);
+  border-color: var(--danger-solid);
+  color: #fff;
+}
+
+.btn--danger-solid:hover:not(:disabled) {
+  background: var(--danger-solid-hover);
+  border-color: var(--danger-solid-hover);
+  color: #fff;
 }
 
 .btn--small {
@@ -2212,6 +2338,194 @@ html[data-theme="dark"] .about-logo {
   width: auto;
 }
 
+/* -- profile (the /profile overlay) ------------------------------------------------------ */
+
+/* The sheet is wide; the profile reads best as one centred column. */
+.modal__panel--sheet .profile-page {
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: 0.5rem 0.25rem 2rem;
+}
+
+.profile-section {
+  padding: 0.9rem 0 1.1rem;
+  border-top: 1px solid var(--border);
+}
+
+.profile-section:first-child {
+  padding-top: 0.25rem;
+  border-top: 0;
+}
+
+.profile-section h3 {
+  margin: 0 0 0.6rem;
+  font-size: 1rem;
+}
+
+.profile-section p {
+  margin: 0.4rem 0;
+}
+
+.profile-facts {
+  display: grid;
+  margin: 0 0 0.6rem;
+}
+
+.profile-facts > div {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.6rem;
+}
+
+.profile-facts dt {
+  min-width: 4.5rem;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.profile-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.profile-verify {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem 0.6rem;
+}
+
+.profile-form {
+  display: grid;
+  gap: 0.6rem;
+  max-width: 26rem;
+  margin-top: 0.9rem;
+  padding-top: 0.9rem;
+  border-top: 1px dashed var(--border);
+}
+
+.profile-form .field {
+  margin-bottom: 0;
+}
+
+.profile-form .hint {
+  margin: 0;
+}
+
+.profile-form > .btn {
+  justify-self: start;
+}
+
+.profile-plan {
+  margin: 0 0 0.6rem;
+}
+
+/* -- meters (plan usage) ----------------------------------------------------------------- */
+
+/* Four meters: two by two in the sheet's column, one per row on a narrow screen. */
+.meters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
+  gap: 0.8rem 1.6rem;
+}
+
+.meter__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.6rem;
+  font-size: 0.86rem;
+}
+
+.meter__label {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.meter__track {
+  height: 0.45rem;
+  margin-top: 0.3rem;
+  border-radius: 999px;
+  background: var(--border);
+  overflow: hidden;
+}
+
+.meter__fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 200ms ease;
+}
+
+.meter__fill--over {
+  background: var(--danger);
+}
+
+.meter__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+/* -- switch ------------------------------------------------------------------------------ */
+
+.switch-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.switch-row__label {
+  font-size: 0.92rem;
+}
+
+.switch {
+  position: relative;
+  flex: none;
+  width: 2.4rem;
+  height: 1.35rem;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--border);
+  cursor: pointer;
+  transition: background-color 150ms ease, border-color 150ms ease;
+}
+
+.switch__knob {
+  position: absolute;
+  top: 0.12rem;
+  left: 0.12rem;
+  width: calc(1.11rem - 2px);
+  height: calc(1.11rem - 2px);
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(13, 11, 9, 0.25);
+  transition: transform 150ms ease;
+}
+
+.switch[aria-checked="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.switch[aria-checked="true"] .switch__knob {
+  transform: translateX(calc(2.4rem - 1.35rem));
+}
+
+/* -- confirmation dialog ----------------------------------------------------------------- */
+
+.confirm__message {
+  font-size: 0.95rem;
+}
+
 /* -- mobile and touch -------------------------------------------------------------------- */
 
 @media (max-width: 900px) {
@@ -2319,9 +2633,17 @@ html[data-theme="dark"] .about-logo {
     padding: 0 0.5rem;
   }
 
-  /* The avatar chip is the first thing to go: sign-out stays reachable. */
-  .account {
+  /* The chip is the only way to the profile and to sign-out, so it stays and shrinks to
+     the avatar; the accessible name still carries the account. */
+  .account__text,
+  .account__chevron {
     display: none;
+  }
+
+  .account {
+    max-width: none;
+    padding: 0.18rem;
+    border-radius: 50%;
   }
 }
 

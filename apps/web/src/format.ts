@@ -36,6 +36,27 @@ export function fmtInt(value: number | null | undefined): string {
   return value.toLocaleString("en-IN", { maximumFractionDigits: 0 });
 }
 
+const BYTE_UNITS = ["B", "KB", "MB", "GB", "TB"] as const;
+
+/**
+ * A byte count in the largest unit that keeps it under 1000 ("512 KB", "20 MB", "1.5 GB"),
+ * at most one decimal, "n/a" when not defined. Decimal units, as everywhere else in the
+ * app: the upload limit is 20 MB = 20,000,000 bytes.
+ */
+export function fmtBytes(value: number | null | undefined): string {
+  if (!isDefined(value)) return NA;
+  let size = Math.max(value, 0);
+  let unit = 0;
+  // Bytes are whole numbers; from KB up, 999.95 would print as "1,000", so it is the next unit.
+  while (unit < BYTE_UNITS.length - 1 && size >= (unit === 0 ? 1000 : 999.95)) {
+    size /= 1000;
+    unit += 1;
+  }
+  const digits = unit === 0 ? 0 : 1;
+  const number = size.toLocaleString("en-IN", { maximumFractionDigits: digits });
+  return `${number} ${BYTE_UNITS[unit] ?? "B"}`;
+}
+
 /** p-values: fixed decimals until 1e-4, exponential below; "n/a" when not defined. */
 export function fmtPValue(value: number | null | undefined): string {
   if (!isDefined(value)) return NA;

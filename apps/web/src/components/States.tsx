@@ -24,6 +24,22 @@ export function errorText(error: unknown, fallback = "something went wrong"): st
   return fallback;
 }
 
+/**
+ * The message for a refused request. Every API 422 carries the same generic message
+ * ("the request is not valid"); the reason is the first entry of `detail.errors`, so that
+ * is what a 422 shows. Any other error reads like `errorText`.
+ */
+export function apiErrorText(error: unknown, fallback = "something went wrong"): string {
+  if (error instanceof ApiError && error.status === 422) {
+    const errors = (error.detail as { errors?: unknown } | null)?.errors;
+    if (Array.isArray(errors)) {
+      const first = errors[0] as { msg?: unknown } | undefined;
+      if (typeof first?.msg === "string" && first.msg !== "") return first.msg;
+    }
+  }
+  return errorText(error, fallback);
+}
+
 export function ErrorBox({ error }: { error: unknown }): ReactNode {
   return (
     <p className="alert alert--error" role="alert">

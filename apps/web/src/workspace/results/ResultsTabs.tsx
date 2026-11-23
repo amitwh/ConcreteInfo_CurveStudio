@@ -5,6 +5,7 @@
  */
 
 import { useState, type ReactElement } from "react";
+import { useAuth } from "../../api/auth";
 import type { FitBundle, FitSummaryOut } from "../../api/client";
 import { exportFitPdf } from "../../lib/report/export";
 import { isConverged } from "../traces";
@@ -51,6 +52,7 @@ export function ResultsTabs({
   const [tab, setTab] = useState<TabName>("Parameters");
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+  const { user } = useAuth();
   const status = bundle.result.status;
   const failed = !isConverged(bundle);
   const heading = FAILURE_HEADING[status] ?? `The fit ${status}`;
@@ -67,8 +69,13 @@ export function ResultsTabs({
         chartImage = null;
       }
     }
+    // "Prepared by …" only when the account asked for it and has a name to print.
+    const byline =
+      user !== null && user.preferences.report_byline && user.name.trim() !== ""
+        ? user.name
+        : undefined;
     try {
-      await exportFitPdf(bundle, { datasetName, chartImage, version: __APP_VERSION__ });
+      await exportFitPdf(bundle, { datasetName, chartImage, version: __APP_VERSION__, byline });
     } catch (error) {
       setExportError(
         error instanceof Error && error.message !== ""

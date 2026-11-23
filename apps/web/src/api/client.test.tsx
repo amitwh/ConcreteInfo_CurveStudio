@@ -205,6 +205,107 @@ describe("login and register store tokens (the register → login → me flow)",
   });
 });
 
+describe("the profile endpoints (the /me contract)", () => {
+  const ME = {
+    id: "u1",
+    email: "a@b.co",
+    name: "A",
+    created_at: "2026-11-17T05:00:00+05:30",
+    email_verified: true,
+    role: "member",
+    preferences: { error_reports: true, report_byline: false },
+    last_login_at: null,
+    plan: {
+      name: "Free",
+      max_datasets: 10,
+      max_dataset_bytes: 20_000_000,
+      max_fits: 100,
+      max_autofits_per_day: 5,
+    },
+    usage: { datasets: 1, dataset_bytes: 2000, fits: 2, autofits_today: 0 },
+  };
+
+  /** The method and parsed JSON body of the one request that reached `path`. */
+  function sentTo(path: string): { url: string; method: string; body: unknown; auth: string | null } {
+    const calls = fetchMock.mock.calls.filter(([url]) => String(url) === `${API_BASE}${path}`);
+    expect(calls).toHaveLength(1);
+    const [url, init] = calls[0] as [RequestInfo | URL, RequestInit | undefined];
+    return {
+      url: String(url),
+      method: init?.method ?? "GET",
+      body: typeof init?.body === "string" ? JSON.parse(init.body) : null,
+      auth: bearer(init),
+    };
+  }
+
+  it("me() parses MeOut", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(200, ME));
+    await expect(api.me()).resolves.toEqual(ME);
+  });
+
+  it("refreshToken is the stored one, or null without a session", () => {
+    expect(api.refreshToken).toBeNull();
+    api.setTokens("a1", "r1");
+    expect(api.refreshToken).toBe("r1");
+  });
+
+  it("updateMe PATCHes /me with the name, authenticated", async () => {
+    api.setTokens("a1", "r1");
+    fetchMock.mockResolvedValue(jsonResponse(200, ME));
+    await expect(api.updateMe("Amit")).resolves.toEqual(ME);
+    const sent = sentTo("/me");
+    expect(sent.method).toBe("PATCH");
+    expect(sent.body).toEqual({ name: "Amit" });
+    expect(sent.auth).toBe("Bearer a1");
+  });
+
+  it("updatePreferences PUTs exactly the keys it is given", async () => {
+    fetchMock.mockImplementation(() => Promise.resolve(jsonResponse(200, ME)));
+    await api.updatePreferences({ report_byline: true });
+    const one = sentTo("/me/preferences");
+    expect(one.method).toBe("PUT");
+    expect(one.body).toEqual({ report_byline: true });
+
+    // a key that is not named is not sent at all, so the server keeps its value
+    fetchMock.mockClear();
+    await api.updatePreferences({ error_reports: false });
+    expect(sentTo("/me/preferences").body).toEqual({ error_reports: false });
+  });
+
+  it("changePassword sends both passwords with the stored refresh token", async () => {
+    api.setTokens("a1", "r1");
+    fetchMock.mockResolvedValue(jsonResponse(200, ME));
+    await expect(api.changePassword("old-pass-123", "new-pass-456")).resolves.toEqual(ME);
+    const sent = sentTo("/me/password");
+    expect(sent.method).toBe("POST");
+    expect(sent.body).toEqual({
+      current_password: "old-pass-123",
+      new_password: "new-pass-456",
+      refresh_token: "r1",
+    });
+    expect(sent.auth).toBe("Bearer a1");
+  });
+
+  it("revokeAllSessions sends the stored refresh token", async () => {
+    api.setTokens("a1", "r1");
+    fetchMock.mockResolvedValue(jsonResponse(200, ME));
+    await expect(api.revokeAllSessions()).resolves.toEqual(ME);
+    const sent = sentTo("/me/sessions/revoke-all");
+    expect(sent.method).toBe("POST");
+    expect(sent.body).toEqual({ refresh_token: "r1" });
+  });
+
+  it("deleteMe sends {confirm} on a DELETE and resolves on the empty 204", async () => {
+    api.setTokens("a1", "r1");
+    fetchMock.mockResolvedValue(new Response(null, { status: 204 }));
+    await expect(api.deleteMe("amit")).resolves.toBeUndefined();
+    const sent = sentTo("/me");
+    expect(sent.method).toBe("DELETE");
+    expect(sent.body).toEqual({ confirm: "amit" });
+    expect(sent.auth).toBe("Bearer a1");
+  });
+});
+
 describe("abort support", () => {
   it("passes the signal through and rethrows abort errors unchanged", async () => {
     const controller = new AbortController();

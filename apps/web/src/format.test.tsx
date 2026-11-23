@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fmtCI, fmtDate, fmtEquation, fmtInt, fmtNumber, fmtPValue } from "./format";
+import { fmtBytes, fmtCI, fmtDate, fmtEquation, fmtInt, fmtNumber, fmtPValue } from "./format";
 
 describe("fmtNumber — 'not defined' is n/a, never 0 or NaN", () => {
   it("renders null and undefined as n/a", () => {
@@ -90,5 +90,32 @@ describe("fmtDate — IST display", () => {
 
   it("renders n/a for a missing timestamp", () => {
     expect(fmtDate(null)).toBe("n/a");
+  });
+});
+
+describe("fmtBytes — a size in the largest unit below 1000", () => {
+  it("uses decimal units, as the upload limit does (20 MB = 20,000,000 bytes)", () => {
+    expect(fmtBytes(0)).toBe("0 B");
+    expect(fmtBytes(512)).toBe("512 B");
+    expect(fmtBytes(1_500)).toBe("1.5 KB");
+    expect(fmtBytes(20_000_000)).toBe("20 MB");
+    expect(fmtBytes(25_000_000)).toBe("25 MB");
+    expect(fmtBytes(1_000_000_000)).toBe("1 GB");
+    expect(fmtBytes(1_250_000_000_000)).toBe("1.3 TB");
+  });
+
+  it("keeps one decimal at most and drops a trailing .0", () => {
+    expect(fmtBytes(100_500_000)).toBe("100.5 MB");
+    expect(fmtBytes(100_000_000)).toBe("100 MB");
+    expect(fmtBytes(999_949_999)).toBe("999.9 MB");
+    // 999.95 MB would print as "1,000 MB": it is already a gigabyte
+    expect(fmtBytes(999_960_000)).toBe("1 GB");
+  });
+
+  it("renders n/a for a missing size and never a negative one", () => {
+    expect(fmtBytes(null)).toBe("n/a");
+    expect(fmtBytes(undefined)).toBe("n/a");
+    expect(fmtBytes(Number.NaN)).toBe("n/a");
+    expect(fmtBytes(-5)).toBe("0 B");
   });
 });

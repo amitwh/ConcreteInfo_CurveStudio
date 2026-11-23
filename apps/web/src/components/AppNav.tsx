@@ -2,16 +2,26 @@
  * The application header: brand, primary navigation, the workspace tabs and the session
  * controls. Help and About are links to their own URLs (deep links and the back button
  * keep working), but the authenticated shell renders them as overlays, so the workspace
- * underneath is never unmounted.
+ * underneath is never unmounted. The profile is the third overlay, reached from the
+ * account menu.
  *
  * The workspace tabs are the "multiple workspaces" surface: each tab is a named workspace
  * with its own dataset and mode. Double-click a tab to rename it; the × removes a
  * workspace (never the last one); + starts another.
  */
 
-import { useEffect, useRef, useState, type ReactElement } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactElement,
+} from "react";
 import {
   BookOpen,
+  ChevronDown,
   Info,
   Layers,
   LayoutDashboard,
@@ -20,18 +30,23 @@ import {
   Moon,
   Plus,
   Sun,
+  User,
   X,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../api/auth";
+import type { MeOut } from "../api/client";
 import { useTheme } from "./ThemeToggle";
 import { useInstallPrompt } from "./useInstallPrompt";
 import type { Workspace } from "../workspace/workspaces";
 
+/** The overlays the shell can open over the workspace; the URL names one of them. */
+export type Overlay = "help" | "about" | "profile" | null;
+
 export interface AppNavProps {
   workspaces: Workspace[];
   activeId: string;
-  overlay: "help" | "about" | null;
+  overlay: Overlay;
   onSelectWorkspace: (id: string) => void;
   onAddWorkspace: () => void;
   onCloseWorkspace: (id: string) => void;
@@ -123,6 +138,137 @@ function WorkspaceTab({
   );
 }
 
+/**
+ * The account chip and the menu it opens: the account as a header, Profile, Sign out. The
+ * chip is the only way to either, so on narrow screens it shrinks to the avatar and is
+ * never hidden. Opening moves focus to the first item; the arrow keys move between items;
+ * Escape closes and returns focus to the chip; a press anywhere outside closes it too.
+ */
+function AccountMenu({ user, onSignOut }: { user: MeOut; onSignOut: () => void }): ReactElement {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const firstItemRef = useRef<HTMLAnchorElement>(null);
+  const buttonId = useId();
+  const menuId = useId();
+  const email = user.email;
+  const name = user.name.trim();
+  const initial = (name !== "" ? name : email).slice(0, 1).toUpperCase() || "?";
+
+  const close = useCallback((restoreFocus: boolean): void => {
+    setOpen(false);
+    if (restoreFocus) buttonRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    if (open) firstItemRef.current?.focus();
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (event: MouseEvent): void => {
+      if (!wrapRef.current?.contains(event.target as Node)) close(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open, close]);
+
+  const onMenuKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      close(true);
+      return;
+    }
+    // Tab leaves the menu: focus moves on, the menu goes.
+    if (event.key === "Tab") {
+      close(false);
+      return;
+    }
+    const items = Array.from(
+      event.currentTarget.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+    );
+    const index = items.indexOf(document.activeElement as HTMLElement);
+    const last = items.length - 1;
+    let target: number;
+    switch (event.key) {
+      case "ArrowDown":
+        target = index < 0 || index === last ? 0 : index + 1;
+        break;
+      case "ArrowUp":
+        target = index <= 0 ? last : index - 1;
+        break;
+      case "Home":
+        target = 0;
+        break;
+      case "End":
+        target = last;
+        break;
+      default:
+        return;
+    }
+    event.preventDefault();
+    items[target]?.focus();
+  };
+
+  return (
+    <div className="account-wrap" ref={wrapRef}>
+      <button
+        ref={buttonRef}
+        id={buttonId}
+        type="button"
+        className="account"
+        title={email}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-controls={open ? menuId : undefined}
+        aria-label={name !== "" ? `${name} (${email})` : email}
+        onClick={() => (open ? close(false) : setOpen(true))}
+      >
+        <span className="account__avatar" aria-hidden="true">
+          {initial}
+        </span>
+        <span className="account__text">
+          {name !== "" && <span className="account__name truncate">{name}</span>}
+          <span className="account__email truncate">{email}</span>
+        </span>
+        <ChevronDown className="account__chevron" aria-hidden="true" focusable="false" />
+      </button>
+      {open && (
+        <div className="account-menu">
+          <p className="account-menu__header">
+            {name !== "" && <span className="account-menu__name">{name}</span>}
+            <span className="account-menu__email">{email}</span>
+          </p>
+          <div role="menu" id={menuId} aria-labelledby={buttonId} onKeyDown={onMenuKeyDown}>
+            <Link
+              ref={firstItemRef}
+              role="menuitem"
+              className="account-menu__item"
+              to="/profile"
+              onClick={() => close(true)}
+            >
+              <User className="icon" aria-hidden="true" focusable="false" />
+              Profile
+            </Link>
+            <button
+              type="button"
+              role="menuitem"
+              className="account-menu__item"
+              onClick={() => {
+                close(false);
+                onSignOut();
+              }}
+            >
+              <LogOut className="icon" aria-hidden="true" focusable="false" />
+              Sign out
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function AppNav({
   workspaces,
   activeId,
@@ -135,8 +281,6 @@ export function AppNav({
   const { status, user, logout } = useAuth();
   const { theme, toggle } = useTheme();
   const { canInstall, install } = useInstallPrompt();
-  const email = user?.email ?? "";
-  const initial = email.slice(0, 1).toUpperCase() || "?";
 
   return (
     <header className="app-header">
@@ -190,23 +334,7 @@ export function AppNav({
             )}
           </button>
           {status === "authed" && user !== null && (
-            <>
-              <span className="account" title={email}>
-                <span className="account__avatar" aria-hidden="true">
-                  {initial}
-                </span>
-                <span className="account__email truncate">{email}</span>
-              </span>
-              <button
-                type="button"
-                className="btn btn--small btn--icon"
-                onClick={() => void logout()}
-                aria-label="Sign out"
-                title="Sign out"
-              >
-                <LogOut className="icon" aria-hidden="true" focusable="false" />
-              </button>
-            </>
+            <AccountMenu user={user} onSignOut={() => void logout()} />
           )}
         </div>
       </div>

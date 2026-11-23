@@ -7,6 +7,14 @@ import { ResultsTabs } from "./ResultsTabs";
 const exportMock = vi.hoisted(() => ({ exportFitPdf: vi.fn() }));
 vi.mock("../../lib/report/export", () => ({ exportFitPdf: exportMock.exportFitPdf }));
 
+/** The signed-in account ResultsTabs reads the byline preference from; null = signed out. */
+const { authState } = vi.hoisted(() => ({
+  authState: {
+    user: null as null | { name: string; preferences: { report_byline: boolean } },
+  },
+}));
+vi.mock("../../api/auth", () => ({ useAuth: () => ({ user: authState.user }) }));
+
 type FitBundle = components["schemas"]["FitBundle"];
 
 function bundle(status: string, termination: string): FitBundle {
@@ -129,6 +137,7 @@ describe("PDF report export", () => {
   beforeEach(() => {
     exportMock.exportFitPdf.mockReset();
     exportMock.exportFitPdf.mockResolvedValue(undefined);
+    authState.user = null;
   });
 
   function renderTabs(
@@ -208,6 +217,34 @@ describe("PDF report export", () => {
     expect(alert.textContent).toBe("renderer unavailable");
     const button = screen.getByRole("button", { name: "PDF report" }) as HTMLButtonElement;
     expect(button.disabled).toBe(false);
+  });
+
+  /** Exports once and returns the meta the report was generated with. */
+  async function exportMeta(user: ReturnType<typeof userEvent.setup>): Promise<Record<string, unknown>> {
+    renderTabs();
+    await user.click(screen.getByRole("button", { name: "PDF report" }));
+    const [, meta] = exportMock.exportFitPdf.mock.calls[0] as [FitBundle, Record<string, unknown>];
+    return meta;
+  }
+
+  it("names the user as the byline when the preference is on", async () => {
+    authState.user = { name: "Amit Haridas", preferences: { report_byline: true } };
+    const meta = await exportMeta(userEvent.setup());
+    expect(meta.byline).toBe("Amit Haridas");
+  });
+
+  it("sends no byline when the preference is off", async () => {
+    authState.user = { name: "Amit Haridas", preferences: { report_byline: false } };
+    expect((await exportMeta(userEvent.setup())).byline).toBeUndefined();
+  });
+
+  it("sends no byline when the name is empty, even with the preference on", async () => {
+    authState.user = { name: "", preferences: { report_byline: true } };
+    expect((await exportMeta(userEvent.setup())).byline).toBeUndefined();
+  });
+
+  it("sends no byline when nobody is signed in", async () => {
+    expect((await exportMeta(userEvent.setup())).byline).toBeUndefined();
   });
 });
 

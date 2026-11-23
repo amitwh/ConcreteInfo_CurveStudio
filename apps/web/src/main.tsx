@@ -1,5 +1,6 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter } from "react-router-dom";
 import App from "./App";
 import { AuthProvider } from "./api/auth";
@@ -9,16 +10,29 @@ import "@fontsource-variable/inter";
 import "@fontsource-variable/jetbrains-mono";
 import "./styles.css";
 
+/**
+ * Server state for the screens that read it through TanStack Query. One failed attempt is
+ * retried once; the profile is not re-fetched whenever the window regains focus, and is
+ * considered fresh for 30 s (a change made on a page writes its answer into the cache).
+ */
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: { retry: 1, refetchOnWindowFocus: false, staleTime: 30_000 },
+  },
+});
+
 const root = document.getElementById("root");
 if (root === null) throw new Error("no #root element in index.html");
 
 createRoot(root).render(
   <StrictMode>
-    <AuthProvider>
-      <BrowserRouter>
-        <App />
-      </BrowserRouter>
-    </AuthProvider>
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider>
+        <BrowserRouter>
+          <App />
+        </BrowserRouter>
+      </AuthProvider>
+    </QueryClientProvider>
   </StrictMode>,
 );
 

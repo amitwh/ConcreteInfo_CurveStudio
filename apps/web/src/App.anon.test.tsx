@@ -73,6 +73,14 @@ describe("App routing for visitors", () => {
     expect(screen.getByTestId("home")).toBeTruthy();
   });
 
+  it("sends a visitor who opens /profile to the home page", async () => {
+    renderApp("/profile");
+    await waitFor(() => expect(screen.getByTestId("location").textContent).toBe("/"));
+    expect(screen.getByTestId("home")).toBeTruthy();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.queryByTestId("workspace")).toBeNull();
+  });
+
   it("keeps the workspace at / for an authenticated visitor", () => {
     authState.status = "authed";
     renderApp("/");

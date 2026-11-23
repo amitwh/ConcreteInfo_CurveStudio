@@ -9,25 +9,27 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { api, type TokenOut, type UserOut } from "./client";
+import { api, type MeOut, type TokenOut } from "./client";
 
 export type AuthStatus = "loading" | "authed" | "anon";
 
 interface AuthContextValue {
   status: AuthStatus;
-  user: UserOut | null;
+  user: MeOut | null;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, name: string) => Promise<void>;
   /** Adopt a token pair issued elsewhere (the OAuth exchange) and load the profile. */
   adoptSession: (tokens: TokenOut) => Promise<void>;
   logout: () => Promise<void>;
+  /** Replace the held profile after a change, so the header shows a new name at once. */
+  updateUser: (user: MeOut) => void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }): ReactNode {
   const [status, setStatus] = useState<AuthStatus>("loading");
-  const [user, setUser] = useState<UserOut | null>(null);
+  const [user, setUser] = useState<MeOut | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -98,9 +100,11 @@ export function AuthProvider({ children }: { children: ReactNode }): ReactNode {
     setStatus("anon");
   }, []);
 
+  const updateUser = useCallback((next: MeOut) => setUser(next), []);
+
   const value = useMemo(
-    () => ({ status, user, login, register, adoptSession, logout }),
-    [status, user, login, register, adoptSession, logout],
+    () => ({ status, user, login, register, adoptSession, logout, updateUser }),
+    [status, user, login, register, adoptSession, logout, updateUser],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

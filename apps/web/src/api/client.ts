@@ -28,6 +28,8 @@ const REFRESH_KEY = "curvestudio.refresh";
 export type Schemas = components["schemas"];
 export type TokenOut = Schemas["TokenOut"];
 export type UserOut = Schemas["UserOut"];
+/** The signed-in account in full: profile, preferences, the plan's limits and usage so far. */
+export type MeOut = Schemas["MeOut"];
 export type EmailVerificationOut = Schemas["EmailVerificationOut"];
 export type MessageOut = Schemas["MessageOut"];
 export type ModelInfo = Schemas["ModelInfo"];
@@ -131,6 +133,12 @@ interface UploadFields {
   weightColumn?: string;
 }
 
+/** The preferences to change; a key that is not named keeps its value. */
+export interface PreferencesChange {
+  error_reports?: boolean;
+  report_byline?: boolean;
+}
+
 export interface UploadProgress {
   loaded: number;
   total: number;
@@ -144,7 +152,12 @@ class ApiClient {
   private refreshInFlight: Promise<boolean> | null = null;
 
   get hasRefreshToken(): boolean {
-    return localStorage.getItem(REFRESH_KEY) !== null;
+    return this.refreshToken !== null;
+  }
+
+  /** The stored refresh token: the one request that names the session to keep or to end. */
+  get refreshToken(): string | null {
+    return localStorage.getItem(REFRESH_KEY);
   }
 
   setTokens(access: string, refresh: string): void {
@@ -321,8 +334,51 @@ class ApiClient {
     }
   }
 
-  async me(): Promise<UserOut> {
-    return this.request<UserOut>("/me");
+  async me(): Promise<MeOut> {
+    return this.request<MeOut>("/me");
+  }
+
+  /** Change the displayed name (the server strips it; 1–100 characters). */
+  async updateMe(name: string): Promise<MeOut> {
+    return this.request<MeOut>("/me", { method: "PATCH", body: JSON.stringify({ name }) });
+  }
+
+  async updatePreferences(change: PreferencesChange): Promise<MeOut> {
+    return this.request<MeOut>("/me/preferences", {
+      method: "PUT",
+      body: JSON.stringify(change),
+    });
+  }
+
+  /**
+   * Set a new password. Every other session is revoked; the session holding the stored
+   * refresh token (sent along, so the server knows which one to keep) stays signed in.
+   */
+  async changePassword(currentPassword: string, newPassword: string): Promise<MeOut> {
+    return this.request<MeOut>("/me/password", {
+      method: "POST",
+      body: JSON.stringify({
+        current_password: currentPassword,
+        new_password: newPassword,
+        refresh_token: this.refreshToken,
+      }),
+    });
+  }
+
+  /** Sign out every other session; this one, named by its refresh token, stays. */
+  async revokeAllSessions(): Promise<MeOut> {
+    return this.request<MeOut>("/me/sessions/revoke-all", {
+      method: "POST",
+      body: JSON.stringify({ refresh_token: this.refreshToken }),
+    });
+  }
+
+  /** Delete the account. `confirm` must be the part of the e-mail before the @. */
+  async deleteMe(confirm: string): Promise<void> {
+    return this.request<void>("/me", {
+      method: "DELETE",
+      body: JSON.stringify({ confirm }),
+    });
   }
 
   /**
