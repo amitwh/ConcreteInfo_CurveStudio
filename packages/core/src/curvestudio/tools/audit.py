@@ -18,7 +18,6 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 import numpy as np
-from numpy.typing import NDArray
 from pydantic import BaseModel, ConfigDict
 from scipy import stats as scipy_stats
 
@@ -28,9 +27,7 @@ from curvestudio.fitting import FitResult, FitStatus, ParameterEstimate
 from curvestudio.models import get_model
 from curvestudio.statistics import CrossValidation
 from curvestudio.tools._errors import ToolError
-from curvestudio.workflow import DataSnapshot, FitBundle, FitSpec
-
-FloatArray = NDArray[np.float64]
+from curvestudio.workflow import DataSnapshot, FitBundle, FitSpec, PolynomialRef
 
 # -- thresholds ---------------------------------------------------------------------------------
 # Each is the rule it stands for; the checks below read no other number of this kind.
@@ -49,24 +46,39 @@ TREND_CAUTION_P = 0.05
 """Residual-trend p below this, but not below ``TREND_FAIL_P``, reads ``caution``."""
 TREND_FAIL_P = 0.01
 """Residual-trend p below this reads ``fail``."""
-INFLUENCE_CAUTION_COUNT = 1
-"""From this many points with a Cook's distance above 4/n the check reads ``caution``."""
-INFLUENCE_FAIL_COUNT = 3
-"""From this many points with a Cook's distance above 4/n the check reads ``fail``."""
-INFLUENCE_FAIL_SHARE = 0.10
-"""Points with a Cook's distance above 4/n taking at least this share of all points: ``fail``."""
-LEVERAGE_CAUTION_SHARE = 0.20
-"""High-leverage points taking at least this share of all points are called many in the
-evidence; leverage alone never changes the verdict."""
+TREND_EXTRA_TERMS = 2
+"""Legendre degrees tested beyond a fitted polynomial's degree ``d``: ``d + 1`` up to
+``d + TREND_EXTRA_TERMS``."""
+TREND_MODEL_TERMS = 3
+"""Legendre degrees 1 up to this number are tested, against an intercept, for every fit
+that is not a polynomial."""
+TREND_MIN_RESIDUAL_DF = 3
+"""The residual-trend F test needs at least this many residual degrees of freedom in its
+denominator; with fewer it reads ``not_applicable``."""
+COOKS_CAUTION_REGION = 0.10
+"""A Cook's distance above ``F(k, n - k)`` at this upper tail means that leaving the point
+out moves the estimates outside their 90 % confidence region: ``caution``."""
+COOKS_FAIL_REGION = 0.01
+"""The same at this upper tail, the 99 % region: ``fail``."""
+COOKS_CHANCE_SHARE = 0.05
+"""The share of points that cross the core's 4/n influence line on a well-behaved fit, by
+chance alone."""
+CHANCE_CAUTION_Q = 0.95
+"""More points than this quantile of a Binomial(n, ``COOKS_CHANCE_SHARE``) count crossing
+the 4/n line is not chance: ``caution``."""
+CHANCE_FAIL_Q = 0.995
+"""More points than this quantile of the same count is not chance: ``fail``."""
 MIN_POINTS_PER_PARAMETER_CAUTION = 10
 """Fewer points per parameter than this, but at least ``MIN_POINTS_PER_PARAMETER_FAIL``:
 ``caution``."""
 MIN_POINTS_PER_PARAMETER_FAIL = 5
 """Fewer points per parameter than this reads ``fail``."""
 CV_CAUTION_RATIO = 1.1
-"""A cross-validation RMSE above this multiple of the in-sample RMSE reads ``caution``."""
+"""A cross-validation RMSE above this multiple of what a correct model would show (its
+expected ratio to the in-sample RMSE) reads ``caution``."""
 CV_FAIL_RATIO = 1.5
-"""A cross-validation RMSE above this multiple of the in-sample RMSE reads ``fail``."""
+"""A cross-validation RMSE above this multiple of what a correct model would show reads
+``fail``."""
 SIMPLE_DELTA_AICC = 2.0
 """Ranked models within this AICc of the best count as fitting as well as it."""
 WIDE_INTERVAL_SHARE = 0.99
@@ -88,9 +100,6 @@ _EXACT_FIT_RATIO = 1e-10
 layer's own rule, by which it withholds the residual tests."""
 _OFFSET_FLOOR_RATIO = 1e-4
 """Rounding in a large ``y`` offset reaches this fraction of ``max|y|``; it floors the scale."""
-_TREND_MIN_POINTS = 8
-"""The residual-trend F test needs this many points for its denominator ``n - 3`` to say
-anything."""
 _AT_BOUND = "PARAMETER_AT_BOUND: "
 _LISTED_MAX = 8
 """The evidence names at most this many flagged points; beyond that it gives the count of the
@@ -405,58 +414,124 @@ def _read_test(
     return test, test.p_value
 
 
+_DEGREE_NAMES = {
+    0: "constant",
+    1: "linear",
+    2: "quadratic",
+    3: "cubic",
+    4: "quartic",
+    5: "quintic",
+    6: "sextic",
+}
+"""Legendre degrees as a sentence names them; a higher one is ``degree 7`` and so on."""
+
+
+def _degree_name(degree: int) -> str:
+    return _DEGREE_NAMES.get(degree, f"degree {degree}")
+
+
+def _terms(degrees: Sequence[int]) -> str:
+    """``cubic and quartic``, or ``constant, cubic and quartic``."""
+    return _joined([_degree_name(degree) for degree in degrees])
+
+
 @dataclass(frozen=True)
 class _Trend:
-    """The residual-trend F test: adding x and x² to an intercept-only fit of the residuals."""
+    """The residual-trend F test of Legendre terms the fitted model cannot represent."""
 
     statistic: float
     p_value: float
     df_error: int
+    tested: tuple[int, ...]
+    beyond: str
+    """What the tested terms are measured beyond: the fitted polynomial, or the model."""
 
 
-def _trend_test(x: FloatArray, weighted: FloatArray) -> _Trend | None:
-    """The F test of a quadratic trend in the residuals, with x scaled to [0, 1].
+def _fitted_polynomial(inp: _Inputs) -> tuple[int, bool] | None:
+    """Degree and origin flag of the fitted polynomial, or ``None`` for any other model.
 
-    ``None`` when the denominator is zero: a quadratic in x then accounts for the whole
-    spread of the residuals and the statistic is undefined.
+    The result's model id says both (``poly2``, ``poly1_origin``). A polynomial in the spec,
+    when one is given, decides the degree.
     """
-    count = int(x.size)
-    scaled = (x - float(x.min())) / float(x.max() - x.min())
-    design = np.column_stack([np.ones(count), scaled, scaled * scaled])
-    coefficients = np.linalg.lstsq(design, weighted, rcond=None)[0]
-    left = weighted - design @ coefficients
-    sse_quadratic = float(left @ left)
-    centred = weighted - float(weighted.mean())
-    sse_intercept = float(centred @ centred)
-    if sse_quadratic <= 0.0:
+    matched = _POLYNOMIAL_ID.fullmatch(inp.result.model_id)
+    if matched is None:
         return None
-    df_error = count - 3
-    statistic = max(((sse_intercept - sse_quadratic) / 2.0) / (sse_quadratic / df_error), 0.0)
-    return _Trend(
-        statistic=statistic,
-        p_value=float(scipy_stats.f.sf(statistic, 2, df_error)),
-        df_error=df_error,
-    )
+    degree = int(matched.group(1))
+    if inp.spec is not None and isinstance(inp.spec.model, PolynomialRef):
+        degree = inp.spec.model.degree
+    return degree, matched.group(2) is not None
 
 
-def _residual_trend(summary: FitReport) -> _Trend | str:
+def _trend_terms(inp: _Inputs) -> tuple[tuple[int, ...], tuple[int, ...], int]:
+    """Degrees tested, baseline degrees, and how many terms the fitted model already occupies.
+
+    A polynomial's residuals are orthogonal to every Legendre degree up to its own, so a
+    polynomial of degree ``d`` is tested on ``d + 1`` and ``d + 2`` with no baseline (and
+    on the constant term too when the fit goes through the origin). Any other model is
+    tested on degrees 1 to ``TREND_MODEL_TERMS`` against a constant.
+    """
+    polynomial = _fitted_polynomial(inp)
+    if polynomial is None:
+        return tuple(range(1, TREND_MODEL_TERMS + 1)), (0,), 0
+    degree, origin = polynomial
+    tested = list(range(degree + 1, degree + 1 + TREND_EXTRA_TERMS))
+    if origin:
+        tested.insert(0, 0)
+    return tuple(tested), (), degree if origin else degree + 1
+
+
+def _residual_trend(inp: _Inputs, summary: FitReport) -> _Trend | str:
     """The trend test on the summary's residuals, or the reason it cannot run."""
     x = np.asarray(summary.residuals.x, dtype=np.float64)
     weighted = np.asarray(summary.residuals.weighted_residuals, dtype=np.float64)
-    count = int(x.size)
-    if count < _TREND_MIN_POINTS:
-        return f"only {count} points; the test needs at least {_TREND_MIN_POINTS}"
+    if x.size == 0:
+        return "there are no residuals"
     if not (bool(np.all(np.isfinite(x))) and bool(np.all(np.isfinite(weighted)))):
         return "the residuals are not all finite"
     if float(x.max()) == float(x.min()):
         return "all x values are equal, so the residuals have no order in x"
-    trend = _trend_test(x, weighted)
-    if trend is None:
+    tested, baseline, own = _trend_terms(inp)
+    df_error = int(x.size) - len(tested) - len(baseline) - own
+    if df_error < TREND_MIN_RESIDUAL_DF:
+        plural = "degree" if df_error == 1 else "degrees"
         return (
-            "a quadratic in x accounts for the whole spread of the residuals, so the F "
+            f"only {df_error} residual {plural} of freedom; the test needs at least "
+            f"{TREND_MIN_RESIDUAL_DF}"
+        )
+    scaled = 2.0 * (x - float(x.min())) / float(x.max() - float(x.min())) - 1.0
+    degrees = sorted({*tested, *baseline})
+    vander = np.polynomial.legendre.legvander(scaled, max(degrees))[:, degrees]
+
+    def leftover(columns: Sequence[int]) -> float:
+        """Sum of squares left of the residuals after fitting the Legendre ``columns``."""
+        if not columns:
+            return float(weighted @ weighted)
+        design = vander[:, list(columns)]
+        left = weighted - design @ np.linalg.lstsq(design, weighted, rcond=None)[0]
+        return float(left @ left)
+
+    sse_baseline = leftover(range(len(baseline)))
+    sse_full = leftover(range(len(degrees)))
+    if sse_full <= 0.0:
+        return (
+            "the tested terms account for the whole spread of the residuals, so the F "
             "statistic is undefined"
         )
-    return trend
+    count = len(tested)
+    statistic = max(((sse_baseline - sse_full) / count) / (sse_full / df_error), 0.0)
+    polynomial = _fitted_polynomial(inp)
+    if polynomial is None:
+        beyond = f"the fitted {inp.result.model_id} model"
+    else:
+        degree, origin = polynomial
+        beyond = f"the fitted {_degree_name(degree)}" + (" through the origin" if origin else "")
+    return _Trend(
+        statistic=statistic,
+        p_value=float(scipy_stats.f.sf(statistic, count, df_error)),
+        df_error=df_error,
+        tested=tested,
+        beyond=beyond,
+    )
 
 
 def _effective_bounds(inp: _Inputs) -> tuple[dict[str, tuple[float, float]], bool]:
@@ -657,57 +732,119 @@ def _check_constant_variance(inp: _Inputs) -> AuditCheck:
 
 
 def _check_influential_points(inp: _Inputs) -> AuditCheck:
+    """Does the fit stand without any one point?
+
+    A point's Cook's distance above ``F(k, n - k)`` at upper tail ``alpha`` means that
+    leaving it out moves the estimates outside the (1 - alpha) confidence region. The
+    core's 4/n line is a screen that about ``COOKS_CHANCE_SHARE`` of the points cross on a
+    well-behaved fit, so only a count that chance would rarely give decides anything.
+    """
     if inp.summary is None:
         return _skipped(_INFLUENCE, _no_summary(inp))
     if _is_exact(inp):
         return _skipped(_INFLUENCE, "the fit is exact, so no point stands out from the others")
     residuals = inp.summary.residuals
-    influential = list(residuals.flagged_high_influence)
-    count = len(influential)
-    if count >= INFLUENCE_FAIL_COUNT or count >= INFLUENCE_FAIL_SHARE * inp.n:
-        verdict = Verdict.FAIL
-    elif count >= INFLUENCE_CAUTION_COUNT:
-        verdict = Verdict.CAUTION
-    else:
-        verdict = Verdict.PASS
+    n, k = inp.n, inp.k
+    if n - k < 1:
+        return _skipped(
+            _INFLUENCE,
+            "the fit has no residual degrees of freedom, so there is no confidence region to leave",
+        )
+    distances = [
+        (distance, position)
+        for position, distance in enumerate(residuals.cooks_distance)
+        if distance is not None
+    ]
+    if not distances:
+        return _skipped(_INFLUENCE, "no Cook's distance is defined for this fit")
     points = len(residuals.x)
-    cooks = _num(residuals.cooks_threshold)
-    leverage = _num(residuals.leverage_threshold)
-    who = _subjects(count, "point", "has", "have")
-    cook_cut = f"the threshold 4/n = {cooks}"
-    if count:
-        sentences = [
-            f"{who} a Cook's distance above {cook_cut}: {_where(inp, influential, points)}."
-        ]
+    largest, top = max(distances)
+    flagged = list(residuals.flagged_high_influence)
+    count = len(flagged)
+    cut_fail = float(scipy_stats.f.isf(COOKS_FAIL_REGION, k, n - k))
+    cut_caution = float(scipy_stats.f.isf(COOKS_CAUTION_REGION, k, n - k))
+    chance_fail = int(scipy_stats.binom.ppf(CHANCE_FAIL_Q, n, COOKS_CHANCE_SHARE))
+    chance_caution = int(scipy_stats.binom.ppf(CHANCE_CAUTION_Q, n, COOKS_CHANCE_SHARE))
+    if largest > cut_fail:
+        verdict, decided = Verdict.FAIL, "distance"
+    elif count > chance_fail:
+        verdict, decided = Verdict.FAIL, "count"
+    elif largest > cut_caution:
+        verdict, decided = Verdict.CAUTION, "distance"
+    elif count > chance_caution:
+        verdict, decided = Verdict.CAUTION, "count"
     else:
-        sentences = [f"No point has a Cook's distance above {cook_cut}."]
-    flagged = set(influential)
-    leverage_only = [i for i in residuals.flagged_high_leverage if i not in flagged]
+        verdict, decided = Verdict.PASS, "none"
+    region_fail = _num((1.0 - COOKS_FAIL_REGION) * 100)
+    region_caution = _num((1.0 - COOKS_CAUTION_REGION) * 100)
+    chance = _num(COOKS_CHANCE_SHARE * 100)
+    line = _num(residuals.cooks_threshold)
+    where_top = _where(inp, [top], points)
+    outside_fail_region = verdict is Verdict.FAIL and decided == "distance"
+    cut = cut_fail if outside_fail_region else cut_caution
+    region = region_fail if outside_fail_region else region_caution
+    statistic = (
+        f"largest Cook's distance {_num(largest)} ({where_top}); {region} % region at {_num(cut)}"
+    )
+    distance_cut = f"Cook's distance above the {region} % region cut F({k}, {n - k}) = {_num(cut)}"
+    if verdict is Verdict.FAIL and decided == "distance":
+        title = f"The fit does not stand without {where_top}"
+        sentences = [
+            f"Removing {where_top} would move the estimates outside their {region} % region "
+            f"(Cook's distance {_num(largest)} against {_num(cut)}): the fit does not stand "
+            "without that point."
+        ]
+        threshold = distance_cut
+        rows = where_top
+    elif decided == "distance":
+        title = f"Removing {where_top} would move the estimates outside their {region} % region"
+        sentences = [
+            f"Removing {where_top} would move the estimates outside their {region} % region "
+            f"(Cook's distance {_num(largest)} against {_num(cut)})."
+        ]
+        threshold = distance_cut
+        rows = where_top
+    else:
+        title = "No single point has a large influence on the fit"
+        sentences = [
+            f"No single point moves the estimates outside their {region} % region: the largest "
+            f"Cook's distance is {_num(largest)} ({where_top}), against {_num(cut)}."
+        ]
+        threshold = distance_cut
+        rows = None
+    chance_cut = f"more than {chance_caution} of {n} points above the 4/n line {line}"
+    if decided == "count":
+        limit = chance_fail if verdict is Verdict.FAIL else chance_caution
+        many = "Far more" if verdict is Verdict.FAIL else "More"
+        sentences.append(
+            f"{count} of {n} points cross the 4/n line; about {chance} % cross it by "
+            f"chance, so more than {limit} is not chance."
+        )
+        threshold = f"more than {limit} of {n} points above the 4/n line {line}"
+        title = f"{many} points than chance cross the influence line"
+        rows = _where(inp, flagged, points)
+    else:
+        sentences.append(
+            f"{count} of {n} points cross the 4/n line ({line}), about the {chance} % that "
+            "cross it by chance."
+        )
+        if decided == "none":
+            threshold = f"{distance_cut}, or {chance_cut}"
+    flagged_set = set(flagged)
+    leverage_only = [i for i in residuals.flagged_high_leverage if i not in flagged_set]
     if leverage_only:
+        leverage = _num(residuals.leverage_threshold)
         sentences.append(
             f"{_subjects(len(leverage_only), 'point', 'has', 'have')} high leverage but "
             f"little influence (leverage above the threshold 2k/n = {leverage}): "
             f"{_where(inp, leverage_only, points)}."
         )
-        if len(leverage_only) >= LEVERAGE_CAUTION_SHARE * inp.n:
-            sentences.append(
-                f"That is at least {_num(LEVERAGE_CAUTION_SHARE * 100)} % of the points."
-            )
-    threshold = (
-        f"Cook's distance > 4/n = {cooks}: {INFLUENCE_CAUTION_COUNT} point is a caution, "
-        f"{INFLUENCE_FAIL_COUNT} points or {_num(INFLUENCE_FAIL_SHARE * 100)} % of the "
-        f"points a failure; leverage > 2k/n = {leverage} is reported only"
-    )
-    statistic = f"{count} of {points} points with a Cook's distance above {cooks}"
     next_step = None
-    if verdict is Verdict.PASS:
-        title = "No point has a large influence on the fit"
-    else:
-        title = f"{who} a large influence on the fit"
-        them = "it" if count == 1 else "them"
+    if rows is not None:
         next_step = (
-            f"Look at {_where(inp, influential, points)}. Refit without {them} to see what "
-            "changes. Do not delete data to improve a fit."
+            f"Refit without {rows} and compare the estimates. If the conclusions differ, "
+            "report both fits or justify leaving the point out. Do not delete data to "
+            "improve a fit."
         )
     return _audit_check(
         _INFLUENCE,
@@ -725,17 +862,22 @@ def _check_residual_trend(inp: _Inputs) -> AuditCheck:
         return _skipped(_TREND, _no_summary(inp))
     if _is_exact(inp):
         return _skipped(_TREND, "the fit is exact, so its residuals carry no trend")
-    trend = _residual_trend(inp.summary)
+    trend = _residual_trend(inp, inp.summary)
     if not isinstance(trend, _Trend):
         return _skipped(_TREND, trend)
     verdict = _p_verdict(trend.p_value, TREND_CAUTION_P, TREND_FAIL_P)
+    points = len(inp.summary.residuals.x)
+    terms = _terms(trend.tested)
     return _audit_check(
         _TREND,
         verdict,
         _title(_TREND_TITLES, verdict),
-        "Residuals regressed on 1, x and x² over "
-        f"{trend.df_error + 3} points, x scaled to [0, 1]: p = {_num(trend.p_value)}.",
-        statistic=f"F(2, {trend.df_error}) = {_num(trend.statistic)}, p = {_num(trend.p_value)}",
+        f"Weighted residuals regressed on {terms} terms over {points} points, x scaled to "
+        f"[-1, 1]: p = {_num(trend.p_value)}.",
+        statistic=(
+            f"F({len(trend.tested)}, {trend.df_error}) = {_num(trend.statistic)}, "
+            f"p = {_num(trend.p_value)}, for {terms} terms beyond {trend.beyond}"
+        ),
         threshold=_p_rule(TREND_CAUTION_P, TREND_FAIL_P),
         next_step=None if verdict is Verdict.PASS else _TREND_NEXT_STEP,
     )
@@ -889,6 +1031,32 @@ def _check_points_per_parameter(inp: _Inputs) -> AuditCheck:
     )
 
 
+def expected_cv_ratio(n: int, k: int, folds: int) -> float:
+    """The cross-validation RMSE a correct linear model shows, as a multiple of its in-sample RMSE.
+
+    With ``n`` points, ``k`` parameters and ``folds`` folds, a fold's fit uses ``m = n - n/folds``
+    training points (the mean training size: ``k_fold_cv`` splits the points into folds that
+    differ by at most one) and predicts a new point with expected squared error
+    ``sigma^2 (1 + k/m)``. The in-sample mean square, ``SSE / n`` as the core defines it, is
+    ``sigma^2 (1 - k/n)`` in expectation. The root of their ratio is what a model with nothing
+    missing shows. Leave-one-out (``folds == n``) trains every fold on ``n - 1`` points.
+
+    Raises:
+        ValueError: fewer than two folds, more folds than points, or as many parameters as
+            points.
+    """
+    if folds < 2 or folds > n:
+        raise ValueError(f"folds must lie between 2 and the number of points ({n}), got {folds}")
+    if k >= n:
+        raise ValueError(f"a fit needs fewer parameters than points: {k} for {n} points")
+    if folds == n:
+        expected_cv = 1.0 + k / (n - 1)
+    else:
+        training = n - n / folds
+        expected_cv = 1.0 + k * folds / (training * (folds - 1))
+    return math.sqrt(expected_cv / (1.0 - k / n))
+
+
 def _check_cross_validation(inp: _Inputs) -> AuditCheck:
     stats = inp.result.stats
     if stats is None:
@@ -908,24 +1076,39 @@ def _check_cross_validation(inp: _Inputs) -> AuditCheck:
             "Run cross-validation with fewer folds, or on more points, so that every fold "
             "can be fitted.",
         )
-    if cv.rmse == stats.rmse:
-        ratio = 1.0
-    elif stats.rmse == 0.0:
-        ratio = math.inf
-    else:
+    n, k = inp.n, inp.k
+    if cv.folds < 2 or cv.folds > n or k >= n:
+        return _skipped(
+            _CROSS_VALIDATION,
+            f"cross-validation ran with {cv.folds} folds on {n} points for {k} parameters, "
+            "so there is no correct model to expect of it",
+        )
+    expected = expected_cv_ratio(n, k, cv.folds)
+    if stats.rmse > 0.0:
         ratio = cv.rmse / stats.rmse
-    if ratio <= CV_CAUTION_RATIO:
+    elif cv.rmse > 0.0:
+        ratio = math.inf  # a perfect in-sample fit that predicts badly
+    else:
+        ratio = 0.0
+    relative = ratio / expected
+    if relative <= CV_CAUTION_RATIO:
         verdict = Verdict.PASS
-    elif ratio <= CV_FAIL_RATIO:
+    elif relative <= CV_FAIL_RATIO:
         verdict = Verdict.CAUTION
     else:
         verdict = Verdict.FAIL
-    compared = f"In-sample RMSE {_num(stats.rmse)}, cross-validation RMSE {_num(cv.rmse)}"
-    if math.isfinite(ratio):
-        evidence = f"{compared}: a ratio of {_num(ratio)}."
-        statistic = f"CV RMSE / RMSE = {_num(ratio)}"
+    compared = (
+        f"In-sample RMSE {_num(stats.rmse)}; cross-validation RMSE {_num(cv.rmse)}, against "
+        f"{_num(expected * stats.rmse)} expected from a correct model with {n} points and "
+        f"{cv.folds} folds"
+    )
+    if math.isfinite(relative):
+        evidence = f"{compared} ({_num(relative)} times that)."
+        statistic = (
+            f"CV RMSE / RMSE = {_num(ratio)}, relative to a correct model = {_num(relative)}"
+        )
     else:
-        evidence = f"{compared}, against an in-sample error of zero."
+        evidence = f"{compared} (no finite multiple: the in-sample RMSE is 0)."
         statistic = "CV RMSE / RMSE is unbounded: the in-sample RMSE is 0"
     return _audit_check(
         _CROSS_VALIDATION,
@@ -934,8 +1117,8 @@ def _check_cross_validation(inp: _Inputs) -> AuditCheck:
         evidence,
         statistic=statistic,
         threshold=(
-            f"ratio <= {_num(CV_CAUTION_RATIO)} pass; <= {_num(CV_FAIL_RATIO)} caution; "
-            f"above {_num(CV_FAIL_RATIO)} fail"
+            f"ratio to a correct model <= {_num(CV_CAUTION_RATIO)} pass; "
+            f"<= {_num(CV_FAIL_RATIO)} caution; above {_num(CV_FAIL_RATIO)} fail"
         ),
         next_step=None if verdict is Verdict.PASS else _CV_NEXT_STEP,
     )
@@ -1011,9 +1194,9 @@ _TREND_TITLES = (
     "Residuals show a trend in x",
 )
 _CROSS_VALIDATION_TITLES = (
-    "Held-out error is close to the in-sample error",
-    "Held-out error is somewhat above the in-sample error",
-    "Held-out error is far above the in-sample error",
+    "Held-out error is close to what a correct model shows",
+    "Held-out error is somewhat above what a correct model shows",
+    "Held-out error is far above what a correct model shows",
 )
 
 _CONVERGED = _Check(
@@ -1055,16 +1238,16 @@ _CONSTANT_VARIANCE = _Check(
 _INFLUENCE = _Check(
     "influential_points",
     "Influence of single points was not assessed",
-    "One point can pull a fitted curve towards itself. Cook's distance measures how much the "
-    "fit would move if the point were left out; leverage, how far a point's x sits from the "
-    "others.",
+    "One point can pull a fitted curve towards itself. Cook's distance says how far the "
+    "estimates would move if the point were left out, against their own uncertainty.",
     _check_influential_points,
 )
 _TREND = _Check(
     "residual_trend",
     "A trend of the residuals in x was not tested",
-    "A model of the right shape leaves residuals scattered evenly about zero at every x. A "
-    "curve left in the residuals is a shape the data contain and the model lacks.",
+    "A model of the right shape leaves residuals scattered evenly about zero at every x. "
+    "Terms the model cannot represent, left in the residuals, are a shape the data contain "
+    "and the model lacks.",
     _check_residual_trend,
 )
 _IDENTIFIABLE = _Check(
@@ -1085,7 +1268,8 @@ _CROSS_VALIDATION = _Check(
     "cross_validation",
     "Predictive error was not assessed",
     "Cross-validation refits the model on subsets of the data and scores the points left "
-    "out. A held-out error well above the fitted error means the model follows noise.",
+    "out. A held-out error well above what a correct model would show means the model "
+    "follows noise.",
     _check_cross_validation,
 )
 _SIMPLER_MODEL = _Check(
@@ -1192,7 +1376,7 @@ def _residual_p(inp: _Inputs, check_id: str) -> float | None:
     if summary is None:
         return None
     if check_id == "residual_trend":
-        trend = _residual_trend(summary)
+        trend = _residual_trend(inp, summary)
         return trend.p_value if isinstance(trend, _Trend) else None
     test = _test(summary, _TEST_OF[check_id])
     return None if test is None else test.p_value

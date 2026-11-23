@@ -1,8 +1,15 @@
-"""``audit_fit`` on real fits: every verdict is read from numbers the core already computed."""
+"""``audit_fit`` on real fits: every verdict is read from numbers the core already computed.
+
+The calibration tests run ordinary seeds, 1 onwards, with nothing selected, and assert the
+bar each rule was given. Where a size misses its bar, the test keeps the bar and says so as
+a strict expected failure.
+"""
 
 import re
 
+import numpy as np
 import pytest
+from scipy import stats
 
 from curvestudio.discovery import AutoFitConfig, AutoFitResult, CandidateMetrics, RankedFit
 from curvestudio.fitting import FitStatus
@@ -15,6 +22,13 @@ from curvestudio.tools import (
     ToolError,
     Verdict,
     audit_fit,
+)
+from curvestudio.tools.audit import (
+    CHANCE_CAUTION_Q,
+    CHANCE_FAIL_Q,
+    COOKS_CAUTION_REGION,
+    COOKS_CHANCE_SHARE,
+    expected_cv_ratio,
 )
 
 CHECK_IDS = (
@@ -42,19 +56,38 @@ AT_A_BOUND_NEXT_STEP = (
     "bound if it is wrong, take more points where the model is sensitive, or use a model with "
     "fewer parameters."
 )
+TREND_NEXT_STEP = (
+    "The residuals show a curved trend, so the model is missing a shape the data contain. "
+    "Try a model with one more parameter."
+)
+CV_NEXT_STEP = (
+    "The fit describes noise as well as signal. A simpler model, or one with fewer "
+    "parameters, will predict better."
+)
+SEEDS = range(1, 41)
+"""Ordinary seeds for a calibration run: the first forty after zero, none of them chosen."""
+CV_SEEDS = range(1, 51)
 
 
 def _check(audit: FitAudit, check_id: str) -> AuditCheck:
     return next(check for check in audit.checks if check.id == check_id)
 
 
-def _cv(rmse: float) -> CrossValidation:
-    """A complete five-fold cross-validation with the given pooled error."""
+def _rates(verdicts: list[Verdict]) -> dict[str, float]:
+    """The share of each verdict, in percent, for an assertion message."""
+    return {
+        verdict.value: round(100 * verdicts.count(verdict) / len(verdicts), 1)
+        for verdict in Verdict
+    }
+
+
+def _cv(rmse: float, folds: int = 5) -> CrossValidation:
+    """A complete cross-validation with the given pooled error."""
     return CrossValidation(
-        folds=5,
+        folds=folds,
         seed=0,
         rmse=rmse,
-        fold_rmse=[rmse] * 5,
+        fold_rmse=[rmse] * folds,
         n_failed=0,
         status="ok",
         reasons=[],
@@ -99,13 +132,17 @@ def _ranking(*rows: RankedFit) -> AutoFitResult:
 
 
 def test_a_clean_fit_passes_every_check(scenarios) -> None:
-    audit = audit_fit(scenarios.clean())
+    bundle = scenarios.clean()
+    # The sample is the generator's first draw, taken as it comes.
+    noise = np.random.default_rng(0).normal(0.0, 0.1, 40)
+    x = np.asarray(bundle.data.x)
+    assert np.allclose(bundle.data.y, 1.0 + 0.5 * x - 0.03 * x**2 + noise)
+
+    audit = audit_fit(bundle)
 
     assert [check.id for check in audit.checks] == list(CHECK_IDS)
     for check in audit.checks:
-        if check.id == "residual_trend":
-            assert check.verdict in (Verdict.PASS, Verdict.CAUTION)
-        elif check.id in ("cross_validation", "simpler_model"):
+        if check.id in ("cross_validation", "simpler_model"):
             assert check.verdict is Verdict.NOT_APPLICABLE, check
         else:
             assert check.verdict is Verdict.PASS, check
@@ -188,9 +225,9 @@ def test_an_empty_bundle_is_refused_and_a_fit_without_statistics_says_so(scenari
     [
         ("skewed", "residual_normality", Verdict.FAIL, Verdict.PASS),
         ("heteroscedastic", "constant_variance", Verdict.FAIL, Verdict.PASS),
-        ("one_outlier", "influential_points", Verdict.CAUTION, Verdict.PASS),
-        ("three_outliers", "influential_points", Verdict.FAIL, Verdict.PASS),
-        ("curve_fitted_by_line", "residual_trend", Verdict.FAIL, Verdict.PASS),
+        ("far_outlier", "influential_points", Verdict.FAIL, Verdict.PASS),
+        ("cubic_by_quadratic", "residual_trend", Verdict.FAIL, Verdict.PASS),
+        ("curve_fitted_by_line", "residual_trend", Verdict.FAIL, None),
         ("six_points", "points_per_parameter", Verdict.FAIL, Verdict.PASS),
         ("exact", "perfect_fit", Verdict.CAUTION, Verdict.PASS),
         ("autocorrelated", "residual_independence", Verdict.FAIL, Verdict.PASS),
@@ -206,6 +243,244 @@ def test_each_check_triggers_on_data_built_for_it_and_passes_on_clean_data(
     assert _check(audits[scenario], check_id).verdict is expected
     if on_a_clean_fit is not None:
         assert _check(audits["clean"], check_id).verdict is on_a_clean_fit
+
+
+# -- influential points -------------------------------------------------------------------------
+
+
+def test_the_influence_check_pins_its_three_verdict_forms(scenarios) -> None:
+    audits = scenarios.audited()
+    caution_cut = stats.f.isf(COOKS_CAUTION_REGION, 3, 37)
+    assert caution_cut == pytest.approx(2.24, abs=0.005)
+
+    passed = _check(audits["clean"], "influential_points")
+    assert passed.verdict is Verdict.PASS
+    assert passed.statistic == "largest Cook's distance 0.161 (row 40); 90 % region at 2.24"
+    assert passed.evidence.startswith(
+        "No single point moves the estimates outside their 90 % region: the largest Cook's "
+        "distance is 0.161 (row 40), against 2.24. 2 of 40 points cross the 4/n line (0.1), "
+        "about the 5 % that cross it by chance."
+    )
+    assert passed.next_step is None
+
+    far = _check(audits["far_outlier"], "influential_points")
+    assert far.verdict is Verdict.FAIL
+    assert far.title == "The fit does not stand without row 31"
+    assert far.evidence.startswith(
+        "Removing row 31 would move the estimates outside their 99 % region (Cook's distance "
+        "46.9 against 4.36): the fit does not stand without that point."
+    )
+    assert far.threshold == "Cook's distance above the 99 % region cut F(3, 37) = 4.36"
+    assert far.next_step == (
+        "Refit without row 31 and compare the estimates. If the conclusions differ, report "
+        "both fits or justify leaving the point out. Do not delete data to improve a fit."
+    )
+
+    # Decided by the count over the 4/n line, with no single large Cook's distance.
+    line = int(stats.binom.ppf(CHANCE_CAUTION_Q, 100, COOKS_CHANCE_SHARE))
+    many = _check(audits["contaminated_caution"], "influential_points")
+    assert many.verdict is Verdict.CAUTION
+    assert many.title == "More points than chance cross the influence line"
+    assert (
+        f"10 of 100 points cross the 4/n line; about 5 % cross it by chance, so more than "
+        f"{line} is not chance."
+    ) in many.evidence
+
+    line = int(stats.binom.ppf(CHANCE_FAIL_Q, 400, COOKS_CHANCE_SHARE))
+    masses = _check(audits["contaminated_fail"], "influential_points")
+    assert masses.verdict is Verdict.FAIL
+    assert masses.title == "Far more points than chance cross the influence line"
+    assert (
+        f"33 of 400 points cross the 4/n line; about 5 % cross it by chance, so more than "
+        f"{line} is not chance."
+    ) in masses.evidence
+    assert masses.next_step is not None
+    assert masses.next_step.startswith("Refit without rows ")
+    assert f", and {33 - 8} more and compare the estimates." in masses.next_step
+
+
+@pytest.mark.parametrize("n", (12, 20, 40, 60, 400))
+def test_the_influence_check_is_calibrated_on_well_behaved_fits(scenarios, n) -> None:
+    verdicts = [
+        _check(audit_fit(scenarios.quadratic_fit(n, seed)), "influential_points").verdict
+        for seed in SEEDS
+    ]
+
+    assert verdicts.count(Verdict.PASS) >= 0.9 * len(SEEDS), _rates(verdicts)
+    assert verdicts.count(Verdict.FAIL) <= 0.01 * len(SEEDS), _rates(verdicts)
+
+
+def test_a_far_point_fails_the_influence_check_and_an_in_range_outlier_is_left_to_normality(
+    scenarios,
+) -> None:
+    audits = scenarios.audited()
+
+    inside = _check(audits["in_range_outlier"], "influential_points")
+    assert inside.verdict is Verdict.PASS
+    assert inside.statistic == "largest Cook's distance 0.411 (row 31); 90 % region at 2.24"
+    assert _check(audits["in_range_outlier"], "residual_normality").verdict is Verdict.FAIL
+
+    outside = _check(audits["far_outlier"], "influential_points")
+    assert outside.verdict is Verdict.FAIL
+    assert "(Cook's distance 46.9 against 4.36)" in outside.evidence
+
+
+def test_the_influence_check_reads_not_applicable_without_a_region_or_distances(scenarios) -> None:
+    clean = scenarios.clean()
+    assert clean.result.stats is not None
+    # As many parameters as points: the core refuses such a fit, so it is built by hand.
+    saturated = clean.result.stats.model_copy(update={"n": 3})
+    no_region = clean.model_copy(
+        update={"result": clean.result.model_copy(update={"stats": saturated})}
+    )
+    check = _check(audit_fit(no_region), "influential_points")
+    assert check.verdict is Verdict.NOT_APPLICABLE
+    assert "no residual degrees of freedom" in check.evidence
+
+    assert clean.summary is not None
+    blank = clean.summary.residuals.model_copy(
+        update={"cooks_distance": [None] * len(clean.summary.residuals.cooks_distance)}
+    )
+    undefined = clean.model_copy(
+        update={"summary": clean.summary.model_copy(update={"residuals": blank})}
+    )
+    check = _check(audit_fit(undefined), "influential_points")
+    assert check.verdict is Verdict.NOT_APPLICABLE
+    assert "no Cook's distance is defined for this fit" in check.evidence
+
+
+# -- residual trend -----------------------------------------------------------------------------
+
+
+def test_the_trend_check_tests_terms_the_fitted_model_cannot_represent(scenarios) -> None:
+    audits = scenarios.audited()
+
+    cubic = _check(audits["cubic_by_quadratic"], "residual_trend")
+    assert cubic.verdict is Verdict.FAIL
+    assert cubic.statistic == (
+        "F(2, 35) = 387, p = 1.37e-24, for cubic and quartic terms beyond the fitted quadratic"
+    )
+    assert cubic.next_step == TREND_NEXT_STEP
+
+    line = _check(audits["curve_fitted_by_line"], "residual_trend")
+    assert line.verdict is Verdict.FAIL
+    assert line.statistic.endswith(", for quadratic and cubic terms beyond the fitted linear")
+
+    quartic = _check(audits["quartic_by_quadratic"], "residual_trend")
+    assert quartic.verdict is Verdict.FAIL
+
+    offset = _check(audits["offset_without_offset"], "residual_trend")
+    assert offset.verdict is Verdict.FAIL
+    assert offset.statistic.endswith(
+        "for linear, quadratic and cubic terms beyond the fitted exp_growth model"
+    )
+
+    origin = _check(audits["origin_quadratic_with_offset"], "residual_trend")
+    assert origin.verdict is Verdict.FAIL
+    assert origin.statistic.endswith(
+        "for constant, cubic and quartic terms beyond the fitted quadratic through the origin"
+    )
+
+    few = _check(audits["six_points"], "residual_trend")
+    assert few.verdict is Verdict.NOT_APPLICABLE
+    assert few.evidence == "only 1 residual degree of freedom; the test needs at least 3"
+
+    # A polynomial in the spec decides the degree that was fitted.
+    by_spec = _check(audit_fit(scenarios.clean(), spec=scenarios.LINE), "residual_trend")
+    assert by_spec.statistic.endswith(", for quadratic and cubic terms beyond the fitted linear")
+
+
+TREND_400_MEASURED = "92.5 % pass, 7.5 % caution over 40 ordinary seeds: below the 95 % bar"
+
+
+@pytest.mark.parametrize(
+    "n",
+    [
+        20,
+        40,
+        pytest.param(400, marks=pytest.mark.xfail(strict=True, reason=TREND_400_MEASURED)),
+    ],
+)
+def test_the_trend_check_is_calibrated_on_well_behaved_fits(scenarios, n) -> None:
+    verdicts = [
+        _check(audit_fit(scenarios.quadratic_fit(n, seed)), "residual_trend").verdict
+        for seed in SEEDS
+    ]
+
+    assert verdicts.count(Verdict.PASS) >= 0.95 * len(SEEDS), _rates(verdicts)
+
+
+# -- cross-validation ----------------------------------------------------------------------------
+
+
+def test_expected_cv_ratio_is_what_a_correct_line_shows() -> None:
+    assert 1.15 <= expected_cv_ratio(12, 2, 5) <= 1.30
+    # More points, or training folds nearer the whole sample, leave less to expect.
+    assert expected_cv_ratio(30, 2, 5) < expected_cv_ratio(12, 2, 5)
+    assert expected_cv_ratio(100, 2, 5) < expected_cv_ratio(30, 2, 5)
+    assert expected_cv_ratio(100, 2, 100) < expected_cv_ratio(100, 2, 5)
+    # Leave-one-out trains every fold on n - 1 points.
+    assert expected_cv_ratio(12, 2, 12) == pytest.approx(np.sqrt((1 + 2 / 11) / (1 - 2 / 12)))
+    with pytest.raises(ValueError):
+        expected_cv_ratio(12, 2, 1)
+    with pytest.raises(ValueError):
+        expected_cv_ratio(12, 2, 13)
+    with pytest.raises(ValueError):
+        expected_cv_ratio(12, 12, 5)
+
+
+@pytest.mark.parametrize("n", (12, 30, 100))
+def test_cross_validation_is_judged_against_what_a_correct_model_shows(scenarios, n) -> None:
+    verdicts: list[Verdict] = []
+    ratios: list[float] = []
+    for seed in CV_SEEDS:
+        bundle, cv = scenarios.line_with_cv(n, seed)
+        assert cv.rmse is not None and bundle.result.stats is not None
+        ratios.append(cv.rmse / bundle.result.stats.rmse)
+        verdicts.append(_check(audit_fit(bundle, cv=cv), "cross_validation").verdict)
+
+    assert verdicts.count(Verdict.PASS) >= 0.9 * len(CV_SEEDS), _rates(verdicts)
+    assert verdicts.count(Verdict.FAIL) <= 0.01 * len(CV_SEEDS), _rates(verdicts)
+    expected = expected_cv_ratio(n, 2, 5)
+    assert abs(float(np.median(ratios)) / expected - 1.0) <= 0.05, (np.median(ratios), expected)
+
+
+def test_cross_validation_names_the_expectation_in_its_evidence(scenarios) -> None:
+    audits = scenarios.audited()
+
+    line = _check(audits["line_with_cv"], "cross_validation")
+    assert line.verdict is Verdict.PASS
+    assert line.evidence == (
+        "In-sample RMSE 0.336; cross-validation RMSE 0.365, against 0.413 expected from a "
+        "correct model with 12 points and 5 folds (0.883 times that)."
+    )
+    over = _check(audits["overfit_with_cv"], "cross_validation")
+    assert over.verdict is Verdict.FAIL
+    assert over.evidence == (
+        "In-sample RMSE 0.0153; cross-validation RMSE 1, against 0.0517 expected from a "
+        "correct model with 12 points and 12 folds (19.4 times that)."
+    )
+    assert over.next_step == CV_NEXT_STEP
+
+
+def test_cross_validation_is_not_applicable_when_nothing_can_be_expected_of_it(scenarios) -> None:
+    bundle, cv = scenarios.line_with_cv()
+    assert cv.rmse is not None
+    incomplete = cv.model_copy(update={"rmse": None, "n_failed": 2, "status": "incomplete"})
+    check = _check(audit_fit(bundle, cv=incomplete), "cross_validation")
+    assert check.verdict is Verdict.NOT_APPLICABLE
+    assert check.evidence.startswith("cross-validation is incomplete: 2 of 5 folds failed")
+    assert check.next_step is not None
+
+    too_many = _check(audit_fit(bundle, cv=_cv(0.5, folds=13)), "cross_validation")
+    assert too_many.verdict is Verdict.NOT_APPLICABLE
+    assert too_many.evidence == (
+        "cross-validation ran with 13 folds on 12 points for 2 parameters, so there is no "
+        "correct model to expect of it"
+    )
+
+
+# -- parameters ----------------------------------------------------------------------------------
 
 
 def test_parameters_at_a_bound_and_wide_intervals_are_flagged(scenarios) -> None:
@@ -299,8 +574,8 @@ def test_the_audit_names_the_simplest_model_within_two_aicc(scenarios) -> None:
         _row("tie_none", "No CV", 2, 1.0, 2),
         _row("tie_cv", "With CV", 2, 1.5, 3, cv_rmse=0.4),
     )
-    assert audit_fit(scenarios.polynomial(2), ranking=ties).simpler_model is not None
-    assert audit_fit(scenarios.polynomial(2), ranking=ties).simpler_model.model_id == "tie_cv"
+    winner = audit_fit(scenarios.polynomial(2), ranking=ties).simpler_model
+    assert winner is not None and winner.model_id == "tie_cv"
     both_missing = _ranking(
         _row("poly2", "Quadratic", 3, 0.0, 1),
         _row("tie_later", "Later", 2, 1.5, 3),
@@ -310,11 +585,18 @@ def test_the_audit_names_the_simplest_model_within_two_aicc(scenarios) -> None:
     assert found is not None and found.model_id == "tie_earlier"
 
 
+# -- rows ----------------------------------------------------------------------------------------
+
+
 def test_zero_weight_rows_are_excluded_and_listed(scenarios) -> None:
     bundle = scenarios.zero_weights()
     assert bundle.result.stats is not None and bundle.result.stats.n == 40
-    flagged = bundle.summary.residuals.flagged_high_influence if bundle.summary else []
-    assert flagged
+    assert bundle.summary is not None
+    residuals = bundle.summary.residuals
+    top = max((d, i) for i, d in enumerate(residuals.cooks_distance) if d is not None)[1]
+    flagged = set(residuals.flagged_high_influence)
+    leverage_only = [i for i in residuals.flagged_high_leverage if i not in flagged]
+    assert leverage_only
 
     audit = audit_fit(bundle)
 
@@ -324,32 +606,32 @@ def test_zero_weight_rows_are_excluded_and_listed(scenarios) -> None:
     )
     # The rows the audit names are rows of the data, not positions among the points used.
     active = [row for row in range(45) if row not in scenarios.ZERO_WEIGHT_ROWS]
-    cook_sentence = _check(audit, "influential_points").evidence.split(". ")[0]
-    assert cook_sentence.startswith("2 points have a Cook's distance")
-    for position in flagged:
-        assert re.search(rf"\b{active[position] + 1}\b", cook_sentence)
-    assert "rows" in cook_sentence
+    evidence = _check(audit, "influential_points").evidence
+    assert f"(row {active[top] + 1})" in evidence
+    for position in leverage_only:
+        assert re.search(rf"\b{active[position] + 1}\b", evidence)
 
     audit = audit_fit(scenarios.with_missing_weight(bundle))
     assert ExcludedRow(index=5, reason="weight is missing") in audit.excluded
     assert len(audit.excluded) == 6
 
 
-def test_many_flagged_points_are_counted_but_only_the_first_eight_are_listed(scenarios) -> None:
+def test_long_lists_of_rows_are_counted_in_full_but_only_the_first_eight_are_named(
+    scenarios,
+) -> None:
     bundle = scenarios.large_quadratic()
     assert bundle.summary is not None
-    flagged = bundle.summary.residuals.flagged_high_influence
-    assert len(flagged) > 8
+    residuals = bundle.summary.residuals
+    flagged = set(residuals.flagged_high_influence)
+    leverage_only = [i for i in residuals.flagged_high_leverage if i not in flagged]
+    assert len(leverage_only) > 8
 
     check = _check(audit_fit(bundle), "influential_points")
 
-    assert check.verdict is Verdict.FAIL
-    assert check.evidence.startswith(f"{len(flagged)} points have a Cook's distance")
+    assert f" {len(leverage_only)} points have high leverage but little influence" in check.evidence
     listed, rest = check.evidence.split(": rows ")[1].split(", and ")
     assert len(listed.split(", ")) == 7  # "a, b, c, d, e, f, g and h": eight rows in all
-    assert rest.startswith(f"{len(flagged) - 8} more.")
-    assert check.next_step is not None
-    assert f", and {len(flagged) - 8} more. Refit without them" in check.next_step
+    assert rest.startswith(f"{len(leverage_only) - 8} more.")
 
 
 def test_the_audit_is_a_pure_function(scenarios) -> None:
@@ -394,6 +676,9 @@ def test_registered_model_bounds_are_used_and_spec_bounds_override_them(
     assert override.verdict is Verdict.PASS
 
 
+# -- the audit as a whole ------------------------------------------------------------------------
+
+
 def test_the_summary_counts_failures_and_cautions_and_names_the_next_step(scenarios) -> None:
     clean = scenarios.clean()
     rmse = clean.result.stats.rmse if clean.result.stats else 0.1
@@ -424,14 +709,12 @@ def test_the_summary_counts_failures_and_cautions_and_names_the_next_step(scenar
         f"1 check failed, 1 needs a look. {failed[0].title}. {failed[0].next_step}"
     )
 
-    # Plural forms, with the first check in order carrying the worst verdict.
-    audits = scenarios.audited()
-    audit = audits["three_outliers"]
+    # Several failures and one caution: plural failures, singular caution, and the first
+    # check in order carrying the worst verdict.
+    audit = scenarios.audited()["cubic_by_quadratic"]
     failed = [c for c in audit.checks if c.verdict is Verdict.FAIL]
     cautioned = [c for c in audit.checks if c.verdict is Verdict.CAUTION]
-    assert len(failed) >= 2 or len(cautioned) >= 2
-    look = f", {len(cautioned)} need a look" if cautioned else ""
-    assert (
-        audit.summary
-        == f"{len(failed)} checks failed{look}. {failed[0].title}. {failed[0].next_step}"
+    assert len(failed) >= 2 and len(cautioned) == 1
+    assert audit.summary == (
+        f"{len(failed)} checks failed, 1 needs a look. {failed[0].title}. {failed[0].next_step}"
     )

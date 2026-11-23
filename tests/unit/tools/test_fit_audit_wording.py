@@ -13,6 +13,13 @@ FORBIDDEN = re.compile(
     r"\b(prove[ns]?|proofs?|confirm\w*|validate[ds]?|guarantee\w*|certif\w*)", re.IGNORECASE
 )
 """Words that claim proof rather than state evidence, in any casing (``improve`` is not one)."""
+CROSS_VALIDATION = re.compile(r"cross-validat(ed|ion)", re.IGNORECASE)
+"""Removed before the search: the phrase names a method and claims nothing about the fit."""
+
+
+def _claims_proof(text: str) -> bool:
+    """Whether ``text`` contains a forbidden word outside the phrase ``cross-validation``."""
+    return FORBIDDEN.search(CROSS_VALIDATION.sub("", text)) is not None
 
 
 def _words(audit: FitAudit) -> Iterator[tuple[str, str]]:
@@ -74,16 +81,18 @@ def audits(scenarios, bounded_line) -> dict[str, FitAudit]:
 
 
 def test_no_check_claims_proof(audits) -> None:
-    assert FORBIDDEN.search("This proves the fit") and FORBIDDEN.search("Does not Confirm")
-    assert not FORBIDDEN.search(
-        "Do not delete data to improve a fit. Cross-validation was not run."
+    assert _claims_proof("This proves the fit") and _claims_proof("Does not Confirm")
+    assert _claims_proof("Cross-validation validates the model")
+    assert not _claims_proof(
+        "Do not delete data to improve a fit. Cross-validation was not run; the "
+        "cross-validated error is 0.4."
     )
 
     claims = [
         (name, where, text)
         for name, audit in audits.items()
         for where, text in _words(audit)
-        if FORBIDDEN.search(text)
+        if _claims_proof(text)
     ]
     assert claims == []
     for audit in audits.values():
