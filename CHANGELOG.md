@@ -73,6 +73,10 @@ All notable changes are listed here. Dates are IST. Format: [Keep a Changelog](h
 - **A session renewed its access token again after signing in a second time without a
   reload**: a renewal attempted with no stored refresh token left a finished renewal behind,
   and every later one in that tab answered with its result.
+- **Signing out while a sign-in renewal was still running left a live session in the
+  browser**: the renewal's answer was stored after the sign-out, so the next page load was
+  signed in again as that account. A renewal's answer is now adopted only while the session
+  that asked for it is still the current one.
 
 ## [0.11.1] - 2026-11-22
 
