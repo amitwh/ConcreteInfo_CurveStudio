@@ -21,12 +21,27 @@ All notable changes are listed here. Dates are IST. Format: [Keep a Changelog](h
   SVG beside PNG.
 - **Two more example datasets** beside the bundled one: a first-order decay and an
   enzyme-kinetics set.
+- **A profile page and an account menu on the web app**: the chip in the header opens a
+  menu with Profile and Sign out. `/profile` changes the name and the password (an
+  account created with Google or Microsoft sets one by e-mail), shows the plan's limits
+  against today's usage, switches the name on PDF reports and error reports, signs out
+  every other device, and deletes the account once the part of the e-mail before the `@`
+  is typed.
+- **A "Prepared by" line on reports**: the desktop's Edit → Preferences (Ctrl+,) stores a
+  name and an organisation that PDF reports, exported plots and workbook print headers
+  carry; the web PDF report prints the account's name when the profile's switch is on.
+  Nothing set, nothing changes.
+- **Administrator accounts**: an address listed in `CURVESTUDIO_ADMIN_EMAILS` becomes an
+  administrator at its next sign-in, and the change is audited. The API refuses every
+  admin route to everyone else. The console that uses this ships separately.
 
 ### Fixed
 - **The OAuth callback log names the sign-in provider's error code** (Microsoft's AADSTS
   text), so a failed social sign-in says why.
 - **Microsoft sign-in requests only the `openid`, `email` and `profile` scopes**: the
   profile read is unaffected and the consent screen is smaller.
+- **The register page offers the same Google, Microsoft and LinkedIn buttons as the
+  sign-in card**, and links styled as buttons are no longer underlined.
 
 ## [0.11.1] - 2026-11-22
 
