@@ -4,8 +4,8 @@
 :class:`MethodsText` in one of three styles. It fits nothing, reads and writes no file and
 touches no network. Every number in the text is one the fit result carries, rounded by one
 rule, or one of a few named counts and settings: the observations used, the interval level,
-the seed and the version. Nothing is guessed: what the text needed and did not get is listed
-in ``missing``, each entry a code and a sentence.
+the seed, the version, and the bounds the specification set. Nothing is guessed: what the
+text needed and did not get is listed in ``missing``, each entry a code and a sentence.
 
 The module follows its seams: :mod:`._methods_numbers` names the model that was fitted and
 rounds its estimates; this module writes the paragraph, lays out the equation and the table
@@ -459,9 +459,10 @@ def methods_text(
 
     Args:
         bundle: a fit that converged.
-        spec: the specification the fit ran with. It says whether the weights were used;
-            without it the text relies on what the result records and lists ``NO_SPEC`` in
-            ``missing``.
+        spec: the specification the fit ran with, checked against the fit before anything
+            else. It says whether the weights were used and what bounds it set; without it
+            the text relies on what the result records, says nothing of the bounds, and
+            lists ``NO_SPEC`` in ``missing``.
         style: ``"text"`` (plain lines), ``"markdown"`` or ``"latex"`` for the equation and
             the table. The paragraph is the same text in every style, escaped for LaTeX in
             that style. In LaTeX the equation is a complete display (``\\[``, an

@@ -146,6 +146,9 @@ def compact_line() -> FitBundle:
 
 
 UNDERSCORED = FitSpec(model=CustomRef(equation="-k_1*exp(-k_2*x)", parameters=["k_1", "k_2"]))
+BOUNDED_UNDERSCORED = UNDERSCORED.model_copy(
+    update={"bounds": {"k_1": (0.0, None), "k_2": (None, 5.0)}}
+)
 
 
 def underscored_xy() -> XY:
@@ -599,6 +602,7 @@ def test_each_style_is_well_formed() -> None:
         (without_uncertainty(custom), CUSTOM_LINE),
         (without_uncertainty(custom, which="all"), CUSTOM_LINE),
         (fit_dataset(underscored_xy(), UNDERSCORED), UNDERSCORED),
+        (fit_dataset(underscored_xy(), BOUNDED_UNDERSCORED), BOUNDED_UNDERSCORED),
     )
     for bundle, spec in cases:
         k = len(bundle.result.parameters)
@@ -728,6 +732,7 @@ def test_the_latex_compiles(tmp_path: Path) -> None:
     clean = fit_dataset(quadratic_xy(), QUADRATIC)
     cases = (
         (fit_dataset(underscored_xy(), UNDERSCORED), UNDERSCORED),
+        (fit_dataset(underscored_xy(), BOUNDED_UNDERSCORED), BOUNDED_UNDERSCORED),
         (weighted_quadratic(), USED),
         (fit_dataset(growth_xy(), GROWTH), GROWTH),
         (without_uncertainty(clean), QUADRATIC),
