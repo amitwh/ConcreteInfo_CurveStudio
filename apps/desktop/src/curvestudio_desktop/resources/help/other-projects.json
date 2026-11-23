@@ -1,0 +1,14 @@
+{
+  "entries": [
+    {"name": "PC Power Calculator", "url": "https://pcpower.concreteinfo.net/",
+     "summary": "PC power draw and electricity cost, with country-specific tariffs.", "kind": "open-source"},
+    {"name": "Markdown Converter", "url": "https://github.com/amitwh/markdown-converter",
+     "summary": "Turn Markdown into documents, slides and web pages, offline.", "kind": "open-source"},
+    {"name": "GitHub Desktop for Linux", "url": "https://github.com/amitwh/GitHubDesktopLinux",
+     "summary": "The Git desktop app, rebuilt for Linux.", "kind": "open-source"},
+    {"name": "ConcreteInfo Mix Design Platform", "url": "https://cmdapp.concreteinfo.cloud",
+     "summary": "Concrete mix design to IS 10262 and IS 456, with trial tracking.", "kind": "commercial"},
+    {"name": "CAMS2", "url": "https://cams2.concreteinfo.co.in",
+     "summary": "Chemical admixture management for multi-plant producers.", "kind": "commercial"}
+  ]
+}

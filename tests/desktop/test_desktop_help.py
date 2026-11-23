@@ -4,9 +4,11 @@ The canonical help text lives in ``docs/help-content.md``; it is copied verbatim
 the desktop package so the frozen application can render it. These tests pin that copy
 to the source, the eleven sections in order, the Markdown rendering (tables, lists,
 bold, inline code), search, the menu/shortcut wiring, the About contract (logo, links,
-runtime versions, credits) and the Lucide icon mapping.
+runtime versions, credits), the shared list of other ConcreteInfo projects and
+the Lucide icon mapping.
 """
 
+import json
 from importlib import resources
 from pathlib import Path
 
@@ -23,6 +25,7 @@ from curvestudio_desktop.views import icons
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CANONICAL_HELP = REPO_ROOT / "docs" / "help-content.md"
+CANONICAL_PROJECTS = REPO_ROOT / "docs" / "other-projects.json"
 
 #: Every internal name the views ask :func:`icons.icon` for. A missing entry must fail
 #: here, not render blank in the toolbar.
@@ -220,6 +223,24 @@ def test_help_dialog_is_non_modal_and_remembers_its_geometry(qtbot, settings) ->
     fresh = HelpDialog(settings=settings)
     qtbot.addWidget(fresh)
     assert fresh.size() == dialog.size()
+
+
+# -- shared project list ----------------------------------------------------------------------
+
+
+def test_the_packaged_other_projects_json_is_byte_identical_to_the_canonical_copy() -> None:
+    packaged = resources.files("curvestudio_desktop") / "resources" / "help" / "other-projects.json"
+    assert packaged.is_file(), "other-projects.json is not packaged"
+    assert packaged.read_bytes() == CANONICAL_PROJECTS.read_bytes()
+
+
+def test_the_shared_projects_list_holds_five_short_entries_with_valid_kinds() -> None:
+    packaged = resources.files("curvestudio_desktop") / "resources" / "help" / "other-projects.json"
+    entries = json.loads(packaged.read_bytes())["entries"]
+    assert len(entries) == 5
+    for entry in entries:
+        assert len(entry["summary"]) <= 90
+        assert entry["kind"] in {"open-source", "commercial"}
 
 
 # -- main-window wiring -----------------------------------------------------------------------
