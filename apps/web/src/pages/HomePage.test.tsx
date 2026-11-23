@@ -1,11 +1,21 @@
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api, ApiError } from "../api/client";
+import otherProjects from "../content/other-projects.json";
 import { HomePage } from "./HomePage";
 
 const { loginMock } = vi.hoisted(() => ({ loginMock: vi.fn() }));
+
+/** Read once so source-level assertions (retired copy really gone) run against the file. */
+const HOME_PAGE_SOURCE = readFileSync(
+  resolve(dirname(fileURLToPath(import.meta.url)), "./HomePage.tsx"),
+  "utf-8",
+);
 
 vi.mock("../api/auth", () => ({
   useAuth: () => ({
@@ -63,12 +73,190 @@ describe("HomePage", () => {
     expect(screen.getByRole("heading", { name: /library that covers/i })).toBeTruthy();
     expect(screen.getByRole("heading", { name: /explain to a reviewer/i })).toBeTruthy();
     expect(screen.getByRole("heading", { name: /ranking is the result/i })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: /curves engineers/i })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: /measured data, in every discipline/i })).toBeTruthy();
     expect(screen.getByRole("heading", { name: /one engine/i })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: /other tools we build and maintain/i })).toBeTruthy();
     expect(screen.getByRole("heading", { name: /questions we get asked/i })).toBeTruthy();
 
     // Settle the provider discovery so its state update happens inside act().
     await waitFor(() => expect(api.oauthProviders).toHaveBeenCalled());
+  });
+
+  it("opens with the research hero copy", () => {
+    renderHome();
+    const hero = document.querySelector(".hp-hero");
+    expect(hero).not.toBeNull();
+    expect(hero?.querySelector(".hp-eyebrow")?.textContent).toBe(
+      "CURVE FITTING AND STATISTICS · VALIDATED ON NIST STRD DATASETS",
+    );
+    expect(hero?.querySelector(".hp-lede")?.textContent?.startsWith(
+      "CurveStudio fits every applicable model to your data, ranks them on the evidence, and g",
+    )).toBe(true);
+  });
+
+  it("keeps the trust strip pills and stats", () => {
+    renderHome();
+    const strip = document.querySelector(".hp-trust");
+    expect(strip).not.toBeNull();
+    const scoped = within(strip as HTMLElement);
+    for (const pill of [
+      "NIST StRD reference sets",
+      "~250 models",
+      "AICc / BIC ranking",
+      "Confidence & prediction bands",
+      "AGPL-3.0",
+      "Offline desktop app",
+    ]) {
+      expect(scoped.getByText(pill)).toBeTruthy();
+    }
+    expect(scoped.getByText("174")).toBeTruthy();
+    expect(scoped.getByText("~250")).toBeTruthy();
+    expect(scoped.getByText("export formats")).toBeTruthy();
+  });
+
+  it("renders the who-it-is-for section with exactly five persona cards", () => {
+    renderHome();
+    const section = document.getElementById("who");
+    expect(section).not.toBeNull();
+    const scoped = within(section as HTMLElement);
+
+    expect(
+      scoped.getByRole("heading", {
+        level: 2,
+        name: "For the analysis behind a paper, a thesis or a lab report.",
+      }),
+    ).toBeTruthy();
+    expect(scoped.getByText("WHO IT IS FOR")).toBeTruthy();
+    expect(section?.querySelectorAll("article")).toHaveLength(5);
+
+    const personas: Array<[string, string]> = [
+      [
+        "Research scientists",
+        "Test competing models on equal terms and report the one the data supports.",
+      ],
+      [
+        "Laboratory analysts",
+        "Calibration curves, peak fits and method comparisons, with the uncertainty attached.",
+      ],
+      [
+        "Postgraduate students",
+        "Learn what R², AICc and a confidence band actually say about your data.",
+      ],
+      [
+        "Engineers in research and test",
+        "Fit sensor, materials and reliability data on your own machine.",
+      ],
+      ["Lecturers", "Show a class why a high R² is not the end of the argument."],
+    ];
+    for (const [name, body] of personas) {
+      expect(scoped.getByRole("heading", { name })).toBeTruthy();
+      expect(scoped.getByText(body)).toBeTruthy();
+    }
+  });
+
+  it("renders the eight research requirements as two-column rows", () => {
+    renderHome();
+    const section = document.getElementById("requirements");
+    expect(section).not.toBeNull();
+    const scoped = within(section as HTMLElement);
+
+    expect(
+      scoped.getByRole("heading", {
+        level: 2,
+        name: "What an analysis has to survive, and how CurveStudio answers.",
+      }),
+    ).toBeTruthy();
+    expect(scoped.getByText("RESEARCH REQUIREMENTS")).toBeTruthy();
+
+    for (const requirement of [
+      "Choose a model on evidence",
+      "Report uncertainty honestly",
+      "Show that the fit hides nothing",
+      "Trust the arithmetic",
+      "Use your own equation",
+      "Account for measurement error",
+      "Reproduce it next year",
+      "Publish and archive",
+    ]) {
+      expect(scoped.getByText(requirement)).toBeTruthy();
+    }
+    // Spot-check the answers beside three of the rows.
+    expect(scoped.getByText(/AICc, BIC, adjusted R² and cross-validated error/)).toBeTruthy();
+    expect(scoped.getByText("Weighted least squares.")).toBeTruthy();
+    expect(scoped.getByText(/NIST StRD certified datasets/)).toBeTruthy();
+  });
+
+  it("renders the More from ConcreteInfo section from the shared project list", () => {
+    renderHome();
+    const section = document.getElementById("projects");
+    expect(section).not.toBeNull();
+    const scoped = within(section as HTMLElement);
+
+    expect(
+      scoped.getByRole("heading", { level: 2, name: "Other tools we build and maintain." }),
+    ).toBeTruthy();
+    expect(scoped.getByText("MORE FROM CONCRETEINFO")).toBeTruthy();
+
+    // Open source first, commercial second.
+    const groupNames = scoped
+      .getAllByRole("heading", { level: 3 })
+      .map((heading) => heading.textContent);
+    expect(groupNames.indexOf("Open source")).toBeGreaterThanOrEqual(0);
+    expect(groupNames.indexOf("Commercial software")).toBeGreaterThan(
+      groupNames.indexOf("Open source"),
+    );
+
+    for (const entry of otherProjects.entries) {
+      expect(scoped.getByText(entry.summary)).toBeTruthy();
+      const link = scoped.getByRole("link", { name: entry.name });
+      expect(link.getAttribute("href")).toBe(entry.url);
+      expect(link.getAttribute("target")).toBe("_blank");
+    }
+    expect(
+      scoped.getByRole("link", { name: "PC Power Calculator" }).getAttribute("href"),
+    ).toBe("https://pcpower.concreteinfo.net/");
+    expect(
+      scoped.getByRole("link", { name: "ConcreteInfo Mix Design Platform" }).getAttribute("href"),
+    ).toBe("https://cmdapp.concreteinfo.cloud");
+  });
+
+  it("replaces the concrete use cases with the seven research ones", () => {
+    renderHome();
+    const section = document.getElementById("use-cases");
+    expect(section).not.toBeNull();
+    const scoped = within(section as HTMLElement);
+
+    expect(
+      scoped.getByRole("heading", { level: 2, name: "Built for measured data, in every discipline." }),
+    ).toBeTruthy();
+    expect(section?.querySelectorAll("article")).toHaveLength(7);
+    for (const title of [
+      "Reaction kinetics",
+      "Enzyme kinetics",
+      "Growth curves",
+      "Calibration and drift",
+      "Spectra and chromatograms",
+      "Dose–response",
+      "Teaching-lab physics",
+    ]) {
+      expect(scoped.getByRole("heading", { name: title })).toBeTruthy();
+    }
+
+    // The retired concrete framing is gone from the page source entirely.
+    expect(HOME_PAGE_SOURCE).not.toContain("Cube strength");
+    expect(HOME_PAGE_SOURCE).not.toContain("water-binder");
+    expect(HOME_PAGE_SOURCE).not.toContain("Built for the curves engineers actually measure");
+  });
+
+  it("answers how to report a fit in a paper with the real exports", () => {
+    renderHome();
+    const faq = document.getElementById("faq");
+    expect(faq).not.toBeNull();
+    const scoped = within(faq as HTMLElement);
+
+    expect(scoped.getByText("How do I report a fit in a paper?")).toBeTruthy();
+    expect(scoped.getByText(/CSV, JSON, XLSX and PDF/)).toBeTruthy();
+    expect(scoped.getByText(/desktop project file records the full analysis/)).toBeTruthy();
   });
 
   it("submits the login form and navigates to the workspace", async () => {
@@ -215,6 +403,27 @@ describe("HomePage", () => {
       expect(link.getAttribute("target")).toBe("_blank");
       expect(link.getAttribute("rel")).toBe("noopener noreferrer");
     }
+  });
+
+  it("links Contact and Privacy in the footer and mirrors the shared open-source list", () => {
+    renderHome();
+    const footer = screen.getByRole("contentinfo");
+
+    const contact = within(footer).getByRole("link", { name: "Contact" });
+    expect(contact.getAttribute("href")).toBe("mailto:amit@concreteinfo.in");
+    expect(within(footer).getByRole("link", { name: "Privacy" }).getAttribute("href")).toBe(
+      "/about",
+    );
+
+    // The Open source column mirrors the shared list, plus CurveStudio's own source.
+    for (const entry of otherProjects.entries.filter((e) => e.kind === "open-source")) {
+      expect(
+        within(footer).getByRole("link", { name: entry.name }).getAttribute("href"),
+      ).toBe(entry.url);
+    }
+    expect(
+      within(footer).getByRole("link", { name: /CurveStudio source/i }).getAttribute("href"),
+    ).toBe("https://github.com/amitwh/ConcreteInfo_CurveStudio");
   });
 
   it("renders the six reproducible-fit chips and switches the displayed equation", async () => {

@@ -1,9 +1,10 @@
 /**
  * The anonymous home page at `/`.
  *
- * One long marketing page: hero with a working sign-in card, a trust strip, the three
- * pillars, how it works, the model library, the statistics that matter, an auto-fit
- * ranking mock, use cases, the desktop/web split, the FAQ and a closing CTA + footer.
+ * One long marketing page: hero with a working sign-in card, a trust strip, who it is
+ * for, the research requirements table, the three pillars, how it works, the model
+ * library, the statistics that matter, an auto-fit ranking mock, use cases, the
+ * desktop/web split, the other ConcreteInfo projects, the FAQ and a closing CTA + footer.
  *
  * Every illustration is a hand-authored inline SVG (no Plotly, no downloaded images) so
  * the page stays still, same-origin and cheap. Equations use the mono font; the single
@@ -11,6 +12,7 @@
  */
 
 import {
+  Fragment,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -23,22 +25,27 @@ import {
 } from "react";
 import {
   Activity,
-  Cpu,
+  Atom,
+  Cog,
   FileText,
   FlaskConical,
   Gauge,
+  GraduationCap,
   Layers,
   MonitorSmartphone,
-  ShieldCheck,
+  Presentation,
   Sigma,
   Sparkles,
+  TestTube,
   TrendingUp,
+  Waves,
 } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../api/auth";
 import { api, ApiError } from "../api/client";
 import { OAuthButtons } from "../components/OAuthButtons";
 import { errorText } from "../components/States";
+import otherProjects from "../content/other-projects.json";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -205,18 +212,47 @@ const RANK_ROWS = [
 ] as const;
 
 const USE_CASES = [
-  { icon: FlaskConical, title: "Cube strength vs age", body: "Fit the 3-, 7- and 28-day breaks, then predict the strength you need with a confidence band." },
-  { icon: Gauge, title: "Mix / water-binder optimisation", body: "Fit strength against water-binder ratio at each age and compare the forms that hold." },
-  { icon: TrendingUp, title: "Decay & ingress curves", body: "Carbonation, chloride ingress and drying: fit several decay forms and compare them." },
-  { icon: Activity, title: "Calibration curves", body: "Fit instrument response to known standards, with residuals and confidence bands." },
-  { icon: Cpu, title: "Sensor drift", body: "Fit the slow baseline and read the residuals for real changes." },
-  { icon: ShieldCheck, title: "Lab QC", body: "Fit a stable baseline and read the residuals for the points that break it." },
+  { icon: Activity, title: "Reaction kinetics", body: "Concentration against time, with rate constants and their limits." },
+  { icon: FlaskConical, title: "Enzyme kinetics", body: "Rate against substrate concentration." },
+  { icon: TrendingUp, title: "Growth curves", body: "Population against time." },
+  { icon: Gauge, title: "Calibration and drift", body: "Instrument response against standard concentration, today and next month." },
+  { icon: Waves, title: "Spectra and chromatograms", body: "Sum-of-peaks models resolve overlapping bands." },
+  { icon: Sigma, title: "Dose–response", body: "Sigmoid models give a half-maximal concentration with its interval." },
+  { icon: Atom, title: "Teaching-lab physics", body: "Decay, cooling and damped oscillations." },
+] as const;
+
+const PERSONAS = [
+  { icon: FlaskConical, title: "Research scientists", body: "Test competing models on equal terms and report the one the data supports." },
+  { icon: TestTube, title: "Laboratory analysts", body: "Calibration curves, peak fits and method comparisons, with the uncertainty attached." },
+  { icon: GraduationCap, title: "Postgraduate students", body: "Learn what R², AICc and a confidence band actually say about your data." },
+  { icon: Cog, title: "Engineers in research and test", body: "Fit sensor, materials and reliability data on your own machine." },
+  { icon: Presentation, title: "Lecturers", body: "Show a class why a high R² is not the end of the argument." },
+] as const;
+
+/** The research requirements table: the requirement, then what the software does about it. */
+const REQUIREMENTS: ReadonlyArray<readonly [string, string]> = [
+  ["Choose a model on evidence", "Fits every applicable model and ranks them by AICc, BIC, adjusted R² and cross-validated error. Models that draw the same curve share a rank."],
+  ["Report uncertainty honestly", "Parameter standard errors and 95 % confidence intervals; confidence and prediction bands; bootstrap; Monte Carlo propagation."],
+  ["Show that the fit hides nothing", "Residual diagnostics: Shapiro–Wilk, Anderson–Darling, Durbin–Watson, Ljung–Box, Breusch–Pagan, leverage and influence."],
+  ["Trust the arithmetic", "Checked against NIST StRD certified datasets. A fit that does not converge is reported as failed, never replaced by a plausible answer."],
+  ["Use your own equation", "Custom models with named parameters, start values and bounds."],
+  ["Account for measurement error", "Weighted least squares."],
+  ["Reproduce it next year", "Desktop project files record the data, every cleaning step, the fit settings, random seeds and software versions."],
+  ["Publish and archive", "Reports in CSV, JSON, XLSX and PDF; plots as PNG, SVG and PDF."],
 ] as const;
 
 const FAQ = [
   {
     q: "Is an R² of 1 meaningful?",
     a: "Not on its own. A perfect R² can mean the model has enough parameters to trace noise. CurveStudio reports adjusted R², AICc and residual plots so you judge the fit, not just the headline number.",
+  },
+  {
+    q: "Can I use my own equation?",
+    a: "Yes. Custom models take your own equation with named parameters, start values and bounds, and are fitted and ranked exactly like the built-in forms.",
+  },
+  {
+    q: "How do I report a fit in a paper?",
+    a: "Export the numbers as CSV, JSON, XLSX or PDF and the plots as PNG, SVG or PDF, then report the model, the parameters with their confidence intervals and the ranking statistics. A desktop project file records the full analysis: the data, the cleaning steps, the fit settings and the software versions, so the run can be repeated as written.",
   },
   {
     q: "Does it need an internet connection?",
@@ -232,7 +268,7 @@ const FAQ = [
   },
   {
     q: "What can I export?",
-    a: "PDF, XLSX and CSV. Each export carries the input data, fitted parameters, statistics, confidence bands and residual diagnostics in one reproducible report.",
+    a: "Reports in CSV, JSON, XLSX and PDF; plots as PNG, SVG and PDF. Each export carries the input data, the fitted parameters, the statistics and the residual diagnostics in one report.",
   },
   {
     q: "Is it free?",
@@ -262,7 +298,7 @@ const FIT_MODELS: readonly FitModel[] = [
     equation: "y = a·exp(−b·x)+c",
     r2: "0.9964",
     rmse: "1.84",
-    note: "strength loss, carbonation and chloride ingress with depth or time.",
+    note: "radioactive decay, first-order reaction kinetics and diffusion profiles with depth or time.",
     f: (x) => 98 * Math.exp(-0.42 * x) + 12,
     domain: [0, 10],
   },
@@ -272,7 +308,7 @@ const FIT_MODELS: readonly FitModel[] = [
     equation: "y = L/(1+exp(−k(x−x₀)))",
     r2: "0.9931",
     rmse: "2.37",
-    note: "strength gain, curing progress and any response that levels off.",
+    note: "population growth, substrate uptake and any response that levels off.",
     f: (x) => 96 / (1 + Math.exp(-0.9 * (x - 4))),
     domain: [0, 10],
   },
@@ -774,14 +810,15 @@ export function HomePage(): ReactElement {
         <section className="hp-hero">
           <div className="hp-wrap hp-hero__grid">
             <div className="hp-hero__copy">
-              <p className="hp-eyebrow">CURVE FITTING &amp; DATA ANALYSIS · VALIDATED ON NIST STRD DATASETS</p>
+              <p className="hp-eyebrow">CURVE FITTING AND STATISTICS · VALIDATED ON NIST STRD DATASETS</p>
               <h1>
                 From paired measurements to a defensible model.{" "}
                 <span className="hp-accent">automatically.</span>
               </h1>
               <p className="hp-lede">
-                Auto-fit fits every applicable model and ranks them. You get the statistics, the
-                confidence bands and a report you can hand over.
+                CurveStudio fits every applicable model to your data, ranks them on the evidence,
+                and gives you the statistics to report: parameter uncertainty and residual
+                diagnostics you can defend.
               </p>
               <div className="hp-actions">
                 <Link to="/register" className="btn btn--primary btn--pill">
@@ -899,7 +936,56 @@ export function HomePage(): ReactElement {
           </div>
         </section>
 
-        {/* 3 — three pillars */}
+        {/* 3 — who it is for */}
+        <section className="hp-sec" id="who">
+          <div className="hp-wrap">
+            <SectionHead
+              eyebrow="WHO IT IS FOR"
+              title="For the analysis behind a paper, a thesis or a lab report."
+              lede="CurveStudio is a general fitting workbench. These are the people it is for."
+            />
+            <div className="hp-grid-3">
+              {PERSONAS.map(({ icon: Icon, title, body }) => (
+                <article className="hp-card" key={title}>
+                  <span className="hp-icon-tile" aria-hidden="true">
+                    <Icon />
+                  </span>
+                  <h3>{title}</h3>
+                  <p>{body}</p>
+                </article>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* 4 — research requirements */}
+        <section className="hp-sec hp-sec--alt" id="requirements">
+          <div className="hp-wrap">
+            <SectionHead
+              eyebrow="RESEARCH REQUIREMENTS"
+              title="What an analysis has to survive, and how CurveStudio answers."
+              lede="Each requirement, and what the software does about it."
+            />
+            <div className="hp-split">
+              <p>
+                <strong>Research requirement</strong>
+              </p>
+              <p>
+                <strong>What CurveStudio does</strong>
+              </p>
+              {REQUIREMENTS.map(([requirement, answer]) => (
+                <Fragment key={requirement}>
+                  <p>
+                    <strong>{requirement}</strong>
+                  </p>
+                  <p>{answer}</p>
+                </Fragment>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* 5 — three pillars */}
         <section className="hp-sec" id="features">
           <div className="hp-wrap">
             <SectionHead
@@ -921,7 +1007,7 @@ export function HomePage(): ReactElement {
           </div>
         </section>
 
-        {/* 4 — how it works */}
+        {/* 6 — how it works */}
         <section className="hp-sec hp-sec--alt" id="how-it-works">
           <div className="hp-wrap">
             <SectionHead
@@ -942,7 +1028,7 @@ export function HomePage(): ReactElement {
           </div>
         </section>
 
-        {/* 5 — model library */}
+        {/* 7 — model library */}
         <section className="hp-sec" id="models">
           <div className="hp-wrap hp-models">
             <SectionHead
@@ -968,7 +1054,7 @@ export function HomePage(): ReactElement {
           </div>
         </section>
 
-        {/* 5b — fits you can reproduce */}
+        {/* 7b — fits you can reproduce */}
         <section className="hp-sec" id="fits">
           <div className="hp-wrap">
             <SectionHead
@@ -980,7 +1066,7 @@ export function HomePage(): ReactElement {
           </div>
         </section>
 
-        {/* 6 — statistics */}
+        {/* 8 — statistics */}
         <section className="hp-sec hp-sec--alt">
           <div className="hp-wrap">
             <SectionHead
@@ -1064,7 +1150,7 @@ export function HomePage(): ReactElement {
           </div>
         </section>
 
-        {/* 7 — auto-fit ranking */}
+        {/* 9 — auto-fit ranking */}
         <section className="hp-sec">
           <div className="hp-wrap">
             <SectionHead
@@ -1097,12 +1183,12 @@ export function HomePage(): ReactElement {
           </div>
         </section>
 
-        {/* 8 — use cases */}
+        {/* 10 — use cases */}
         <section className="hp-sec hp-sec--alt" id="use-cases">
           <div className="hp-wrap">
             <SectionHead
               eyebrow="USE CASES"
-              title="Built for the curves engineers actually measure."
+              title="Built for measured data, in every discipline."
               lede="The same engine works wherever a pair of measurements needs a defensible shape."
             />
             <div className="hp-grid-3">
@@ -1119,7 +1205,7 @@ export function HomePage(): ReactElement {
           </div>
         </section>
 
-        {/* 9 — desktop + web */}
+        {/* 11 — desktop + web */}
         <section className="hp-sec">
           <div className="hp-wrap">
             <SectionHead
@@ -1154,7 +1240,63 @@ export function HomePage(): ReactElement {
           </div>
         </section>
 
-        {/* 10 — FAQ */}
+        {/* 12 — more from ConcreteInfo */}
+        <section className="hp-sec" id="projects">
+          <div className="hp-wrap">
+            <SectionHead
+              eyebrow="MORE FROM CONCRETEINFO"
+              title="Other tools we build and maintain."
+              lede="Open source you can self-host, and the commercial platforms we run."
+            />
+            <div className="hp-split">
+              <article className="hp-card hp-split__card">
+                <h3>Open source</h3>
+                <ul className="hp-list">
+                  {otherProjects.entries
+                    .filter((entry) => entry.kind === "open-source")
+                    .map((entry) => (
+                      <li key={entry.url}>
+                        <a href={entry.url} target="_blank" rel="noopener noreferrer">
+                          {entry.name}
+                        </a>
+                        {". "}
+                        <span>{entry.summary}</span>
+                      </li>
+                    ))}
+                </ul>
+              </article>
+              <article className="hp-card hp-split__card">
+                <h3>Commercial software</h3>
+                <ul className="hp-list">
+                  {otherProjects.entries
+                    .filter((entry) => entry.kind === "commercial")
+                    .map((entry) => (
+                      <li key={entry.url}>
+                        <a href={entry.url} target="_blank" rel="noopener noreferrer">
+                          {entry.name}
+                        </a>
+                        {". "}
+                        <span>{entry.summary}</span>
+                      </li>
+                    ))}
+                </ul>
+              </article>
+            </div>
+            <p className="hp-note">
+              The full list of ConcreteInfo&apos;s tools lives at{" "}
+              <a
+                href="https://www.concreteinfo.in"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                www.concreteinfo.in
+              </a>
+              .
+            </p>
+          </div>
+        </section>
+
+        {/* 13 — FAQ */}
         <section className="hp-sec hp-sec--alt" id="faq">
           <div className="hp-wrap hp-faq">
             <SectionHead eyebrow="FAQ" title="Questions we get asked." />
@@ -1167,7 +1309,7 @@ export function HomePage(): ReactElement {
           </div>
         </section>
 
-        {/* 11 — final CTA */}
+        {/* 14 — final CTA */}
         <section className="hp-cta">
           <div className="hp-wrap hp-cta__inner">
             <h2>Start fitting in minutes.</h2>
@@ -1235,6 +1377,12 @@ export function HomePage(): ReactElement {
                 <Link to="/about">About</Link>
               </li>
               <li>
+                <a href="mailto:amit@concreteinfo.in">Contact</a>
+              </li>
+              <li>
+                <Link to="/about">Privacy</Link>
+              </li>
+              <li>
                 <a href="https://www.concreteinfo.in">ConcreteInfo</a>
               </li>
             </ul>
@@ -1251,29 +1399,15 @@ export function HomePage(): ReactElement {
                   CurveStudio source (AGPL-3.0)
                 </a>
               </li>
-              <li>
-                <a href="https://pcpower.concreteinfo.net/" target="_blank" rel="noopener noreferrer">
-                  PC Power Calculator
-                </a>
-              </li>
-              <li>
-                <a
-                  href="https://github.com/amitwh/markdown-converter"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  Markdown Converter
-                </a>
-              </li>
-              <li>
-                <a
-                  href="https://github.com/amitwh/GitHubDesktopLinux"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  GitHub Desktop for Linux
-                </a>
-              </li>
+              {otherProjects.entries
+                .filter((entry) => entry.kind === "open-source")
+                .map((entry) => (
+                  <li key={entry.url}>
+                    <a href={entry.url} target="_blank" rel="noopener noreferrer">
+                      {entry.name}
+                    </a>
+                  </li>
+                ))}
             </ul>
           </nav>
         </div>
