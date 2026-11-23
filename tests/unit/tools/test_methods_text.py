@@ -205,7 +205,8 @@ def test_methods_text_states_only_what_is_true() -> None:
     )
     assert text.citation_model == (NO_SOURCE["custom"],)
     latex = methods_text(custom, spec=CUSTOM_LINE, style="latex")
-    assert latex.equation.splitlines()[1] == r"y &= \text{a*x + b} \\"
+    # the display's third line: \[, \begin{aligned}, then the model
+    assert latex.equation.splitlines()[2] == r"y &= \text{a*x + b} \\"
 
 
 def test_a_parameter_without_a_standard_error_is_said_to_have_none() -> None:
@@ -506,8 +507,9 @@ def test_each_style_is_well_formed() -> None:
         assert latex.table.endswith("\\bottomrule\n\\end{tabular}")
         assert latex.table.count(" \\\\\n") == k + 1
         assert latex.table.count(" & ") == 4 * (k + 1)
-        assert latex.equation.startswith("\\begin{aligned}\n")
-        assert latex.equation.endswith("\n\\end{aligned}")
+        # the equation is a complete display, as an author pastes it
+        assert latex.equation.startswith("\\[\n\\begin{aligned}\n")
+        assert latex.equation.endswith("\n\\end{aligned}\n\\]")
         assert latex.equation.count(" &= ") == k + 1
         assert latex.equation.count(" \\\\\n") == k + 1
         assert ("\\pm" in latex.equation) is with_error
@@ -609,14 +611,9 @@ def test_the_latex_compiles(tmp_path: Path) -> None:
     parts = [r"\documentclass{article}", r"\usepackage{amsmath,booktabs}", r"\begin{document}"]
     for bundle, spec in cases:
         text = methods_text(bundle, spec=spec, style="latex")
-        parts += [
-            r"\par",
-            text.paragraph,
-            r"\begin{equation*}",
-            text.equation,
-            r"\end{equation*}",
-            text.table,
-        ]
+        # nothing is added around them: the paragraph, the equation and the table go in as
+        # they come back
+        parts += [r"\par", text.paragraph, text.equation, text.table]
     parts.append(r"\end{document}")
     (tmp_path / "methods.tex").write_text("\n".join(parts), encoding="utf-8")
 

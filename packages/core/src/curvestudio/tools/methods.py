@@ -330,18 +330,23 @@ def _latex_head(result: FitResult, model: _Model) -> str:
 
 
 def _latex_equation(result: FitResult, model: _Model, shown: tuple[_Shown, ...]) -> str:
-    """The equation and its estimates as one ``aligned`` block.
-
-    ``aligned`` is set inside mathematics, so an author surrounds the block with a math
-    environment of their choice (``equation``, ``align``, ``\\[ \\]``).
-    """
+    """The equation and its estimates as one complete display: ``\\[``, an ``aligned`` block,
+    ``\\]``, which compiles as it comes."""
     lines = [_latex_head(result, model)]
     for row in shown:
         if row.std_err is None:
             lines.append(rf"{row.name} &= {row.value}\ {_latex_text(NO_STANDARD_ERROR_TEXT)}")
         else:
             lines.append(rf"{row.name} &= {row.value} \pm {row.std_err}")
-    return "\n".join([r"\begin{aligned}", *(f"{line} \\\\" for line in lines), r"\end{aligned}"])
+    return "\n".join(
+        [
+            r"\[",
+            r"\begin{aligned}",
+            *(f"{line} \\\\" for line in lines),
+            r"\end{aligned}",
+            r"\]",
+        ]
+    )
 
 
 def _equation(result: FitResult, model: _Model, shown: tuple[_Shown, ...], style: Style) -> str:
@@ -429,9 +434,11 @@ def methods_text(
             ``missing``.
         style: ``"text"`` (plain lines), ``"markdown"`` or ``"latex"`` for the equation and
             the table. The paragraph is the same text in every style, escaped for LaTeX in
-            that style. In LaTeX the equation is an
-            ``aligned`` block that belongs inside a math environment, and the table a
-            ``tabular`` with ``booktabs`` rules (``amsmath`` and ``booktabs`` are needed).
+            that style. In LaTeX the equation is a complete display (``\\[``, an
+            ``aligned`` block, ``\\]``): an author who wants it numbered replaces the wrapper
+            with an
+            ``equation`` environment. The table is a ``tabular`` with ``booktabs`` rules and
+            needs ``\\usepackage{booktabs}``; the display needs ``amsmath``.
         level: the confidence level of the intervals the fit's parameters carry, stated in the
             text. The workflow's fits carry 0.95; a result produced with another level must be
             given that one here, as the result itself does not record it.
