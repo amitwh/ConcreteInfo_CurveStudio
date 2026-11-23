@@ -34,6 +34,15 @@ All notable changes are listed here. Dates are IST. Format: [Keep a Changelog](h
 - **Administrator accounts**: an address listed in `CURVESTUDIO_ADMIN_EMAILS` becomes an
   administrator at its next sign-in, and the change is audited. The API refuses every
   admin route to everyone else. The console that uses this ships separately.
+- **Anonymous error reports from the web app**: when something goes wrong, the browser can
+  send an anonymous report (the error, where it happened, and which browser) so it can be
+  fixed, and a failed screen shows a recovery page with a reference. Reports never include
+  the account, the projects or the data. On by default; switched off under Profile → Privacy,
+  or on the About page when signed out. The API also records its own unhandled exceptions and
+  failures in background work, with credentials and e-mail addresses blanked.
+- **The administrator API**: what the admin console reads, open to administrators only:
+  accounts, desktop installs, error events, the audit trail, system figures, latency per
+  route and plan limits. The console pages ship separately.
 
 ### Fixed
 - **The OAuth callback log names the sign-in provider's error code** (Microsoft's AADSTS
