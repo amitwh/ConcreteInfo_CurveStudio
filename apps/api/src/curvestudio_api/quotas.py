@@ -8,6 +8,7 @@ from typing import Literal
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from curvestudio_api import audit
 from curvestudio_api.errors import ApiError
 from curvestudio_api.orm import AuditLog, Dataset, Fit, Job, Plan, User
 from curvestudio_api.settings import Settings
@@ -41,7 +42,8 @@ def resolve_plan(db: Session, settings: Settings, override: str | None) -> Plan:
     override when it names a known row, else ``free``.
 
     Raises:
-        ApiError: 503 when no seeded plan row exists at all (only possible below migration 0001).
+        ApiError: 503 when the plans table holds no rows at all (both seeds are removed only
+            by hand).
     """
     wanted = PLAN_NAME if not settings.billing_enabled else (override or FREE_PLAN_NAME)
     plan = db.scalar(select(Plan).where(Plan.name == wanted))
@@ -180,3 +182,24 @@ def check_autofit_runs(
             {"code": "QUOTA_EXCEEDED", "quota": "autofits_per_day", "limit": limit, "used": used},
             {"Retry-After": str(retry_after)},
         )
+
+
+def set_plan_override(db: Session, user: User, override: str | None, actor: User | None) -> None:
+    """Set (or clear) the account's plan override, then audit the change as ``user.plan_change``.
+
+    Only an admin (P5) or the entitlement connector calls this: the name must match a row in
+    ``plans``; ``None`` clears the override. The audit detail carries the old and the new name
+    and nothing else.
+    """
+    if override is not None and db.scalar(select(Plan).where(Plan.name == override)) is None:
+        raise ApiError(422, "VALIDATION_ERROR", f"there is no plan named {override!r}")
+    detail = {"from": user.plan_override, "to": override}
+    user.plan_override = override
+    audit.record(
+        db,
+        "user.plan_change",
+        "user",
+        user_id=None if actor is None else actor.id,
+        entity_id=user.id,
+        detail=detail,
+    )

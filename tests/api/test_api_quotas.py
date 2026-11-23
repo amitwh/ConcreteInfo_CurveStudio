@@ -8,16 +8,18 @@ from pathlib import Path
 from typing import Any
 
 import api_job_workers
+import pytest
 from alembic import command
 from fastapi.testclient import TestClient
 from sqlalchemy import inspect, select, text
 
 from conftest import linear_csv, new_email, signup, upload
 from curvestudio_api.app import create_app
+from curvestudio_api.errors import ApiError
 from curvestudio_api.housekeeping import purge
 from curvestudio_api.migrations import _config, upgrade_to_head
 from curvestudio_api.orm import AuditLog, Dataset, Fit, Job, Plan, RefreshToken, User
-from curvestudio_api.quotas import autofits_per_day_limit, resolve_plan
+from curvestudio_api.quotas import autofits_per_day_limit, resolve_plan, set_plan_override
 from curvestudio_api.timeutil import utcnow
 
 API = "/api/v1"
@@ -259,6 +261,67 @@ def test_migration_0006_can_be_rolled_back_and_reapplied(
         plan_names = {row[0] for row in connection.execute(text("SELECT name FROM plans"))}
     assert "plan_override" in columns
     assert plan_names == {"free", "self-hosted"}
+
+
+# -- plan override setter --------------------------------------------------------------------------
+
+
+def test_set_plan_override_writes_and_audits(
+    client_factory: Callable[..., TestClient], settings_factory: Callable[..., Any]
+) -> None:
+    """A known name is written and audited; ``None`` clears the override, also audited."""
+    client = client_factory(settings_factory(billing_enabled=True))
+    headers = signup(client)
+    ctx = client.app.state.ctx  # type: ignore[attr-defined]
+    with ctx.session_factory() as db:
+        db.add(Plan(name="plus", limits=PLUS_LIMITS))
+        db.commit()
+    with ctx.session_factory() as db:
+        user = db.get(User, user_id(client, headers))
+        assert user is not None
+        set_plan_override(db, user, "plus", actor=None)
+        db.commit()
+    with ctx.session_factory() as db:
+        user = db.get(User, user_id(client, headers))
+        assert user is not None and user.plan_override == "plus"
+        changes = list(db.scalars(select(AuditLog).where(AuditLog.action == "user.plan_change")))
+        assert [c.detail for c in changes] == [{"from": None, "to": "plus"}]
+        assert changes[0].entity_id == str(user.id)
+        assert changes[0].user_id is None  # no actor was passed
+    with ctx.session_factory() as db:
+        user = db.get(User, user_id(client, headers))
+        assert user is not None
+        set_plan_override(db, user, None, actor=user)
+        db.commit()
+    with ctx.session_factory() as db:
+        user = db.get(User, user_id(client, headers))
+        assert user is not None and user.plan_override is None
+        changes = list(db.scalars(select(AuditLog).where(AuditLog.action == "user.plan_change")))
+        assert [c.detail for c in changes] == [
+            {"from": None, "to": "plus"},
+            {"from": "plus", "to": None},
+        ]
+        assert changes[1].user_id == user.id  # the actor is the one recorded
+
+
+def test_set_plan_override_refuses_an_unknown_name(
+    client_factory: Callable[..., TestClient], settings_factory: Callable[..., Any]
+) -> None:
+    client = client_factory(settings_factory(billing_enabled=True))
+    headers = signup(client)
+    ctx = client.app.state.ctx  # type: ignore[attr-defined]
+    with ctx.session_factory() as db:
+        user = db.get(User, user_id(client, headers))
+        assert user is not None
+        with pytest.raises(ApiError) as raised:
+            set_plan_override(db, user, "nope", actor=None)
+        assert raised.value.status_code == 422
+        assert raised.value.code == "VALIDATION_ERROR"
+        db.rollback()
+    with ctx.session_factory() as db:
+        user = db.get(User, user_id(client, headers))
+        assert user is not None and user.plan_override is None
+        assert db.scalar(select(AuditLog).where(AuditLog.action == "user.plan_change")) is None
 
 
 # -- housekeeping ----------------------------------------------------------------------------------
