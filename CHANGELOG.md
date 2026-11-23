@@ -43,6 +43,17 @@ All notable changes are listed here. Dates are IST. Format: [Keep a Changelog](h
 - **The administrator API**: what the admin console reads, open to administrators only:
   accounts, desktop installs, error events, the audit trail, system figures, latency per
   route and plan limits. The console pages ship separately.
+- **The admin console, first half**, at `/admin` for administrators; the account menu gains
+  "Admin console" for them. Overview (accounts, active users, desktop installs, open errors,
+  Auto-fit runs, and a 90-day chart), Installs, Audit, System (version, uptime, jobs, database
+  and latency per route) and Plans with editable limits. The Accounts and Errors pages ship
+  separately.
+- **Desktop install records and a local crash log**: on first launch, and again after an
+  upgrade, the desktop app sends one anonymous record (version, operating system, package
+  type); switch it off under Edit → Preferences → Privacy. A crash is appended to `crash.log`
+  in the app's data folder, rotating at 1 MB, and the crash dialog can open that folder. The
+  README, About and help now say exactly this where they said nothing is uploaded. Ships with
+  the next desktop build.
 
 ### Fixed
 - **The OAuth callback log names the sign-in provider's error code** (Microsoft's AADSTS
