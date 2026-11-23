@@ -105,12 +105,20 @@ const AUDIT_COLUMNS: DataTableColumn<AuditOut>[] = [
   },
 ];
 
-/** The plan in force, and the override behind it when it names another plan. */
+/** Whether an account carries a plan override, whatever plan it resolved to. */
+function hasOverride(user: Pick<AdminUserOut, "plan_override">): boolean {
+  return user.plan_override !== null && user.plan_override !== "";
+}
+
+/**
+ * The plan in force, with the override behind it always said: as an override when it is that
+ * plan, as a departure when the account resolved to another one (billing switched off, or a
+ * plan that no longer exists).
+ */
 function planText(user: AdminUserOut): string {
   const { plan, plan_override: override } = user;
-  return override !== null && override !== "" && override !== plan
-    ? `${plan} → overridden to ${override}`
-    : plan;
+  if (!hasOverride(user)) return plan;
+  return override === plan ? `${plan} (override)` : `${plan} → overridden to ${override}`;
 }
 
 /** Why a change was refused: in the page's own words where it has one, else the server's. */
@@ -535,11 +543,6 @@ function UserDetail({ id, summary, plans, isSelf, onClose }: UserDetailProps): R
   }, []);
 
   const shown = query.data?.user ?? summary;
-  const overridden =
-    shown !== null &&
-    shown.plan_override !== null &&
-    shown.plan_override !== "" &&
-    shown.plan_override !== shown.plan;
 
   return (
     <section ref={section} className="card admin-detail" aria-labelledby={headingId} tabIndex={-1}>
@@ -567,8 +570,13 @@ function UserDetail({ id, summary, plans, isSelf, onClose }: UserDetailProps): R
           <>
             <p className="admin-detail__plan">
               Plan <strong>{user.plan}</strong>
-              {overridden && (
-                <span className="muted"> (overridden to {user.plan_override})</span>
+              {hasOverride(user) && (
+                <span className="muted">
+                  {" "}
+                  {user.plan_override === user.plan
+                    ? "(set by an override)"
+                    : `(overridden to ${user.plan_override})`}
+                </span>
               )}
             </p>
             <Usage user={user} limits={planLimitsFor(plans, user.plan)} />

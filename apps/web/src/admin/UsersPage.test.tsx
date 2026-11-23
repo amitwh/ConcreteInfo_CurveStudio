@@ -78,6 +78,14 @@ const OLDER = account({
   last_active_on: null,
   usage: { datasets: 3, dataset_bytes: 0, fits: 0, autofits_today: 0 },
 });
+/** An account whose override is the plan in force: the override is the plan it is on. */
+const IN_FORCE = account({
+  id: "0c0c0c0c-0000-4000-8000-00000000000c",
+  email: "devi@example.test",
+  name: "Devi Rao",
+  plan: "pro",
+  plan_override: "pro",
+});
 /** The administrator who is signed in. */
 const SELF = account({
   id: ADMIN_ID,
@@ -295,6 +303,25 @@ describe("UsersPage — the list", () => {
     const older = within(row("old@example.test")).getAllByRole("cell");
     expect(older[5]?.textContent).toBe("Deactivated");
     expect(older[6]?.textContent).toBe("Never");
+  });
+
+  it("marks a plan override while it is in force, not only when it names another plan", async () => {
+    const user = userEvent.setup();
+    serve({}, [IN_FORCE, MEERA]);
+    renderWithQuery(<UsersPage />);
+    await screen.findByRole("table", { name: "Accounts" });
+
+    // In the list: the override shows whether or not it is the plan in force.
+    expect(rowTexts().map((cells) => cells[3])).toEqual([
+      "pro (override)",
+      "self-hosted → overridden to pro",
+    ]);
+
+    // And in the account's detail.
+    await user.click(within(row("devi@example.test")).getByRole("button", { name: "Open devi@example.test" }));
+    const detail = screen.getByRole("region", { name: "Devi Rao" });
+    expect(await within(detail).findByText(/set by an override/)).toBeTruthy();
+    expect(within(detail).queryByText(/overridden to/)).toBeNull();
   });
 
   it("offers Open on every row, and the changes on every row but the signed-in administrator's own", async () => {
@@ -626,9 +653,11 @@ describe("UsersPage — changing an account", () => {
     expect(await screen.findByText(PLAN_SAVED)).toBeTruthy();
     expect(sentBody(spy, "PATCH")).toEqual([{ path: `/admin/users/${MEERA_ID}`, body: { plan_override: "free" } }]);
     expect(screen.queryByRole("dialog")).toBeNull();
-    // the list is fetched again and shows what the server now holds
+    // the list is fetched again and shows what the server now holds: free, by the override
     await waitFor(() => expect(listCalls(spy)).toHaveLength(2));
-    expect(within(row("meera@example.test")).getAllByRole("cell")[3]?.textContent).toBe("free");
+    expect(within(row("meera@example.test")).getAllByRole("cell")[3]?.textContent).toBe(
+      "free (override)",
+    );
   });
 
   it("Change plan can clear an override, sent as null", async () => {
