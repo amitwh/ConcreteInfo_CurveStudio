@@ -41,6 +41,7 @@ from curvestudio_api.security import (
     unauthorized,
     verify_password,
 )
+from curvestudio_api.settings import Settings
 from curvestudio_api.timeutil import utcnow
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -76,6 +77,7 @@ def _limit_token(ctx: Ctx, request: Request, refresh_token: str) -> None:
 
 def _issue_tokens(ctx: Ctx, db: Session, user: User) -> tuple[TokenOut, uuid.UUID]:
     """A new access/refresh pair; the second value is the id of the stored refresh token."""
+    user.last_login_at = utcnow()
     ttl = timedelta(minutes=ctx.settings.access_ttl_min)
     refresh = new_refresh_token()
     stored = RefreshToken(
@@ -91,6 +93,24 @@ def _issue_tokens(ctx: Ctx, db: Session, user: User) -> tuple[TokenOut, uuid.UUI
         expires_in=int(ttl.total_seconds()),
     )
     return tokens, stored.id
+
+
+def promote_if_listed(db: Session, user: User, *, settings: Settings) -> bool:
+    """Make ``user`` an administrator when its address is on the admin list; whether it did.
+
+    Called once per successful sign-in (password login and the OAuth exchange), after the
+    address has been accepted and inside the caller's transaction, so the ``user.role_change``
+    audit row commits with the promotion. The list never demotes and an administrator is left
+    alone; an address that was never verified — a listed address registered but never
+    confirmed — is not promoted.
+    """
+    if user.role == "admin":
+        return False
+    if user.email_verified_at is None or user.email.lower() not in settings.admin_emails:
+        return False
+    user.role = "admin"
+    audit.record(db, "user.role_change", "user", user_id=user.id, entity_id=user.id)
+    return True
 
 
 def _issue_email_token(db: Session, user: User, purpose: str, ttl: timedelta) -> str:
@@ -253,6 +273,7 @@ def login(body: LoginIn, request: Request, response: Response, ctx: Ctx, db: Db)
     if password_needs_rehash(user.password_hash):
         user.password_hash = hash_password(password)
     tokens, _ = _issue_tokens(ctx, db, user)
+    promote_if_listed(db, user, settings=ctx.settings)
     audit.record(db, "auth.login", "user", user_id=user.id, entity_id=user.id)
     db.commit()
     return tokens

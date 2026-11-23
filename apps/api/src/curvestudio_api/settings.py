@@ -47,6 +47,9 @@ class Settings(BaseSettings):
     quota_max_autofits_per_day: int | None = Field(default=None, ge=1)
     housekeeping_interval_s: float = Field(default=3600.0, gt=0)
     cors_origins: Annotated[list[str], NoDecode] = Field(default_factory=list)
+    # Comma-separated addresses whose accounts are promoted to administrator at their next
+    # successful sign-in. Empty by default; the list never demotes.
+    admin_emails: Annotated[list[str], NoDecode] = Field(default_factory=list)
     registration_enabled: bool = True
     billing_enabled: bool = False
     web_dist: Path | None = None
@@ -76,6 +79,18 @@ class Settings(BaseSettings):
         if isinstance(value, str):
             return [part.strip() for part in value.split(",") if part.strip()]
         return value
+
+    @field_validator("admin_emails", mode="before")
+    @classmethod
+    def _split_admin_emails(cls, value: object) -> object:
+        """``CURVESTUDIO_ADMIN_EMAILS=a@b.co, c@d.co``."""
+        return value.split(",") if isinstance(value, str) else value
+
+    @field_validator("admin_emails")
+    @classmethod
+    def _fold_admin_emails(cls, value: list[str]) -> list[str]:
+        """Entries are addresses, matched in lower case however the list was built."""
+        return [part.strip().lower() for part in value if part.strip()]
 
     @field_validator("cors_origins")
     @classmethod

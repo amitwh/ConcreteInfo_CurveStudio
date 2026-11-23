@@ -2,7 +2,7 @@
 except ``audit_logs``, which is append-only: its only permitted change is erasing ``user_id``."""
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from sqlalchemy import (
@@ -41,6 +41,15 @@ def _uuid() -> uuid.UUID:
     return uuid.uuid4()
 
 
+DEFAULT_PREFERENCES: dict[str, bool] = {"error_reports": True, "report_byline": False}
+"""The preferences an account starts with; the JSON column has no server default."""
+
+
+def _default_preferences() -> dict[str, Any]:
+    """A fresh copy per row — a shared mutable default would alias between users."""
+    return dict(DEFAULT_PREFERENCES)
+
+
 class _Timestamps:
     created_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utcnow, onupdate=utcnow)
@@ -55,6 +64,16 @@ class User(_Timestamps, Base):
     name: Mapped[str] = mapped_column(String(100), default="")
     is_active: Mapped[bool] = mapped_column(default=True)
     email_verified_at: Mapped[datetime | None] = mapped_column(UtcDateTime, default=None)
+    # "member" or "admin"; the only values code writes. Read from the row on every request.
+    role: Mapped[str] = mapped_column(String(20), default="member")
+    last_login_at: Mapped[datetime | None] = mapped_column(UtcDateTime, default=None)
+    # The IST calendar day of the latest authenticated request.
+    last_active_on: Mapped[date | None] = mapped_column(default=None)
+    # The column is nullable so the migration can add it; existing rows are backfilled and
+    # new rows get the Python default below, so handlers always see an object.
+    preferences: Mapped[dict[str, Any]] = mapped_column(
+        JSON, nullable=True, default=_default_preferences
+    )
     # A plan name (set by an admin or the entitlement connector); the resolver in ``quotas``
     # falls back to ``free`` when the name matches no row.
     plan_override: Mapped[str | None] = mapped_column(String(50), default=None)
@@ -106,6 +125,19 @@ class OAuthCode(_Timestamps, Base):
     code_hash: Mapped[str] = mapped_column(String(64), unique=True)
     expires_at: Mapped[datetime] = mapped_column(UtcDateTime)
     used_at: Mapped[datetime | None] = mapped_column(UtcDateTime, default=None)
+
+
+class UserDailyActivity(Base):
+    """One row per account and IST day with authenticated requests. The ``(user_id, day)``
+    pair is the primary key, which is also the uniqueness the schema needs."""
+
+    __tablename__ = "user_daily_activity"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    day: Mapped[date] = mapped_column(primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utcnow)
 
 
 class Dataset(_Timestamps, Base):

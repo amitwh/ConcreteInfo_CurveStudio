@@ -2,14 +2,17 @@
 
 import uuid
 from collections.abc import Callable
+from datetime import date, timedelta
 
 import jwt
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import select
+from sqlalchemy import delete, func, select, update
+from sqlalchemy.orm import Session
 
 from conftest import PASSWORD, new_email, signup
-from curvestudio_api.orm import AuditLog, RefreshToken, User
+from curvestudio_api.orm import AuditLog, RefreshToken, User, UserDailyActivity
+from curvestudio_api.timeutil import IST, utcnow
 
 API = "/api/v1"
 
@@ -281,3 +284,106 @@ def test_audit_rows_for_auth_events(shared_client: TestClient) -> None:
     assert [r.action for r in rows].count("auth.logout") == 1
     assert all(email not in str(r.detail) for r in rows)
     assert all(PASSWORD not in str(r.detail) for r in rows)
+
+
+def test_new_accounts_are_members_with_the_default_preferences(shared_client: TestClient) -> None:
+    email = new_email()
+    register(shared_client, email)
+    with shared_client.app.state.ctx.session_factory() as db:  # type: ignore[attr-defined]
+        user = db.scalar(select(User).where(User.email == email))
+        assert user is not None
+        assert user.role == "member"
+        assert user.preferences == {"error_reports": True, "report_byline": False}
+
+
+def test_login_stamps_last_login_and_activity_lands_once_per_ist_day(
+    shared_client: TestClient,
+) -> None:
+    email = new_email()
+    register(shared_client, email)
+    tokens = login(shared_client, email).json()  # type: ignore[attr-defined]
+    today = utcnow().astimezone(IST).date()
+    with shared_client.app.state.ctx.session_factory() as db:  # type: ignore[attr-defined]
+        user = db.scalar(select(User).where(User.email == email))
+        assert user is not None
+        assert user.last_login_at is not None
+        assert user.last_active_on is None  # a sign-in is not an authenticated request
+        assert _daily_rows(db, user.id) == []
+
+    headers = {"Authorization": f"Bearer {tokens['access_token']}"}
+    assert shared_client.get(f"{API}/me", headers=headers).status_code == 200
+    with shared_client.app.state.ctx.session_factory() as db:  # type: ignore[attr-defined]
+        user = db.scalar(select(User).where(User.email == email))
+        assert user is not None
+        assert user.last_active_on == today
+        assert _daily_rows(db, user.id) == [today]
+
+    # a second request on the same day adds nothing
+    assert shared_client.get(f"{API}/me", headers=headers).status_code == 200
+    with shared_client.app.state.ctx.session_factory() as db:  # type: ignore[attr-defined]
+        user = db.scalar(select(User).where(User.email == email))
+        assert user is not None
+        assert _daily_rows(db, user.id) == [today]
+
+    # on the next IST day the stamp moves on: rewind it and the request lands a new day
+    with shared_client.app.state.ctx.session_factory() as db:  # type: ignore[attr-defined]
+        user = db.scalar(select(User).where(User.email == email))
+        assert user is not None
+        user.last_active_on = today - timedelta(days=1)
+        db.execute(delete(UserDailyActivity).where(UserDailyActivity.user_id == user.id))
+        db.commit()
+    assert shared_client.get(f"{API}/me", headers=headers).status_code == 200
+    with shared_client.app.state.ctx.session_factory() as db:  # type: ignore[attr-defined]
+        user = db.scalar(select(User).where(User.email == email))
+        assert user is not None
+        assert user.last_active_on == today
+        assert _daily_rows(db, user.id) == [today]
+
+    # a row another (concurrent) request already inserted never fails the request: the
+    # stamp's commit loses the race, rolls back, and the other request's row stands
+    with shared_client.app.state.ctx.session_factory() as db:  # type: ignore[attr-defined]
+        user = db.scalar(select(User).where(User.email == email))
+        assert user is not None
+        user.last_active_on = today - timedelta(days=1)
+        db.commit()
+    assert shared_client.get(f"{API}/me", headers=headers).status_code == 200
+    with shared_client.app.state.ctx.session_factory() as db:  # type: ignore[attr-defined]
+        user = db.scalar(select(User).where(User.email == email))
+        assert user is not None
+        assert _daily_rows(db, user.id) == [today]
+
+
+def _daily_rows(db: Session, user_id: uuid.UUID) -> list[date]:
+    """The activity days recorded for an account, oldest first."""
+    return sorted(
+        db.scalars(select(UserDailyActivity.day).where(UserDailyActivity.user_id == user_id))
+    )
+
+
+def test_user_daily_activity_rows_cascade_with_the_account(shared_client: TestClient) -> None:
+    email = new_email()
+    headers = signup(shared_client, email)
+    assert shared_client.get(f"{API}/me", headers=headers).status_code == 200
+    with shared_client.app.state.ctx.session_factory() as db:  # type: ignore[attr-defined]
+        user = db.scalar(select(User).where(User.email == email))
+        assert user is not None
+        assert (
+            db.scalar(
+                select(func.count(UserDailyActivity.user_id)).where(
+                    UserDailyActivity.user_id == user.id
+                )
+            )
+            == 1
+        )
+        # the append-only audit trail is the one reference that does not cascade
+        db.execute(update(AuditLog).where(AuditLog.user_id == user.id).values(user_id=None))
+        db.delete(user)
+        db.commit()
+        assert (
+            db.scalar(
+                select(func.count(UserDailyActivity.user_id)).where(
+                    UserDailyActivity.user_id == user.id
+                )
+            )
+            == 0
+        )

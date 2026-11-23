@@ -18,7 +18,7 @@ from curvestudio_api import audit, oauth
 from curvestudio_api.deps import Ctx, Db, client_ip
 from curvestudio_api.errors import ApiError, not_found
 from curvestudio_api.orm import OAuthCode, User
-from curvestudio_api.routers.auth import _issue_tokens
+from curvestudio_api.routers.auth import _issue_tokens, promote_if_listed
 from curvestudio_api.schemas import OAuthExchangeIn, OAuthProvidersOut, TokenOut
 from curvestudio_api.security import hash_password, hash_token
 from curvestudio_api.settings import Settings
@@ -201,6 +201,7 @@ def exchange(
     if user is None or not user.is_active:
         raise _invalid_code()
     tokens, _ = _issue_tokens(ctx, db, user)
+    promote_if_listed(db, user, settings=ctx.settings)
     audit.record(db, "auth.oauth_exchange", "user", user_id=user.id, entity_id=user.id)
     db.commit()
     return tokens
