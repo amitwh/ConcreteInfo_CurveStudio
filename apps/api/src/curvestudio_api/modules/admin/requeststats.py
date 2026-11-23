@@ -74,6 +74,16 @@ def percentile(histogram: Sequence[int], q: float) -> int:
     return round(BUCKET_BOUNDS_MS[-1])  # not reached: q is at most 1
 
 
+def capped_percentiles(histogram: Sequence[int], max_ms: float) -> tuple[int, int]:
+    """The median and the 95th percentile off ``histogram``, neither above the slowest request.
+
+    A percentile read off buckets is an estimate: with few requests in a wide bucket its
+    interpolation can pass the true maximum, which would read as nonsense beside it.
+    """
+    slowest = round(max_ms)
+    return min(percentile(histogram, P50), slowest), min(percentile(histogram, P95), slowest)
+
+
 @dataclass
 class RouteCounts:
     """One route's requests since the last merge: how many, how many were errors, how long they
@@ -146,8 +156,7 @@ def merge_into_daily(db: Session, snapshot: Mapping[str, RouteCounts], *, day: d
         row.errors += counts.errors
         # A new list, never an in-place edit: a change inside a JSON column is not tracked.
         row.histogram = [a + b for a, b in zip(row.histogram, counts.histogram, strict=True)]
-        row.p50_ms = percentile(row.histogram, P50)
-        row.p95_ms = percentile(row.histogram, P95)
         row.max_ms = max(row.max_ms, round(counts.max_ms))
+        row.p50_ms, row.p95_ms = capped_percentiles(row.histogram, row.max_ms)
     db.flush()
     return len(snapshot)

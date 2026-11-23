@@ -19,6 +19,7 @@ from curvestudio_api.modules.admin.requeststats import (
     RequestStats,
     RouteCounts,
     bucket_of,
+    capped_percentiles,
     merge_into_daily,
     percentile,
 )
@@ -106,7 +107,9 @@ def test_percentile_of_the_combined_histogram_is_not_the_mean_of_percentiles(
 
     from_raw = _raw_percentile(sorted([fast] * 100 + [slow] * 100), 0.95)
     assert from_raw == slow  # 190 of the 200 were fast: the 95th percentile is a slow one
-    assert stored == percentile(combined, 0.95)
+    # The buckets' estimate would pass the slowest request there was, so it is capped by it.
+    assert percentile(combined, 0.95) == 55
+    assert stored == capped_percentiles(combined, round(slow))[1] == 50
     # The estimate sits in the bucket that holds the true 95th percentile.
     assert bucket_of(float(stored)) == bucket_of(from_raw)
     # Averaging the two hours' own 95th percentiles would have answered about half that.
@@ -175,3 +178,19 @@ def test_percentile_of_an_empty_histogram_is_zero_and_q_is_bounded() -> None:
     extremes[0] = extremes[-1] = 1
     assert percentile(extremes, 0.0) == 0
     assert percentile(extremes, 1.0) == 60_000
+
+
+def test_a_percentile_never_exceeds_the_slowest_request(sessions: SessionFactory) -> None:
+    """A percentile read off the buckets is an estimate. With one request in a wide bucket its
+    interpolation passes the true maximum, which would read as nonsense beside the slowest."""
+    stats = RequestStats()
+    _fill(stats, HEALTH, [36.0])
+    snapshot = stats.snapshot_and_reset()
+    # the estimate on its own overshoots: the only request there was took 36 ms
+    assert percentile(snapshot[HEALTH].histogram, 0.95) > 36
+
+    with sessions() as db:
+        merge_into_daily(db, snapshot, day=DAY)
+        db.commit()
+        row = db.scalar(select(RequestStatDaily))
+    assert (row.count, row.max_ms, row.p50_ms, row.p95_ms) == (1, 36, 32, 36)

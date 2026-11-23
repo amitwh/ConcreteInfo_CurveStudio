@@ -20,7 +20,7 @@ from curvestudio_api.deps import Context
 from curvestudio_api.errors import ApiError, not_found
 from curvestudio_api.migrations import current_revision
 from curvestudio_api.modules.admin.models import RequestStatDaily
-from curvestudio_api.modules.admin.requeststats import BUCKET_COUNT, P50, P95, percentile
+from curvestudio_api.modules.admin.requeststats import BUCKET_COUNT, capped_percentiles
 from curvestudio_api.modules.admin.schemas import (
     DEFAULT_PAGE_SIZE,
     AccountCountsOut,
@@ -628,8 +628,8 @@ def route_latency(db: Session, *, days: int, now: datetime | None = None) -> lis
 
     The days' histograms are summed and the percentiles are read off that sum: an average of
     daily percentiles is not a percentile (one slow day and one fast day do not make a medium
-    one). The slowest request is the largest the days recorded. A route with no request in the
-    window is left out.
+    one). The slowest request is the largest the days recorded, and neither percentile is
+    allowed above it. A route with no request in the window is left out.
     """
     first = (now or utcnow()).astimezone(IST).date() - timedelta(days=days - 1)
     rows = db.execute(
@@ -651,17 +651,20 @@ def route_latency(db: Session, *, days: int, now: datetime | None = None) -> lis
         running[0] += count
         running[1] += errors
         running[2] = max(running[2], slowest)
-    return [
-        RouteLatencyOut(
+
+    def _out(route: str) -> RouteLatencyOut:
+        count, errors, slowest = totals[route]
+        p50_ms, p95_ms = capped_percentiles(histograms[route], slowest)
+        return RouteLatencyOut(
             route_template=route,
-            count=totals[route][0],
-            errors=totals[route][1],
-            p50_ms=percentile(histograms[route], P50),
-            p95_ms=percentile(histograms[route], P95),
-            max_ms=totals[route][2],
+            count=count,
+            errors=errors,
+            p50_ms=p50_ms,
+            p95_ms=p95_ms,
+            max_ms=slowest,
         )
-        for route in sorted(totals, key=lambda route: (-totals[route][0], route))
-    ]
+
+    return [_out(route) for route in sorted(totals, key=lambda route: (-totals[route][0], route))]
 
 
 def _database_size(engine: Engine) -> int | None:

@@ -1205,6 +1205,20 @@ def test_route_latency_reads_the_percentiles_off_the_summed_days(
                 max_ms=0,
             )
         )
+        one = [0] * BUCKET_COUNT
+        one[bucket_of(36)] = 1
+        db.add(
+            RequestStatDaily(
+                day=today,
+                route_template="/api/v1/c",
+                count=1,
+                errors=0,
+                histogram=one,
+                p50_ms=0,
+                p95_ms=0,
+                max_ms=36,
+            )
+        )
         db.commit()
 
     def window(days: int | None) -> list[dict[str, Any]]:
@@ -1215,6 +1229,16 @@ def test_route_latency_reads_the_percentiles_off_the_summed_days(
         return response.json()
 
     by_route = {row["route_template"]: row for row in window(1)}
+    # a percentile is an estimate from the buckets: with one request in a wide bucket it would
+    # pass the true maximum, so it is capped by the slowest request
+    assert by_route["/api/v1/c"] == {
+        "route_template": "/api/v1/c",
+        "count": 1,
+        "errors": 0,
+        "p50_ms": 32,
+        "p95_ms": 36,
+        "max_ms": 36,
+    }
     assert by_route["/api/v1/a"] == {
         "route_template": "/api/v1/a",
         "count": 20,
@@ -1230,12 +1254,13 @@ def test_route_latency_reads_the_percentiles_off_the_summed_days(
     summed = [2 * x + y for x, y in zip(fast, slow, strict=True)]
     assert (a_week["count"], a_week["errors"], a_week["max_ms"]) == (60, 1, 2_100)
     assert a_week["p50_ms"] == percentile(summed, P50)
-    assert a_week["p95_ms"] == percentile(summed, P95)
+    # the estimate off the buckets, never above the slowest request
+    assert a_week["p95_ms"] == min(percentile(summed, P95), 2_100)
     assert a_week["p95_ms"] != (percentile(fast, P95) + percentile(slow, P95)) // 2
 
     # 30 days hold 29 days ago, and nothing older
     assert {row["route_template"]: row for row in window(30)}["/api/v1/a"]["count"] == 80
-    assert [row["route_template"] for row in window(7)] == ["/api/v1/a", "/api/v1/b"]
+    assert [row["route_template"] for row in window(7)] == ["/api/v1/a", "/api/v1/b", "/api/v1/c"]
 
     refused = client.get(f"{ADMIN}/system/latency", params={"days": 2}, headers=admin)
     assert refused.status_code == 422 and refused.json()["error"] == "VALIDATION_ERROR"
