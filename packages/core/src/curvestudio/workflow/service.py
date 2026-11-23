@@ -1,5 +1,8 @@
 """``fit_dataset`` and ``predict``: the numbers both the desktop app and the API show.
 
+``snapshot_xy``, ``fit_view`` and ``fitter_for`` open a stored fit to the tools layer
+(``curvestudio.tools``): its data, its view and the fitter that refits it.
+
 Configuration mistakes (unknown model, impossible method/loss/bounds, a bad equation)
 raise :class:`WorkflowError`. Numerical outcomes never raise: a fit that does not
 converge comes back as a bundle whose ``result.status`` says so, with ``curve=None`` and
@@ -33,7 +36,10 @@ from curvestudio.fitting import (
 from curvestudio.models import ModelSpec, Parameter
 from curvestudio.statistics import (
     Band,
+    Fitter,
     FitView,
+    NonlinearFitter,
+    PolynomialFitter,
     StatisticsError,
     build_view,
     confidence_band,
@@ -196,7 +202,8 @@ def _fit_config(spec: FitSpec) -> FitConfig:
         raise WorkflowError("INVALID_SPEC", str(exc)) from exc
 
 
-def _fit_polynomial(spec: FitSpec, ref: PolynomialRef, data: XY) -> FitResult:
+def _refuse_polynomial_settings(spec: FitSpec) -> None:
+    """``INVALID_SPEC`` for the settings a polynomial cannot take (it is fitted in closed form)."""
     rejected = [
         name
         for name, given in (
@@ -213,6 +220,10 @@ def _fit_polynomial(spec: FitSpec, ref: PolynomialRef, data: XY) -> FitResult:
             f"{', '.join(rejected)} can only be used with a registered or custom model, "
             "not with a polynomial",
         )
+
+
+def _fit_polynomial(spec: FitSpec, ref: PolynomialRef, data: XY) -> FitResult:
+    _refuse_polynomial_settings(spec)
     try:
         return fit_polynomial(data, ref.degree)
     except ValueError as exc:
@@ -255,6 +266,32 @@ def fit_dataset(xy: XY, spec: FitSpec, *, compact: bool = False) -> FitBundle:
             "the numbers are not a fit"
         )
     return _assemble(data, result, model, warnings, compact)
+
+
+def fitter_for(spec: FitSpec, xy: XY) -> tuple[Fitter, XY]:
+    """The fitter the workflow itself uses for ``spec``, and the data to give it.
+
+    The data is ``xy`` after the spec's weight choice, so ``fitter.fit(data)`` is the fit
+    :func:`fit_dataset` makes, without its time limit: a caller that refits on folds bounds
+    its own run. A polynomial gets a :class:`~curvestudio.statistics.PolynomialFitter`; a
+    registered or custom model a :class:`~curvestudio.statistics.NonlinearFitter` that
+    starts where ``fit_dataset`` starts (``spec.initial``, else the model's own guess).
+    Only what is checked before fitting is: a setting :func:`curvestudio.fitting.fit`
+    refuses (an unknown parameter name, a method that cannot take the loss) raises
+    ``ValueError`` from ``fitter.fit``, where ``fit_dataset`` says ``INVALID_SPEC``.
+
+    Raises:
+        WorkflowError: ``UNKNOWN_MODEL`` / ``INVALID_EQUATION`` for a model that cannot be
+            resolved; ``INVALID_SPEC`` for a setting refused before fitting, as
+            :func:`fit_dataset` refuses it.
+    """
+    model = _resolve_model(spec)
+    data, _ = _apply_weight_choice(xy, spec)
+    if model is None:
+        assert isinstance(spec.model, PolynomialRef)  # model is None only for polynomials
+        _refuse_polynomial_settings(spec)
+        return PolynomialFitter(spec.model.degree), data
+    return NonlinearFitter(model, _fit_config(spec), None), data
 
 
 def _timed_out_result(model: ModelSpec, data: XY, spec: FitSpec, reason: str) -> FitResult:
@@ -430,7 +467,12 @@ def _squeeze(text: str) -> str:
     return "".join(text.split())
 
 
-def _snapshot_xy(bundle: FitBundle) -> XY:
+def snapshot_xy(bundle: FitBundle) -> XY:
+    """The data a bundle carries, as the ``XY`` the core's functions take.
+
+    The fingerprint is the one the fit was computed from. For a compact bundle
+    (``bundle.data.subsampled``) this is only a subsample of the fitted data.
+    """
     snap = bundle.data
     return XY(
         x=np.asarray(snap.x, dtype=np.float64),
@@ -440,6 +482,42 @@ def _snapshot_xy(bundle: FitBundle) -> XY:
         y_name=snap.y_name,
         fingerprint=bundle.result.provenance.dataset_fingerprint,
     )
+
+
+def _view_of(result: FitResult, spec: FitSpec, xy: XY) -> FitView:
+    """The view of ``result``, which must be a converged fit of ``xy`` for ``spec``."""
+    if result.status is not FitStatus.CONVERGED:
+        raise WorkflowError(
+            "FIT_NOT_CONVERGED",
+            f"cannot predict from a {result.status.value} fit ({result.termination_reason})",
+        )
+    model = _check_spec_matches(result, spec)
+    try:
+        return build_view(xy, result, model)
+    except StatisticsError as exc:
+        raise WorkflowError(exc.code, str(exc)) from exc
+
+
+def fit_view(bundle: FitBundle, spec: FitSpec, *, data: XY | None = None) -> FitView:
+    """The tools layer's view of a stored fit: what :func:`predict` predicts from.
+
+    The data is ``data``, else what the bundle carries (:func:`snapshot_xy`). The view's
+    ``weighted_jacobian`` is the fit's ``J`` in ``s2 inv(J'J)``.
+
+    Raises:
+        WorkflowError: ``DATA_REQUIRED`` for a compact bundle whose data is a subsample,
+            unless ``data`` is given; ``FIT_NOT_CONVERGED``; ``MODEL_MISMATCH`` /
+            ``DATA_MISMATCH`` when ``spec`` or ``data`` are not what the fit was computed
+            from; ``INVALID_EQUATION`` / ``UNKNOWN_MODEL`` for a bad ``spec``.
+    """
+    if data is None and bundle.data.subsampled:
+        raise WorkflowError(
+            "DATA_REQUIRED",
+            "the bundle holds only a subsample of its data (compact mode): pass data= "
+            "with the full data the fit was computed from",
+        )
+    xy = snapshot_xy(bundle) if data is None else data
+    return _view_of(bundle.result, spec, xy)
 
 
 def predict(
@@ -466,32 +544,14 @@ def predict(
             "TOO_LARGE", f"{len(x):,} x values requested; the limit is {MAX_PREDICT_POINTS:,}"
         )
     if isinstance(source, FitBundle):
-        result = source.result
-        if data is None and source.data.subsampled:
-            raise WorkflowError(
-                "DATA_REQUIRED",
-                "the bundle holds only a subsample of its data (compact mode): pass data= "
-                "with the full data the fit was computed from",
-            )
-        xy = data if data is not None else _snapshot_xy(source)
+        view = fit_view(source, spec, data=data)
     else:
-        result = source
         if data is None:
             raise WorkflowError(
                 "DATA_REQUIRED",
                 "a bare FitResult does not carry its data: pass data= or use the FitBundle",
             )
-        xy = data
-    if result.status is not FitStatus.CONVERGED:
-        raise WorkflowError(
-            "FIT_NOT_CONVERGED",
-            f"cannot predict from a {result.status.value} fit ({result.termination_reason})",
-        )
-    model = _check_spec_matches(result, spec)
-    try:
-        view = build_view(xy, result, model)
-    except StatisticsError as exc:
-        raise WorkflowError(exc.code, str(exc)) from exc
+        view = _view_of(source, spec, data)
 
     points = np.asarray(list(x), dtype=np.float64)
     ok = np.isfinite(points)
