@@ -348,7 +348,7 @@ class FitAuditView(QWidget):
         except ToolError as exc:  # a bundle with no observations: the tool's own words say so
             self._lay_out(None)
             apply_status_badge(self.overall_badge, "Not applicable", state="not_applicable")
-            self.summary_label.setText(str(exc))
+            self._show(self.summary_label, str(exc))
             return
         self._lay_out(audit)
 
@@ -363,7 +363,7 @@ class FitAuditView(QWidget):
         if audit is None:
             return
         apply_verdict_badge(self.overall_badge, audit.overall)
-        self.summary_label.setText(audit.summary)
+        self._show(self.summary_label, audit.summary)
         self._show(self.counts_label, _counts_text(audit.n_observations, audit.n_parameters))
         self._show(self.excluded_label, _excluded_text(audit.excluded))
         for check in audit.checks:

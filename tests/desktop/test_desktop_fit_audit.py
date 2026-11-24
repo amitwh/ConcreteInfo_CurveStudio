@@ -194,6 +194,8 @@ def test_a_clean_fit_shows_pass_badges_the_summary_and_nothing_to_do(qtbot, clea
     assert view.audit() == audit
     assert (view.overall_badge.text(), view.overall_badge.property("state")) == ("Pass", "ok")
     assert view.summary_label.text() == audit.summary
+    # Shown, not merely written: a hidden label left the overall badge to fill the row.
+    assert not view.summary_label.isHidden()
     blocks = view.blocks()
     assert [item.check_id for item in blocks] == [check.id for check in audit.checks]
     ran = [item for item in blocks if item.state == "ok"]
@@ -450,6 +452,7 @@ def test_an_audit_the_tool_refuses_shows_its_message(qtbot) -> None:
     view = tabs._audit
     assert view.audit() is None
     assert view.summary_label.text() == f"{caught.value.code}: {caught.value.message}"
+    assert not view.summary_label.isHidden()
     assert view.blocks() == []
     assert view.overall_badge.property("state") == "not_applicable"
 
