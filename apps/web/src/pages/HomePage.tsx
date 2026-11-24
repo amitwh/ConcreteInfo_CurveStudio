@@ -295,6 +295,47 @@ const PRIOR_ART_SENTENCE =
 const PRIOR_ART_URL =
   "https://github.com/amitwh/ConcreteInfo_CurveStudio/blob/main/docs/prior-art.md";
 
+/** The nineteen statistical tools that have shipped, by family, in the catalogue's order.
+ *  Titles are the catalogue's own (`packages/core/src/curvestudio/tools/stats/registry.py`,
+ *  `FAMILIES` and each registered tool's `title`); the count and titles are pinned by the
+ *  "lists the nineteen statistical tools by family" test in `HomePage.test.tsx`. */
+const STATISTICS_FAMILIES: ReadonlyArray<{ title: string; tools: readonly string[] }> = [
+  { title: "Summarise", tools: ["Descriptive statistics", "Distribution analysis"] },
+  {
+    title: "Compare means",
+    tools: [
+      "Analysis of variance",
+      "Two-way analysis of variance",
+      "Repeated-measures analysis of variance",
+      "t tests",
+    ],
+  },
+  {
+    title: "Rank-based comparisons",
+    tools: [
+      "Kruskal–Wallis test",
+      "Friedman test",
+      "Mann-Whitney U test",
+      "Wilcoxon signed-rank test",
+      "Sign test",
+    ],
+  },
+  { title: "Relationships between columns", tools: ["Correlation", "Linear regression"] },
+  { title: "Counts", tools: ["Contingency table", "McNemar's test"] },
+  {
+    title: "Method comparison",
+    tools: ["Bland–Altman agreement", "Deming regression", "Passing–Bablok regression"],
+  },
+  { title: "Sample size and power", tools: ["Sample size and power"] },
+];
+
+/** What the tools are for, one sentence: each family's purpose in turn, and the three
+ *  surfaces that run the same catalogue. Pinned verbatim by `HomePage.test.tsx`. */
+const STATISTICS_TOOLS_SENTENCE =
+  "Nineteen statistical tools, from summarising the columns of a dataset to planning the " +
+  "sample a study needs, compare means and ranks, trace relationships, count associations and " +
+  "compare two methods — in the web app, the desktop app and the command line.";
+
 /* ---- "Fits you can reproduce" gallery ------------------------------------------------ */
 
 interface FitModel {
@@ -1108,6 +1149,21 @@ export function HomePage(): ReactElement {
                 <p>{METHODS_TEXT_SENTENCE}</p>
               </article>
             </div>
+            <h3>The statistical tools</h3>
+            <p>{STATISTICS_TOOLS_SENTENCE}</p>
+            <ul className="hp-list">
+              {STATISTICS_FAMILIES.map((family) => (
+                <li key={family.title}>
+                  <strong className="hp-stats-tools__family">{family.title}</strong>:{" "}
+                  {family.tools.map((tool, index) => (
+                    <Fragment key={tool}>
+                      {index > 0 ? ", " : null}
+                      <span className="hp-stats-tools__tool">{tool}</span>
+                    </Fragment>
+                  ))}
+                </li>
+              ))}
+            </ul>
             <p className="hp-note">
               <span>{PRIOR_ART_SENTENCE}</span>{" "}
               <a href={PRIOR_ART_URL} target="_blank" rel="noopener noreferrer">

@@ -495,6 +495,66 @@ describe("HomePage", () => {
     expect(record.getAttribute("rel")).toBe("noopener noreferrer");
   });
 
+  it("lists the nineteen statistical tools by family in the Statistics section", () => {
+    renderHome();
+    const section = document.getElementById("statistics");
+    expect(section).not.toBeNull();
+    const scoped = within(section as HTMLElement);
+
+    // One sentence says what the tools are for and where they run.
+    expect(
+      scoped.getByText(
+        "Nineteen statistical tools, from summarising the columns of a dataset to planning " +
+          "the sample a study needs, compare means and ranks, trace relationships, count " +
+          "associations and compare two methods — in the web app, the desktop app and the " +
+          "command line.",
+      ),
+    ).toBeTruthy();
+
+    // Every family's title, in the catalogue's order, and every tool under its family.
+    const families: Array<[string, readonly string[]]> = [
+      ["Summarise", ["Descriptive statistics", "Distribution analysis"]],
+      [
+        "Compare means",
+        [
+          "Analysis of variance",
+          "Two-way analysis of variance",
+          "Repeated-measures analysis of variance",
+          "t tests",
+        ],
+      ],
+      [
+        "Rank-based comparisons",
+        [
+          "Kruskal–Wallis test",
+          "Friedman test",
+          "Mann-Whitney U test",
+          "Wilcoxon signed-rank test",
+          "Sign test",
+        ],
+      ],
+      ["Relationships between columns", ["Correlation", "Linear regression"]],
+      ["Counts", ["Contingency table", "McNemar's test"]],
+      [
+        "Method comparison",
+        ["Bland–Altman agreement", "Deming regression", "Passing–Bablok regression"],
+      ],
+      ["Sample size and power", ["Sample size and power"]],
+    ];
+
+    const element = section as HTMLElement;
+    const familyTitles = Array.from(element.querySelectorAll(".hp-stats-tools__family")).map(
+      (family) => family.textContent,
+    );
+    expect(familyTitles).toEqual(families.map(([title]) => title));
+
+    const toolTitles = Array.from(element.querySelectorAll(".hp-stats-tools__tool")).map(
+      (tool) => tool.textContent,
+    );
+    expect(toolTitles).toEqual(families.flatMap(([, tools]) => tools));
+    expect(toolTitles).toHaveLength(19);
+  });
+
   it("claims no absence in the Statistics section: what was not found is not proof", () => {
     renderHome();
     const text = (document.getElementById("statistics")?.textContent ?? "").toLowerCase();

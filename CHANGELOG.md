@@ -108,6 +108,16 @@ All notable changes are listed here. Dates are IST. Format: [Keep a Changelog](h
   `table_columns`: every column of the table with its kind (`number` or `text`) and how many
   of its cells are blank. A dataset stored before keeps its slim form, is never migrated and
   says so (`table_stored: false`). Schema revisions `0013` and `0014`.
+- **Nineteen statistical tools in seven families**, the same set on the web app, the desktop
+  app and the command line: summarise a column (descriptive statistics and distribution
+  analysis); compare means (analysis of variance, two-way and repeated-measures analysis of
+  variance, and t tests); rank-based comparisons (Kruskal–Wallis, Friedman, Mann–Whitney U,
+  Wilcoxon signed-rank and the sign test); relationships (correlation and linear regression);
+  counts (contingency table and McNemar's test); method comparison (Bland–Altman, Deming and
+  Passing–Bablok); and sample size and power. The web workspace has a Statistics mode that
+  keeps every result; the desktop has a Statistics page with the same tools and their plots;
+  and `curvestudio stats <tool>` runs any of them from the command line. The help has twenty
+  sections.
 
 ### Fixed
 - **The OAuth callback log names the sign-in provider's error code** (Microsoft's AADSTS

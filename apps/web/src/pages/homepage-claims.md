@@ -85,8 +85,9 @@ research ones" test; each maps to families that exist in the catalogue today.
 
 ## Statistics
 
-The section `#statistics` (the fit audit and the methods text) is pinned by the "renders the
-Statistics section with its three sentences and the record of the check" test in
+The section `#statistics` (the fit audit, the methods text and the list of the nineteen
+statistical tools) is pinned by the "renders the Statistics section with its three sentences
+and the record of the check" and "lists the nineteen statistical tools by family" tests in
 `HomePage.test.tsx`. The test "claims no absence in the Statistics section" asserts that the
 section, and the page's source, say none of "nowhere else", "unique" or "only tool".
 
@@ -96,6 +97,13 @@ section, and the page's source, say none of "nowhere else", "unique" or "only to
 | "A methods text writes the fit up for you: the model, the estimator, the estimates with their standard errors and the citations, as plain text, Markdown or LaTeX." | `packages/core/src/curvestudio/tools/methods.py` (`methods_text` and `all_methods_texts`: the paragraph, the equation, the table and the citations, in the three styles); `GET /fits/{fit_id}/methods` in the same router |
 | "We looked for these two in the public documentation of CurveExpert and CurveExpert Pro, Origin, GraphPad Prism, LabPlot, SciDAVis, QtiPlot, jamovi and JASP in November 2026, and did not find either offered in its own right; those tools offer residual plots and tests, rankings, pairwise comparisons and equation export." | `docs/prior-art.md`, checked on 2026-11-24. No cell of its summary reads "Has" for fit audit or methods text in any of the nine products, and its "What this check supports" section names the nearest neighbours the last clause lists |
 | "How we checked" (the link) | `docs/prior-art.md` on the repository's `main` branch, under the repository address the footer's "CurveStudio source" link uses |
+| "Nineteen statistical tools, from summarising the columns of a dataset to planning the sample a study needs, compare means and ranks, trace relationships, count associations and compare two methods — in the web app, the desktop app and the command line." | `packages/core/src/curvestudio/tools/stats/registry.py` (`FAMILIES` names the seven families in the order the page lists them; each registered tool carries its title, and every tool but sample size and power declares `needs_data=True`). The web runs them in `apps/web/src/workspace/stats/StatsPanel.tsx` and keeps every result in `StatsHistory.tsx`; the desktop has a Statistics page in `apps/desktop/src/curvestudio_desktop/views/stats_view.py`; the command line is `packages/core/src/curvestudio/cli.py` (`curvestudio stats <tool>`, one subcommand per catalogue tool) |
+| The seven family titles and nineteen tool titles, in the catalogue's order | `packages/core/src/curvestudio/tools/stats/registry.py` (`FAMILIES`, and each tool spec's `title`); pinned against the page by the "lists the nineteen statistical tools by family" test in `HomePage.test.tsx` |
+
+The tools list names the standard set, not a differentiating capability, so it carries no
+prior-art claim: `docs/prior-art.md` covers only the five differentiating capabilities. The
+list says what the tools are for and where they run, and says nothing about what other
+products offer.
 
 The third sentence is worded as found, never as proof, because the record says its check is
 incomplete in four places:
