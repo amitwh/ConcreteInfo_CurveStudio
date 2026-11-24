@@ -88,11 +88,12 @@ def encode_table(
     writes ``""`` for an empty cell when the table has one column; both read back as empty);
     any other cell is its string.
 
-    A column of dates is the exception: it is written as :func:`curvestudio.data.group_labels`
-    reads its cells, so that it gives the same groups on the web as on the desktop. A date at
-    midnight is its day alone, one with a time of day keeps it, and a missing date is an empty
-    cell. No other column is changed: a text column is stored as written, blanks included,
-    because a blank is counted when the table is read back.
+    A column of dates or durations is the exception: it is written as
+    :func:`curvestudio.data.group_labels` reads its cells, so that it gives the same groups on
+    the web as on the desktop. A date at midnight is its day alone, one with a time of day
+    keeps it, a duration is its ``str`` (``1 days 00:00:00``, as the desktop labels it), and a
+    missing value is an empty cell. No other column is changed: a text column is stored as
+    written, blanks included, because a blank is counted when the table is read back.
 
     Raises:
         ValueError: when a fit column is not a column of the table, or when the rows that
@@ -118,7 +119,9 @@ def encode_table(
         return None
     kept = table.loc[active, others]  # a copy: a column of dates is replaced in it
     for name in others:
-        if kept[name].dtype.kind == "M":
+        # "M" is a date, "m" a duration: both are written as the labels the desktop reads,
+        # since pandas' own text for a duration is not the rule `group_labels` follows.
+        if kept[name].dtype.kind in "Mm":
             kept[name] = _date_cells(kept[name])
     buffer = io.BytesIO()
     # Encoded as it is written: the whole table never exists once more as text, which for a

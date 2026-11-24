@@ -19,6 +19,23 @@ FIT = {"x_column": "x", "y_column": "y", "weight_column": None}
 WEIGHTED = {"x_column": "x", "y_column": "y", "weight_column": "w"}
 
 
+def test_a_duration_column_is_written_as_its_group_label_reads() -> None:
+    """A duration column gives the same groups on the web as on the desktop. Its text is
+    ``str(pd.Timedelta)`` (``1 days 00:00:00``) because that is the label the desktop reads
+    from the cell, not whatever pandas would print if the two ever disagreed."""
+    elapsed = pd.Series(pd.to_timedelta(["1 days", "2 days 03:00:00", None, "1 days"]))
+    frame = pd.DataFrame({"x": [1.0, 2.0, 3.0, 4.0], "y": [2.0, 4.0, 6.0, 8.0], "elapsed": elapsed})
+    assert frame["elapsed"].dtype.kind == "m"
+    dataset = Dataset("t", frame)
+    payload = encode_table(dataset, n_rows=4, **FIT)
+    # A table of one column writes a missing cell as "" (pandas' own quoted blank there).
+    assert payload == (b'elapsed\n1 days 00:00:00\n2 days 03:00:00\n""\n1 days 00:00:00\n')
+    labels, rows = group_labels(decode_table(payload)["elapsed"])
+    on_the_desktop = dataset.group("elapsed")
+    assert labels.tolist() == on_the_desktop.labels.tolist()
+    assert rows.tolist() == on_the_desktop.rows.tolist() == [0, 1, 3]
+
+
 def test_excluded_rows_are_left_out() -> None:
     frame = pd.DataFrame(
         {"x": [1.0, 2.0, 3.0, 4.0], "y": [10.0, 20.0, 30.0, 40.0], "g": ["a", "b", "c", "d"]}
