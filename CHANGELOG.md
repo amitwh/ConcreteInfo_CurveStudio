@@ -14,6 +14,9 @@ All notable changes are listed here. Dates are IST. Format: [Keep a Changelog](h
 - **The canonical address is https://curvestudio.concreteinfo.cloud**: the old addresses
   redirect there (see `deploy/redirect/`), and `apps/api/OAUTH_SETUP.md` gains a Microsoft
   error-code table.
+- **The web service keeps a dataset as the whole table that was uploaded**, not only the
+  columns used for fitting, so its other columns can be analysed. The privacy notice in
+  the web About page, the desktop About dialog and the help say so.
 
 ### Added
 - **XLSX fit reports and SVG plots on the web**: the fit export route serves
