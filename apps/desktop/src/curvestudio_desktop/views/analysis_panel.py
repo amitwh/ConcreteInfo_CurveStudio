@@ -1,13 +1,15 @@
 """AnalysisPanel: the right-hand dock — mode switch, the workflow's form, the fit summary.
 
 The dock is Auto-fit-first: the Auto-fit page is the default (and remembered in QSettings);
-Manual fit appears only when the user selects it. A vertical splitter puts the workflow
-pages — the ranking table's home — above a compact ``FitSummaryPanel``: the ranking is THE
-primary result, so its page keeps the dominant share and the split is remembered in
-QSettings. The five full result views live in the details window, not here. The mode switch
-is a compact horizontal segmented control, never stacked full-width buttons. Nothing here
-computes anything: the pages talk to the AnalysisController, and the shell wires their
-signals to the plot, the summary and the details window.
+Manual fit and Statistics appear only when the user selects them. A vertical splitter puts
+the workflow pages — the ranking table's home — above a compact ``FitSummaryPanel``: the
+ranking is THE primary result, so its page keeps the dominant share and the split is
+remembered in QSettings. Statistics mode is the exception: its page fills the dock and the
+fit summary is hidden, because a statistical result is not a fit. The five full result views
+live in the details window, not here. The mode switch is a compact horizontal segmented
+control, never stacked full-width buttons. Nothing here computes anything: the pages talk to
+the AnalysisController, and the shell wires their signals to the plot, the summary and the
+details window.
 """
 
 from PySide6.QtCore import QSettings, QSize, Qt
@@ -23,11 +25,17 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from curvestudio_desktop.controllers.analysis import MODE_AUTOFIT, MODE_MANUAL, AnalysisController
+from curvestudio_desktop.controllers.analysis import (
+    MODE_AUTOFIT,
+    MODE_MANUAL,
+    MODE_STATS,
+    AnalysisController,
+)
 from curvestudio_desktop.controllers.selection import SelectionController
 from curvestudio_desktop.views.autofit_view import AutoFitView
 from curvestudio_desktop.views.fit_summary import FitSummaryPanel
 from curvestudio_desktop.views.manual_fit_view import ManualFitView
+from curvestudio_desktop.views.stats_view import StatsView
 
 _SPLITTER_KEY = "analysis/splitterSizes"
 #: A fresh install gives the ranking the dominant share: at least seven visible rows
@@ -65,26 +73,33 @@ class AnalysisPanel(QDockWidget):
         self._split_restored = False
         self.autofit_view = AutoFitView(analysis)
         self.manual_view = ManualFitView(analysis, selection.xy)
+        self.stats_view = StatsView(selection, jobs=analysis.runner)
         self.summary = FitSummaryPanel()
         self._pages = _PageStack()
         self._pages.addWidget(self.autofit_view)
         self._pages.addWidget(self.manual_view)
+        self._pages.addWidget(self.stats_view)
         self.autofit_button = QPushButton("Auto-fit")
         self.autofit_button.setObjectName("autofitModeButton")
         self.autofit_button.setCheckable(True)
         self.manual_button = QPushButton("Manual fit")
         self.manual_button.setObjectName("manualModeButton")
         self.manual_button.setCheckable(True)
-        for button in (self.autofit_button, self.manual_button):
+        self.stats_button = QPushButton("Statistics")
+        self.stats_button.setObjectName("statsModeButton")
+        self.stats_button.setCheckable(True)
+        for button in (self.autofit_button, self.manual_button, self.stats_button):
             button.setProperty("segment", "true")  # QSS styles the checked/unchecked pair
         group = QButtonGroup(self)
         group.addButton(self.autofit_button)
         group.addButton(self.manual_button)
+        group.addButton(self.stats_button)
         group.setExclusive(True)
         mode_row = QHBoxLayout()
         mode_row.setContentsMargins(0, 0, 0, 0)
         mode_row.addWidget(self.autofit_button, stretch=1)
         mode_row.addWidget(self.manual_button, stretch=1)
+        mode_row.addWidget(self.stats_button, stretch=1)
         # the ranking table is the primary result: its page keeps the dominant share
         self.splitter = QSplitter(Qt.Orientation.Vertical)
         self.splitter.setObjectName("analysisSplitter")
@@ -104,6 +119,7 @@ class AnalysisPanel(QDockWidget):
         self.setWidget(holder)
         self.autofit_button.clicked.connect(lambda: analysis.set_mode(MODE_AUTOFIT))
         self.manual_button.clicked.connect(lambda: analysis.set_mode(MODE_MANUAL))
+        self.stats_button.clicked.connect(lambda: analysis.set_mode(MODE_STATS))
         analysis.mode_changed.connect(self.set_mode)
         self.set_mode(analysis.mode)
 
@@ -139,11 +155,23 @@ class AnalysisPanel(QDockWidget):
 
     def set_mode(self, mode: str) -> None:
         """Show the mode's page (and check its button) without re-triggering it."""
-        self.autofit_button.setChecked(mode == MODE_AUTOFIT)
-        self.manual_button.setChecked(mode == MODE_MANUAL)
-        self._pages.setCurrentWidget(
-            self.autofit_view if mode == MODE_AUTOFIT else self.manual_view
-        )
+        pages = {
+            MODE_AUTOFIT: self.autofit_view,
+            MODE_MANUAL: self.manual_view,
+            MODE_STATS: self.stats_view,
+        }
+        page = pages.get(mode, self.autofit_view)
+        self.autofit_button.setChecked(page is self.autofit_view)
+        self.manual_button.setChecked(page is self.manual_view)
+        self.stats_button.setChecked(page is self.stats_view)
+        self._pages.setCurrentWidget(page)
+        # a statistical result is not a fit: its page fills the dock, without the summary
+        self.summary.setVisible(page is not self.stats_view)
 
     def mode(self) -> str:
-        return MODE_AUTOFIT if self._pages.currentWidget() is self.autofit_view else MODE_MANUAL
+        current = self._pages.currentWidget()
+        if current is self.manual_view:
+            return MODE_MANUAL
+        if current is self.stats_view:
+            return MODE_STATS
+        return MODE_AUTOFIT

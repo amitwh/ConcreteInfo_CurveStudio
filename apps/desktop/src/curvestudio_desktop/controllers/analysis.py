@@ -53,8 +53,16 @@ from curvestudio_desktop.jobs import JobHandle, JobRunner
 
 MODE_AUTOFIT = "autofit"
 MODE_MANUAL = "manual"
+MODE_STATS = "stats"
 _MODE_KEY = "analysis/mode"
 _RANK_KEY = "analysis/rank_by"
+
+_MODE_MESSAGES = {
+    MODE_AUTOFIT: "Auto-fit mode: analyses run automatically on import",
+    MODE_MANUAL: "Manual fit mode: nothing runs until you fit",
+    MODE_STATS: "Statistics mode: pick a tool and its columns; nothing runs until you do",
+}
+"""What each mode says when it is chosen: the rule it follows, in one line."""
 
 FitSubmit = Callable[[Callable[[FitBundle], None], Callable[[BaseException], None]], object]
 """How ``_start_fit`` reaches the runner: the two callbacks it wants delivered."""
@@ -146,16 +154,21 @@ class AnalysisController(QObject):
         return self._mode
 
     def set_mode(self, mode: str) -> None:
-        if mode not in (MODE_AUTOFIT, MODE_MANUAL) or mode == self._mode:
+        if mode not in (MODE_AUTOFIT, MODE_MANUAL, MODE_STATS) or mode == self._mode:
             return
         self._mode = mode
         self._store(_MODE_KEY, mode)
         self.mode_changed.emit(mode)
-        self.status_message.emit(
-            "Auto-fit mode: analyses run automatically on import"
-            if mode == MODE_AUTOFIT
-            else "Manual fit mode: nothing runs until you fit"
-        )
+        self.status_message.emit(_MODE_MESSAGES[mode])
+
+    @property
+    def runner(self) -> JobRunner:
+        """The runner long statistical jobs are submitted to (off the GUI thread).
+
+        It is the controller's own runner — deliberately not the window's, so a minutes-long
+        job never raises the window's busy cursor, exactly as the Auto-fit runs work.
+        """
+        return self._jobs
 
     @property
     def rank_by(self) -> RankBy:
@@ -181,7 +194,9 @@ class AnalysisController(QObject):
 
     def _stored_mode(self) -> str:
         value = self._settings.value(_MODE_KEY, MODE_AUTOFIT) if self._settings else MODE_AUTOFIT
-        return MODE_MANUAL if value == MODE_MANUAL else MODE_AUTOFIT
+        if value in (MODE_AUTOFIT, MODE_MANUAL, MODE_STATS):
+            return str(value)
+        return MODE_AUTOFIT
 
     def _stored_rank_by(self) -> RankBy:
         if self._settings is None:

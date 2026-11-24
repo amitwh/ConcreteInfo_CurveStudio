@@ -8,6 +8,7 @@ by. Both use QtCore only — no widget class — so they run headless in tests.
 from curvestudio_desktop.controllers.analysis import (
     MODE_AUTOFIT,
     MODE_MANUAL,
+    MODE_STATS,
     AnalysisController,
 )
 from curvestudio_desktop.controllers.analysis_jobs import AutoFitLive
@@ -23,6 +24,7 @@ from curvestudio_desktop.controllers.selection import SelectionController, defau
 __all__ = [
     "MODE_AUTOFIT",
     "MODE_MANUAL",
+    "MODE_STATS",
     "AnalysisController",
     "AutoFitLive",
     "ConfirmationProvider",

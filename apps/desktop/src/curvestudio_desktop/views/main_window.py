@@ -33,7 +33,11 @@ from curvestudio.tools import CrossValidation
 from curvestudio.workflow import FitBundle, FitSpec, ImportOutcome
 from curvestudio_desktop import APP_NAME, NO_NETWORK_NOTE
 from curvestudio_desktop.controllers import analysis_jobs, exports
-from curvestudio_desktop.controllers.analysis import MODE_AUTOFIT, AnalysisController
+from curvestudio_desktop.controllers.analysis import (
+    MODE_AUTOFIT,
+    MODE_STATS,
+    AnalysisController,
+)
 from curvestudio_desktop.controllers.analysis_jobs import AutoFitLive
 from curvestudio_desktop.controllers.project import ProjectController
 from curvestudio_desktop.controllers.selection import SelectionController
@@ -641,10 +645,12 @@ class MainWindow(QMainWindow):
         analysis.autofit_failed.connect(self._on_autofit_failed)
         analysis.fit_finished.connect(self._on_fit_shown)
         analysis.fit_failed.connect(self._on_fit_failed)
+        analysis.mode_changed.connect(self._on_analysis_mode_changed)
         panel = self.analysis_panel
         panel.autofit_view.rowSelected.connect(self._plot_candidate)
         panel.autofit_view.openRequested.connect(self._open_candidate)
         panel.autofit_view.top3Changed.connect(self._on_show_top3_changed)
+        panel.stats_view.plot_selected.connect(self._on_stats_plot_selected)
         panel.summary.openDetailsRequested.connect(self.open_details)
         panel.summary.exportRequested.connect(self.export_results)
         self.details_dialog.exportRequested.connect(self.export_results)
@@ -780,6 +786,8 @@ class MainWindow(QMainWindow):
         panel.summary.clear()
         self.details_dialog.clear()
         self.plot_view.clear_fit()
+        # a statistical plot belongs to the dataset it was run on: it leaves with it
+        self.plot_view.clear_stats_plot()
         panel.manual_view.refresh_data_options()
         dataset_id = self.selection.active_id
         if dataset_id is None:
@@ -868,6 +876,18 @@ class MainWindow(QMainWindow):
     def _on_fit_failed(self, message: str) -> None:
         self.analysis_panel.manual_view.show_failure(message)
         self._refresh_export_actions()
+
+    def _on_analysis_mode_changed(self, mode: str) -> None:
+        """Leaving Statistics puts the dataset and the fit back on the main chart."""
+        if mode != MODE_STATS:
+            self.plot_view.clear_stats_plot()
+
+    def _on_stats_plot_selected(self, plots: object, index: int) -> None:
+        """A chosen statistical plot replaces the dataset and the fit on the main chart."""
+        if self.analysis.mode != MODE_STATS or not isinstance(plots, tuple):
+            return
+        if 0 <= index < len(plots):
+            self.plot_view.show_stats_plot(plots[index])
 
     def _ranking_of(self, fit_meta: dict[str, Any]) -> AutoFitResult | None:
         """The Auto-fit run a fit opened from one of its rows came from; ``None`` for any other fit.
