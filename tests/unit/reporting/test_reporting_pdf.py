@@ -13,12 +13,13 @@ import subprocess
 import sys
 from collections.abc import Iterator
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pytest
-from reportlab.platypus import Table
+from reportlab.platypus import Flowable, Paragraph, Table
 
-from curvestudio.workflow import FitBundle, format_equation
+from curvestudio.tools import FitAudit, MethodsText, ToolError, Verdict, audit_fit, methods_text
+from curvestudio.workflow import FitBundle, FitSpec, PolynomialRef, format_equation
 from curvestudio_reporting import fit_to_pdf
 from curvestudio_reporting.meta import TOOL_NAME
 from curvestudio_reporting.pdf_report import (
@@ -150,9 +151,10 @@ def uncompressed() -> Iterator[None]:
     reportlab.rl_config.pageCompression = old
 
 
-def make_pdf(bundle: FitBundle, tmp_path: Path) -> bytes:
+def make_pdf(bundle: FitBundle, tmp_path: Path, **options: Any) -> bytes:
+    """The PDF's bytes; ``options`` are ``fit_to_pdf``'s keyword arguments."""
     target = tmp_path / "fit.pdf"
-    fit_to_pdf(bundle, target)
+    fit_to_pdf(bundle, target, **options)
     return target.read_bytes()
 
 
@@ -394,3 +396,159 @@ def test_pdf_byline_strips_control_characters(
     text = norm(pdf_text(target.read_bytes()))
     assert "CurveStudio fit report Prepared by Amit Haridas generated_at" in text
     assert b"/Author (Amit Haridas)" in target.read_bytes()
+
+
+# -- the optional methods text and fit audit -----------------------------------------------------
+
+QUADRATIC = FitSpec(model=PolynomialRef(degree=2))
+LINEAR = FitSpec(model=PolynomialRef(degree=1))
+"""The specifications the quadratic and the straight-line fixtures were fitted with."""
+
+FLAGGED = (Verdict.CAUTION, Verdict.FAIL)
+"""The verdicts a report lists check by check."""
+
+UP_TO_STATISTICS = ["Model equation", "Parameters", "Statistics"]
+"""The headings before the two optional sections, which follow the statistics table."""
+
+FIGURES_ON = ["Figures", "Assumptions and limitations"]
+"""The headings after them: the figure page, then the closing section."""
+
+WITH_BOTH = [*UP_TO_STATISTICS, "Methods", "Fit audit", *FIGURES_ON]
+"""A converged fit's headings when its methods text and its audit are both given."""
+
+
+def _headings(flowables: list[Flowable]) -> list[str]:
+    """The text of a document's section headings, in order."""
+    return [f.text for f in flowables if isinstance(f, Paragraph) and f.style.name == "Heading2"]
+
+
+def _texts_of(bundle: FitBundle, spec: FitSpec | None = None) -> tuple[FitAudit, MethodsText]:
+    """What a caller passes for a fit: its audit and its methods text."""
+    return audit_fit(bundle, spec=spec), methods_text(bundle, spec=spec, style="text")
+
+
+def test_without_audit_or_methods_the_report_has_the_sections_it_always_had(
+    poly_bundle: FitBundleFactory, non_converged_bundle: FitBundle
+) -> None:
+    """The two sections are optional: given neither, nothing of either is in the document."""
+    assert _headings(_flowables(poly_bundle())) == [*UP_TO_STATISTICS, *FIGURES_ON]
+    assert _headings(_flowables(non_converged_bundle)) == [
+        *UP_TO_STATISTICS,
+        "Assumptions and limitations",
+    ]
+
+
+def test_a_clean_fit_reports_its_methods_and_that_every_check_passed(
+    poly_bundle: FitBundleFactory, tmp_path: Path, uncompressed: None
+) -> None:
+    bundle = poly_bundle()
+    audit, methods = _texts_of(bundle, QUADRATIC)
+    assert audit.overall is Verdict.PASS, "the fixture is a fit with no flagged check"
+    text = norm(pdf_text(make_pdf(bundle, tmp_path, audit=audit, methods=methods)))
+    headings = _headings(_flowables(bundle, audit=audit, methods=methods))
+    assert headings == WITH_BOTH, "after the statistics, before the page break"
+    assert f"{methods.paragraph} {audit.methods_fragment}" in text, (
+        "the paragraph, then the fragment"
+    )
+    for line in methods.equation.split("\n"):
+        assert line in text, "the equation, then each estimate with its standard error"
+    assert "±" in text
+    assert audit.summary in text, "every check passed: the summary says so and is the section"
+    assert "Every check that could run passed" in text
+    for check in audit.checks:
+        assert check.title not in text, "a check that is not flagged prints no line of its own"
+
+
+def test_a_flagged_check_prints_its_title_evidence_and_next_step(
+    flagged_bundle: FitBundle, tmp_path: Path, uncompressed: None
+) -> None:
+    bundle = flagged_bundle
+    audit, methods = _texts_of(bundle, LINEAR)
+    flagged = [check for check in audit.checks if check.verdict in FLAGGED]
+    assert [(check.id, check.verdict) for check in flagged] == [
+        ("constant_variance", Verdict.FAIL)
+    ], "the fixture flags one check, and fails it"
+    text = norm(pdf_text(make_pdf(bundle, tmp_path, audit=audit, methods=methods)))
+    (check,) = flagged
+    assert check.next_step is not None
+    assert audit.summary in text, "the overall verdict in words comes first"
+    assert f"{check.title}. {check.evidence} → {check.next_step}" in text
+    assert f"{methods.paragraph} {audit.methods_fragment}" in text
+    for other in audit.checks:
+        if other.verdict not in FLAGGED:
+            assert other.title not in text, "a passed check prints no line of its own"
+
+
+def test_every_flagged_check_prints_its_line_in_the_audit_s_order(
+    trend_bundle: FitBundle, tmp_path: Path, uncompressed: None
+) -> None:
+    bundle = trend_bundle
+    audit, methods = _texts_of(bundle, QUADRATIC)
+    flagged = [check for check in audit.checks if check.verdict in FLAGGED]
+    assert {check.verdict for check in flagged} == set(FLAGGED), "the fixture fails and cautions"
+    assert all(check.next_step is not None for check in flagged)
+    text = norm(pdf_text(make_pdf(bundle, tmp_path, audit=audit, methods=methods)))
+    lines = [f"{check.title}. {check.evidence} → {check.next_step}" for check in flagged]
+    for line in lines:
+        assert line in text
+    assert [text.index(line) for line in lines] == sorted(text.index(line) for line in lines)
+
+
+def test_the_methods_text_alone_adds_its_section_and_no_audit(
+    poly_bundle: FitBundleFactory, tmp_path: Path, uncompressed: None
+) -> None:
+    bundle = poly_bundle()
+    audit, methods = _texts_of(bundle, QUADRATIC)
+    text = norm(pdf_text(make_pdf(bundle, tmp_path, methods=methods)))
+    assert methods.paragraph in text
+    assert audit.methods_fragment not in text
+    assert _headings(_flowables(bundle, methods=methods)) == [
+        *UP_TO_STATISTICS,
+        "Methods",
+        *FIGURES_ON,
+    ]
+
+
+def test_the_audit_alone_adds_its_fragment_and_no_equation(
+    poly_bundle: FitBundleFactory, tmp_path: Path, uncompressed: None
+) -> None:
+    bundle = poly_bundle()
+    audit, methods = _texts_of(bundle, QUADRATIC)
+    text = norm(pdf_text(make_pdf(bundle, tmp_path, audit=audit)))
+    assert audit.methods_fragment in text
+    assert methods.paragraph not in text and methods.equation.split("\n")[1] not in text
+    assert _headings(_flowables(bundle, audit=audit)) == WITH_BOTH
+
+
+def test_a_fit_that_did_not_converge_keeps_the_banner_and_prints_no_audit_line(
+    non_converged_bundle: FitBundle, tmp_path: Path, uncompressed: None
+) -> None:
+    bundle = non_converged_bundle
+    audit = audit_fit(bundle)  # the audit reads a fit that did not converge
+    assert audit.overall is Verdict.FAIL
+    with pytest.raises(ToolError) as refused:
+        methods_text(bundle)
+    assert refused.value.code == "FIT_NOT_CONVERGED_INPUT"
+    data = make_pdf(bundle, tmp_path, audit=audit)
+    text = norm(pdf_text(data))
+    assert "FIT DID NOT CONVERGE" in text
+    assert _headings(_flowables(bundle, audit=audit)) == [
+        *UP_TO_STATISTICS,
+        "Assumptions and limitations",
+    ]
+    assert audit.summary not in text and audit.methods_fragment not in text
+    assert b"/Subtype /Image" not in data, "the banner still stands in for the fit"
+
+
+def test_the_methods_and_audit_leave_the_byline_and_the_author_as_they_are(
+    poly_bundle: FitBundleFactory, tmp_path: Path, uncompressed: None
+) -> None:
+    bundle = poly_bundle()
+    audit, methods = _texts_of(bundle, QUADRATIC)
+    identity = "Amit Haridas"
+    data = make_pdf(bundle, tmp_path, byline=identity, audit=audit, methods=methods)
+    text = norm(pdf_text(data))
+    assert f"CurveStudio fit report Prepared by {identity} generated_at" in text
+    assert f"/Author ({identity})".encode() in data
+    pages = len(re.findall(rb"/Type\s*/Page\b", data))
+    assert text.count(WATERMARK_TEXT) == pages and text.count(DISCLAIMER_TEXT) == pages

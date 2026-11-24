@@ -6,7 +6,8 @@ from typing import TYPE_CHECKING
 import pytest
 from openpyxl import load_workbook
 
-from curvestudio.workflow import FitBundle, format_equation
+from curvestudio.tools import FitAudit, MethodsText, Verdict, audit_fit, methods_text
+from curvestudio.workflow import FitBundle, FitSpec, PolynomialRef, format_equation
 from curvestudio_reporting import fit_to_xlsx
 from curvestudio_reporting.xlsx_report import DISCLAIMER_TEXT, WATERMARK_TEXT
 
@@ -241,3 +242,127 @@ def test_xlsx_byline_doubles_ampersands_and_strips_control_characters(
     fit_to_xlsx(poly_bundle(), tmp_path / "fit.xlsx", byline="Amy, R&D\x1b Labs")
     for sheet in load(tmp_path / "fit.xlsx").worksheets:  # loading back proves the XML parses
         assert sheet.oddHeader.center.text == "Prepared by Amy, R&&D Labs"
+
+
+# -- the optional methods text and fit audit -----------------------------------------------------
+
+QUADRATIC = FitSpec(model=PolynomialRef(degree=2))
+"""The specification the quadratic fixtures were fitted with."""
+
+FLAGGED = (Verdict.CAUTION, Verdict.FAIL)
+"""The verdicts a report lists check by check."""
+
+SUMMARY_HEAD = [
+    "tool",
+    "versions",
+    "generated_at",
+    "x column",
+    "y column",
+    "observations",
+    "dataset fingerprint",
+    "seed",
+    "model id",
+    "method",
+    "loss",
+    "equation (model)",
+    "equation (fitted)",
+    "status",
+    "termination reason",
+]
+"""The Summary sheet's rows before its warnings, and after them."""
+
+SUMMARY_TAIL = [
+    "information criteria convention",
+    "assumptions and limitations",
+    DISCLAIMER_TEXT,
+]
+
+
+def summary_labels(tmp_path: Path) -> list:
+    """The Summary sheet's first-column labels in order, empty rows left out."""
+    return [row[0] for row in sheet_rows(load(tmp_path / "fit.xlsx")["Summary"]) if row[0]]
+
+
+def texts_of(bundle: FitBundle, spec: FitSpec) -> tuple[FitAudit, MethodsText]:
+    """What a caller passes for a fit: its audit and its methods text."""
+    return audit_fit(bundle, spec=spec), methods_text(bundle, spec=spec, style="text")
+
+
+def test_summary_without_audit_or_methods_keeps_the_rows_it_always_had(
+    poly_bundle: FitBundleFactory, non_converged_bundle: FitBundle, tmp_path: Path
+) -> None:
+    """The two blocks are optional: given neither, the sheet has the rows it has always had."""
+    for bundle in (poly_bundle(), non_converged_bundle):
+        fit_to_xlsx(bundle, tmp_path / "fit.xlsx")
+        warnings = ["warning"] * max(1, len(bundle.warnings))  # without one, a row says so
+        assert summary_labels(tmp_path) == SUMMARY_HEAD + warnings + SUMMARY_TAIL
+
+
+def test_summary_of_a_clean_fit_carries_the_methods_paragraph_and_says_every_check_passed(
+    poly_bundle: FitBundleFactory, tmp_path: Path
+) -> None:
+    bundle = poly_bundle()
+    audit, methods = texts_of(bundle, QUADRATIC)
+    assert audit.overall is Verdict.PASS, "the fixture is a fit with no flagged check"
+    fit_to_xlsx(bundle, tmp_path / "fit.xlsx", audit=audit, methods=methods)
+    labels = summary_labels(tmp_path)
+    at = labels.index("information criteria convention")
+    assert labels[at + 1 : at + 3] == ["methods paragraph", "Fit audit"], "under the convention"
+    assert labels[at + 3] == "assumptions and limitations", "no check is flagged: one row says so"
+    flat = summary_flat(tmp_path)
+    assert flat["methods paragraph"] == f"{methods.paragraph} {audit.methods_fragment}"
+    assert flat["Fit audit"] == audit.summary
+    assert "Every check that could run passed" in str(flat["Fit audit"])
+
+
+def test_summary_lists_each_flagged_check_with_its_evidence_and_next_step(
+    trend_bundle: FitBundle, tmp_path: Path
+) -> None:
+    bundle = trend_bundle
+    audit, methods = texts_of(bundle, QUADRATIC)
+    flagged = [check for check in audit.checks if check.verdict in FLAGGED]
+    assert {check.verdict for check in flagged} == set(FLAGGED), "the fixture fails and cautions"
+    fit_to_xlsx(bundle, tmp_path / "fit.xlsx", audit=audit, methods=methods)
+    rows = sheet_rows(load(tmp_path / "fit.xlsx")["Summary"])
+    start = [row[0] for row in rows].index("Fit audit")
+    assert rows[start][1] == audit.summary, "the block opens with the overall verdict in words"
+    listed = rows[start + 1 : start + 1 + len(flagged)]
+    assert [list(row[:3]) for row in listed] == [
+        [check.title, check.evidence, check.next_step] for check in flagged
+    ]
+    assert rows[start + 1 + len(flagged)][0] == "assumptions and limitations"
+    for check in audit.checks:
+        if check.verdict not in FLAGGED:
+            assert check.title not in summary_labels(tmp_path), "a passed check adds no row"
+    assert summary_flat(tmp_path)["methods paragraph"] == (
+        f"{methods.paragraph} {audit.methods_fragment}"
+    )
+
+
+def test_summary_of_a_fit_that_did_not_converge_has_no_methods_and_no_audit_block(
+    non_converged_bundle: FitBundle, tmp_path: Path
+) -> None:
+    bundle = non_converged_bundle
+    audit = audit_fit(bundle)  # the audit reads a fit that did not converge
+    fit_to_xlsx(bundle, tmp_path / "fit.xlsx", audit=audit)
+    labels = summary_labels(tmp_path)
+    assert "methods paragraph" not in labels and "Fit audit" not in labels
+    assert set(labels) <= set(SUMMARY_HEAD + SUMMARY_TAIL + ["warning"]), "no new row"
+    flat = summary_flat(tmp_path)
+    assert flat["status"] == "not_converged"
+    assert audit.summary not in str(flat.values()), "the status row says it; no audit line does"
+
+
+def test_the_methods_and_audit_leave_the_byline_and_the_footer_as_they_are(
+    poly_bundle: FitBundleFactory, tmp_path: Path
+) -> None:
+    bundle = poly_bundle()
+    audit, methods = texts_of(bundle, QUADRATIC)
+    fit_to_xlsx(bundle, tmp_path / "fit.xlsx", byline=IDENTITY, audit=audit, methods=methods)
+    workbook = load(tmp_path / "fit.xlsx")
+    for sheet in workbook.worksheets:
+        assert sheet.oddHeader.center.text == f"Prepared by {IDENTITY}"
+        assert WATERMARK_TEXT in sheet.oddFooter.center.text
+        assert DISCLAIMER_TEXT in sheet.oddFooter.center.text
+    assert workbook.sheetnames == SHEETS
+    assert summary_flat(tmp_path)["Fit audit"] == audit.summary

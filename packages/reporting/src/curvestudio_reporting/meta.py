@@ -1,7 +1,8 @@
 """Report metadata every format shares: tool identity, time, conventions, assumptions.
 
 One source for the JSON header, the XLSX summary and the PDF front matter, so the
-formats cannot disagree about who wrote a report or under which conventions.
+formats cannot disagree about who wrote a report or under which conventions. The same
+holds for what the PDF and the XLSX say of a fit's audit and methods text.
 """
 
 import platform
@@ -9,6 +10,7 @@ from datetime import datetime
 from importlib import metadata
 
 from curvestudio.fitting.result import IST
+from curvestudio.tools import AuditCheck, FitAudit, MethodsText, Verdict
 from curvestudio.workflow import FitBundle
 
 TOOL_NAME = "CurveStudio"
@@ -70,3 +72,29 @@ def convention_of(bundle: FitBundle) -> str | None:
 def assumptions_text() -> str:
     """The assumptions and limitations every report carries, as one paragraph."""
     return " ".join(ASSUMPTION_PARAGRAPHS)
+
+
+# -- what a report says of a fit's audit and methods text ------------------------------------------
+
+FLAGGED_VERDICTS = (Verdict.CAUTION, Verdict.FAIL)
+"""The audit's checks a report lists one by one. A passed or not-applicable check prints
+nothing of its own: the audit's own summary says that every check that could run passed."""
+
+
+def methods_paragraph(methods: MethodsText | None, audit: FitAudit | None) -> str:
+    """The methods paragraph followed by the audit's methods fragment, as one text.
+
+    ``""`` when neither is given, so a report given neither adds no row or section. What is
+    not given is left out: the paragraph alone is written without the fragment, and the
+    fragment alone without the paragraph.
+    """
+    given = (
+        None if methods is None else methods.paragraph,
+        None if audit is None else audit.methods_fragment,
+    )
+    return " ".join(text for text in given if text is not None)
+
+
+def flagged_checks(audit: FitAudit) -> tuple[AuditCheck, ...]:
+    """The audit's checks that read caution or fail, in the audit's order."""
+    return tuple(check for check in audit.checks if check.verdict in FLAGGED_VERDICTS)

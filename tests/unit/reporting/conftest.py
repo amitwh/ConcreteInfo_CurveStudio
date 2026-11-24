@@ -71,6 +71,26 @@ def non_converged_bundle() -> FitBundle:
 
 
 @pytest.fixture
+def flagged_bundle() -> FitBundle:
+    """A straight line fitted to noise that grows with x: one audit check fails (the constancy
+    of the residual variance) and every other passes."""
+    rng = np.random.default_rng(13)
+    x = np.linspace(0.0, 10.0, 40)
+    y = 1.0 + 0.5 * x + rng.normal(0.0, 1.0, 40) * (0.02 + 0.5 * x)
+    return fit_dataset(make_xy(x, y, tag="variance"), FitSpec(model=PolynomialRef(degree=1)))
+
+
+@pytest.fixture
+def trend_bundle() -> FitBundle:
+    """A quadratic fitted to cubic data: two audit checks fail (a trend in the residuals and
+    their autocorrelation) and one reads caution (influential points)."""
+    rng = np.random.default_rng(21)
+    x = np.linspace(0.0, 10.0, 40)
+    y = 1.0 + 0.5 * x - 0.03 * x**2 + 0.02 * x**3 + rng.normal(0.0, 0.1, 40)
+    return fit_dataset(make_xy(x, y, tag="trend"), FitSpec(model=PolynomialRef(degree=2)))
+
+
+@pytest.fixture
 def failed_bundle() -> FitBundle:
     """A fit stopped by its time limit before the optimiser could take a step."""
     x = np.linspace(0.0, 5.0, 40)

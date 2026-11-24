@@ -18,6 +18,16 @@ alone (a name, an organisation, or both). "Prepared by <byline>" prints under th
 PDF's title, where the identity alone is also set as the author, and in the centre
 of every sheet's print header; without one both files are as they have always been.
 
+Both also take the fit's `methods` text and `audit` (`curvestudio.tools.methods_text`
+and `audit_fit`). The PDF then carries two sections after the statistics table:
+Methods (the paragraph, the audit's methods fragment, the equation with its
+standard errors) and Fit audit (the audit's summary, then one paragraph per check
+that reads caution or fail: title, evidence, and the next step after an arrow). The
+workbook's Summary sheet carries the same under the line that names the convention,
+with each flagged check as a row (title, evidence, next step). A check that passed
+or could not run prints nothing of its own; without either argument both files are
+as they have always been; a fit that did not converge gets neither.
+
 Text safety: every cell that could be read as a spreadsheet formula
 (`= + - @`, also behind leading whitespace) is neutralised with a leading
 apostrophe, XML-illegal control characters are stripped, and long strings are

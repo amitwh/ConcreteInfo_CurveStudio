@@ -3,9 +3,14 @@
 Layout: title, the optional "Prepared by" byline, identification block (fingerprint,
 seed, versions, IST date), equation, parameter table with SE and CI, statistics table,
 the fit and residual figures, and an "Assumptions and limitations" section that
-includes the exact information-criteria convention. A fit that did not converge gets a
-red first-page warning and **no** figures of the fit — nothing that could pass for a
-result. User-controlled strings that reach reportlab's *paragraph parser* (which
+includes the exact information-criteria convention. A caller that gives the fit's methods
+text and audit (``curvestudio.tools``) gets two more sections after the statistics:
+**Methods** (the paragraph, the audit's methods fragment, the equation with its standard
+errors) and **Fit audit** (the audit's summary, then one paragraph per check that reads
+caution or fail: its title, its evidence and, after an arrow, its next step). A fit that
+did not converge gets a red first-page warning and **no** figures of the fit — nothing
+that could pass for a result — and prints no methods or audit either: the warning says
+it. User-controlled strings that reach reportlab's *paragraph parser* (which
 reads XML-ish markup) are XML-escaped there — names and equations can contain
 ``<`` and ``&``. Table cells are escaped ``Paragraph`` objects too: long cell
 text wraps at the column width instead of overflowing, and display strings are
@@ -29,7 +34,7 @@ import matplotlib
 from reportlab import rl_config
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
-from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib.styles import ParagraphStyle, StyleSheet1, getSampleStyleSheet
 from reportlab.lib.units import inch
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.pdfmetrics import registerFontFamily
@@ -47,6 +52,7 @@ from reportlab.platypus import (
 )
 
 from curvestudio.fitting import FitStatus
+from curvestudio.tools import FitAudit, MethodsText
 from curvestudio.workflow import FitBundle, format_equation
 from curvestudio_plotting import (
     FIT_FIGURE_SIZE,
@@ -67,7 +73,9 @@ from curvestudio_reporting.meta import (
     TOOL_NAME,
     assumptions_text,
     convention_of,
+    flagged_checks,
     generated_at,
+    methods_paragraph,
     tool_versions,
 )
 
@@ -147,13 +155,31 @@ def _decorate_page(canvas: Canvas, _doc: SimpleDocTemplate) -> None:
     canvas.restoreState()
 
 
-def fit_to_pdf(bundle: FitBundle, target: Path | BinaryIO, *, byline: str | None = None) -> None:
+def fit_to_pdf(
+    bundle: FitBundle,
+    target: Path | BinaryIO,
+    *,
+    byline: str | None = None,
+    audit: FitAudit | None = None,
+    methods: MethodsText | None = None,
+) -> None:
     """Write the PDF report for ``bundle`` to ``target`` (a path or binary stream).
 
     ``byline`` is the identity text alone (a name, an organisation, or both). When it is
     set, the report prints "Prepared by <byline>" in a small muted style directly under
     the title and the identity alone becomes the document's author. Without one the title
     is followed by the report as it has always been, with the tool as the author.
+
+    ``methods`` and ``audit`` are the tools layer's methods text and fit audit of the same
+    fit (:func:`curvestudio.tools.methods_text` in the ``"text"`` style, and
+    :func:`curvestudio.tools.audit_fit`). Given, a converged fit's report carries two more
+    sections after the statistics table: **Methods**, the paragraph, then the audit's
+    methods fragment, then the equation with its estimates and standard errors; and **Fit
+    audit**, the audit's summary, then one paragraph for each check that reads caution or
+    fail (its title, its evidence and, after an arrow, its next step). A check that passed
+    or could not run prints nothing there. Given neither, the report is the one it has
+    always been. A fit that did not converge prints neither section, whatever is given:
+    its red banner already says it.
     """
     shown = byline_text(byline)
     filename: str | BinaryIO = str(target) if isinstance(target, Path) else target
@@ -172,11 +198,19 @@ def fit_to_pdf(bundle: FitBundle, target: Path | BinaryIO, *, byline: str | None
     # reportlab 5 builds one page template per callback; passing them to build() is the
     # supported hook (the constructor ignores unknown keyword arguments such as these)
     document.build(
-        _flowables(bundle, shown), onFirstPage=_decorate_page, onLaterPages=_decorate_page
+        _flowables(bundle, shown, audit=audit, methods=methods),
+        onFirstPage=_decorate_page,
+        onLaterPages=_decorate_page,
     )
 
 
-def _flowables(bundle: FitBundle, byline: str | None = None) -> list[Flowable]:
+def _flowables(
+    bundle: FitBundle,
+    byline: str | None = None,
+    *,
+    audit: FitAudit | None = None,
+    methods: MethodsText | None = None,
+) -> list[Flowable]:
     styles = getSampleStyleSheet()
     for style in styles.byName.values():  # DejaVu everywhere, not just the tables
         style.fontName = _BODY_FONT
@@ -250,8 +284,11 @@ def _flowables(bundle: FitBundle, byline: str | None = None) -> list[Flowable]:
         Spacer(1, 4),
         _statistics_table(bundle),
     ]
-
     if converged:
+        # a fit that did not converge has no methods to state and nothing to audit, and its
+        # banner stands in for its figures
+        story += _methods_section(styles, methods, audit)
+        story += _audit_section(styles, audit)
         story += [
             PageBreak(),
             Paragraph("Figures", styles["Heading2"]),
@@ -283,6 +320,52 @@ def _flowables(bundle: FitBundle, byline: str | None = None) -> list[Flowable]:
     if diagnostics_notes:
         story.append(Spacer(1, 8))
         story.append(Paragraph(escape(diagnostics_notes), styles["BodyText"]))
+    return story
+
+
+def _methods_section(
+    styles: StyleSheet1, methods: MethodsText | None, audit: FitAudit | None
+) -> list[Flowable]:
+    """The Methods section: the methods paragraph with the audit's fragment, then the equation.
+
+    Empty when neither is given: the report then has no such section, as it never had.
+    """
+    paragraph = methods_paragraph(methods, audit)
+    if not paragraph:
+        return []
+    story: list[Flowable] = [
+        Spacer(1, 14),
+        Paragraph("Methods", styles["Heading2"]),
+        Spacer(1, 4),
+        Paragraph(escape(sanitise(paragraph)), styles["BodyText"]),
+    ]
+    if methods is not None:
+        # the equation keeps its lines: one paragraph, broken where the text breaks it
+        equation = "<br/>".join(escape(sanitise(line)) for line in methods.equation.split("\n"))
+        story += [Spacer(1, 8), Paragraph(equation, styles["BodyText"])]
+    return story
+
+
+def _audit_section(styles: StyleSheet1, audit: FitAudit | None) -> list[Flowable]:
+    """The Fit audit section: the audit's summary, then every check that reads caution or fail.
+
+    Each is one paragraph — its title, its evidence and, after an arrow, its next step —
+    with a gap before it, so two checks never read as one. When no check is flagged the
+    summary is the whole section: it says that every check that could run passed.
+    """
+    if audit is None:
+        return []
+    story: list[Flowable] = [
+        Spacer(1, 14),
+        Paragraph("Fit audit", styles["Heading2"]),
+        Spacer(1, 4),
+        Paragraph(escape(sanitise(audit.summary)), styles["BodyText"]),
+    ]
+    for check in flagged_checks(audit):
+        line = f"{check.title}. {check.evidence}"
+        if check.next_step is not None:  # the tool leaves it unset where it has no advice
+            line = f"{line} → {check.next_step}"
+        story += [Spacer(1, 6), Paragraph(escape(sanitise(line)), styles["BodyText"])]
     return story
 
 
