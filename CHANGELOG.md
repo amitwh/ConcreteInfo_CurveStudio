@@ -113,6 +113,8 @@ All notable changes are listed here. Dates are IST. Format: [Keep a Changelog](h
   browser**: the renewal's answer was stored after the sign-out, so the next page load was
   signed in again as that account. A renewal's answer is now adopted only while the session
   that asked for it is still the current one.
+- **Deleting a dataset no longer writes its name into the audit trail**: a name is usually a
+  file name, which can identify a person, and the trail outlives the account that is erased.
 
 ## [0.11.1] - 2026-11-22
 

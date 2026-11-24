@@ -200,14 +200,9 @@ def delete_dataset(dataset_id: uuid.UUID, user: CurrentUser, ctx: Ctx, db: Db) -
     """Delete a dataset together with its fits and jobs (running jobs are stopped first)."""
     dataset = own_dataset(db, user, dataset_id)
     ctx.jobs.cancel_for_dataset(dataset.id)
-    audit.record(
-        db,
-        "dataset.delete",
-        "dataset",
-        user_id=user.id,
-        entity_id=dataset.id,
-        detail={"name": dataset.name},
-    )
+    # No name in the row: a dataset's name (often a file name) can identify a person, and the
+    # audit trail outlives the account.
+    audit.record(db, "dataset.delete", "dataset", user_id=user.id, entity_id=dataset.id)
     db.delete(dataset)
     db.commit()
     return Response(status_code=204)
