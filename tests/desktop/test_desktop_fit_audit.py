@@ -1,4 +1,4 @@
-"""The Fit audit tab and its cross-validation check in the details window.
+"""The Fit audit tab, its cross-validation check and the methods text in the details window.
 
 Every fit here is real: the bundles come from ``fit_dataset`` and every expected verdict is
 ``audit_fit`` on that bundle, so the tests say what the tab shows of the tools' own words.
@@ -13,6 +13,7 @@ from typing import Literal
 
 import numpy as np
 import pytest
+from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import QApplication, QLabel
 from test_desktop_autofit_run import NOISY_QUADRATIC, TINY, wait_stored
 
@@ -22,12 +23,14 @@ from curvestudio.tools import (
     CrossValidation,
     ToolError,
     Verdict,
+    all_methods_texts,
     audit_fit,
     cross_validate,
 )
 from curvestudio.workflow import CustomRef, FitBundle, FitSpec, PolynomialRef, fit_dataset
 from curvestudio_desktop.theme import LIGHT_TOKENS
 from curvestudio_desktop.views import main_window as main_window_module
+from curvestudio_desktop.views.details_dialog import DetailsDialog
 from curvestudio_desktop.views.fit_audit_view import AuditBlockView, en_in_digits
 from curvestudio_desktop.views.fit_summary import apply_status_badge
 from curvestudio_desktop.views.results_tabs import ResultsTabs
@@ -47,6 +50,8 @@ STATE = {
     "fail": "failed",
     "not_applicable": "not_applicable",
 }
+STYLES = ("text", "markdown", "latex")
+STYLE_LABELS = ("Text", "Markdown", "LaTeX")
 
 
 def quadratic(x: np.ndarray) -> np.ndarray:
@@ -586,6 +591,67 @@ def test_cross_validation_is_disabled_for_a_fit_that_did_not_converge(qtbot, unc
 
 
 # -- the methods text ------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(("index", "style"), list(enumerate(STYLES)))
+def test_copy_methods_text_puts_the_paragraph_the_equation_and_the_table_on_the_clipboard(
+    qtbot, settings, clean, index, style
+) -> None:
+    dialog = DetailsDialog(settings=settings)
+    qtbot.addWidget(dialog)
+    dialog.show_bundle(clean, QUADRATIC, dataset_name="quad")
+    text = all_methods_texts(clean, spec=QUADRATIC)[style]
+    expected = f"{text.paragraph}\n\n{text.equation}\n\n{text.table}"
+    # one control in the footer, beside Copy equation, and one in the Equation tab
+    footer, equation = dialog.methods_button, dialog.results._methods_button
+    assert footer.text() == equation.text() == "Copy methods text"
+    for button in (footer, equation):
+        assert button.isEnabled()
+        assert [action.text() for action in button.menu().actions()] == list(STYLE_LABELS)
+        QGuiApplication.clipboard().clear()
+        button.menu().actions()[index].trigger()
+        assert QGuiApplication.clipboard().text() == expected
+
+
+def test_methods_text_is_disabled_for_a_fit_that_did_not_converge(
+    qtbot, settings, unconverged
+) -> None:
+    dialog = DetailsDialog(settings=settings)
+    qtbot.addWidget(dialog)
+    dialog.show_bundle(unconverged, UNIDENTIFIABLE, dataset_name="quad")
+    for button in (dialog.methods_button, dialog.results._methods_button):
+        assert not button.isEnabled()
+        assert button.toolTip() == "No methods text for a fit that did not converge"
+
+
+def test_a_refused_methods_text_shows_the_tools_message_and_copies_nothing(
+    qtbot, settings, clean
+) -> None:
+    dialog = DetailsDialog(settings=settings)
+    qtbot.addWidget(dialog)
+    other = FitSpec(model=PolynomialRef(degree=3))  # a specification that is not the fit's
+    dialog.show_bundle(clean, other, dataset_name="quad")
+    with pytest.raises(ToolError) as caught:
+        all_methods_texts(clean, spec=other)
+    assert caught.value.code == "MODEL_MISMATCH"
+    assert dialog.refusal_label.isHidden()
+
+    QGuiApplication.clipboard().setText("untouched")
+    for button in (dialog.methods_button, dialog.results._methods_button):
+        for action in button.menu().actions():
+            action.trigger()
+    assert QGuiApplication.clipboard().text() == "untouched"
+    assert dialog.refusal_label.text() == f"{caught.value.code}: {caught.value.message}"
+    assert not dialog.refusal_label.isHidden()
+
+    dialog.show_bundle(clean, QUADRATIC, dataset_name="quad")  # the next fit starts clean
+    assert dialog.refusal_label.isHidden()
+    assert dialog.refusal_label.text() == ""
+    dialog.methods_button.menu().actions()[0].trigger()
+    text = all_methods_texts(clean, spec=QUADRATIC)["text"]
+    assert (
+        QGuiApplication.clipboard().text() == f"{text.paragraph}\n\n{text.equation}\n\n{text.table}"
+    )
 
 
 # -- the window: a restored fit, the real job, the ranking ------------------------------------

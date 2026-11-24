@@ -1,6 +1,6 @@
 """The details window: non-modal, reusable, geometry-persistent and wired to the ranking.
 
-The dock keeps the ranking and a headline summary; the full five-view result opens in a
+The dock keeps the ranking and a headline summary; the full six-view result opens in a
 single details window per main window. These tests cover the window's own contract and
 the two paths that feed it: a ranked row (refit then open) and a manual fit.
 """
@@ -12,6 +12,7 @@ from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import QApplication
 from test_desktop_autofit_run import EXACT_LINEAR, NOISY_QUADRATIC, TINY, wait_stored
 
+from curvestudio.tools import all_methods_texts
 from curvestudio.workflow import format_equation
 from curvestudio_desktop.views.details_dialog import GEOMETRY_KEY, MINIMUM_SIZE, TITLE
 from curvestudio_desktop.views.main_window import MainWindow
@@ -74,6 +75,34 @@ def test_ranked_row_opens_the_bundle_with_equation_and_copy(autofit_window, qtbo
     QGuiApplication.clipboard().clear()
     dialog.copy_button.click()
     assert QGuiApplication.clipboard().text() == shown
+
+
+def test_footer_copies_the_methods_text_beside_the_equation(autofit_window, qtbot) -> None:
+    """Copy methods text sits beside Copy equation and offers the three styles."""
+    window = autofit_window
+    view = window.analysis_panel.autofit_view
+    assert view.table.select_row(0) is not None
+    window.action_details.trigger()
+    dialog = window.details_dialog
+    qtbot.waitUntil(lambda: dialog.bundle() is not None, timeout=60000)
+    QApplication.processEvents()
+    bundle, spec = dialog.bundle(), dialog.spec()
+    assert bundle is not None and spec is not None
+
+    footer = dialog.methods_button
+    assert footer.text() == "Copy methods text"
+    assert [action.text() for action in footer.menu().actions()] == ["Text", "Markdown", "LaTeX"]
+    assert footer.isEnabled()  # the row's fit converged
+    # beside Copy equation: the same row of the footer, to its right
+    assert footer.y() == dialog.copy_button.y()
+    assert dialog.copy_button.x() < footer.x()
+
+    text = all_methods_texts(bundle, spec=spec)["latex"]
+    QGuiApplication.clipboard().clear()
+    footer.menu().actions()[2].trigger()
+    assert (
+        QGuiApplication.clipboard().text() == f"{text.paragraph}\n\n{text.equation}\n\n{text.table}"
+    )
 
 
 def test_equation_displays_and_copies_caret_powers_and_empty_state(autofit_window, qtbot) -> None:

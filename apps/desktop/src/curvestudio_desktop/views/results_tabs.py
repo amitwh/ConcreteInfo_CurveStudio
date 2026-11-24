@@ -13,14 +13,15 @@ a model is "valid". Diagnostics are four small pyqtgraph panels (vs fitted, vs x
 histogram); an undefined panel says ``n/a`` instead of drawing empty axes. The Fit audit tab
 (:class:`~curvestudio_desktop.views.fit_audit_view.FitAuditView`) reads the fit through
 ``curvestudio.tools``; for a fit that did not converge it shows that failure's audit in
-place of the "No fit" empty state the other tabs fall back to.
+place of the "No fit" empty state the other tabs fall back to. The Equation tab also offers
+the fit's methods text — paragraph, equation and table — for the clipboard in three styles.
 """
 
 from collections.abc import Callable
 from typing import Any, Literal
 
 import pyqtgraph as pg
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QGuiApplication, QResizeEvent, QShowEvent
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -29,6 +30,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QMenu,
     QPlainTextEdit,
     QPushButton,
     QStackedLayout,
@@ -40,6 +42,7 @@ from PySide6.QtWidgets import (
 )
 
 from curvestudio.discovery import AutoFitResult
+from curvestudio.tools import Style, ToolError, all_methods_texts
 from curvestudio.workflow import (
     MAX_PREDICT_POINTS,
     FitBundle,
@@ -58,6 +61,40 @@ PredictCaller = Callable[
     [FitBundle, FitSpec, list[float], Literal["confidence", "prediction"] | None],
     Prediction,
 ]
+
+METHODS_STYLES: tuple[tuple[Style, str], ...] = (
+    ("text", "Text"),
+    ("markdown", "Markdown"),
+    ("latex", "LaTeX"),
+)
+"""The styles a Copy methods text control offers, with what its menu calls each."""
+NO_METHODS_TEXT_REASON = "No methods text for a fit that did not converge"
+
+
+def methods_clipboard_text(bundle: FitBundle, spec: FitSpec | None, style: Style) -> str:
+    """The methods text in ``style`` as one clipboard entry: paragraph, equation, table.
+
+    Raises:
+        ToolError: what ``all_methods_texts`` refuses: a fit that did not converge, a
+            specification that is not the fit's, a fit that carries no statistics.
+    """
+    text = all_methods_texts(bundle, spec=spec)[style]
+    return "\n\n".join((text.paragraph, text.equation, text.table))
+
+
+def methods_text_menu(owner: QWidget, copy: Callable[[Style], None]) -> QMenu:
+    """The small menu behind a Copy methods text control: one entry for each style."""
+    menu = QMenu(owner)
+    for style, label in METHODS_STYLES:
+        menu.addAction(label, lambda style=style: copy(style))
+    return menu
+
+
+def sync_methods_button(button: QPushButton, bundle: FitBundle | None) -> None:
+    """A Copy methods text control serves a fit that converged; any other fit says why not."""
+    available = bundle is not None and str(bundle.result.status) == "converged"
+    button.setEnabled(available)
+    button.setToolTip("" if bundle is None or available else NO_METHODS_TEXT_REASON)
 
 
 def _number(value: float | None, digits: int = 6) -> str:
@@ -165,6 +202,9 @@ class _Tab(QStackedLayout):
 
 class ResultsTabs(QWidget):
     """The tabbed results area of the analysis dock."""
+
+    methodsTextRefused = Signal(str)
+    """The methods tool refused the shown fit: its message (the clipboard is untouched)."""
 
     TAB_TITLES = (
         "Parameters",
@@ -275,8 +315,15 @@ class ResultsTabs(QWidget):
         self._equation_label.setFont(mono_font(14))
         copy = QPushButton("Copy equation")
         copy.clicked.connect(self.copy_equation)
+        self._methods_button = QPushButton("Copy methods text")
+        self._methods_button.setObjectName("equationCopyMethodsButton")
+        self._methods_button.setMenu(methods_text_menu(self, self.copy_methods_text))
+        actions = QHBoxLayout()
+        actions.addStretch(1)
+        actions.addWidget(copy)
+        actions.addWidget(self._methods_button)
         layout.addWidget(self._equation_label, stretch=1)
-        layout.addWidget(copy, alignment=Qt.AlignmentFlag.AlignRight)
+        layout.addLayout(actions)
         self._equation_tab = _Tab(content)
         self._tabs_of.append(self._equation_tab)
 
@@ -344,6 +391,7 @@ class ResultsTabs(QWidget):
         self._predict_table.setRowCount(0)
         self._predict_error.hide()
         self._equation_label.setText(EMPTY_TEXT)
+        sync_methods_button(self._methods_button, None)
         for plot in self._diag_plots:
             plot.clear()
         self._diag_note.setText("")
@@ -513,6 +561,7 @@ class ResultsTabs(QWidget):
 
     def _fill_equation(self, bundle: FitBundle) -> None:
         self._equation_label.setText(format_equation(bundle.equation_text))
+        sync_methods_button(self._methods_button, bundle)
         self._equation_tab.show_content(True)
 
     def equation_text(self) -> str:
@@ -523,6 +572,23 @@ class ResultsTabs(QWidget):
         """Copy the shown equation to the clipboard; ``False`` when there is none."""
         text = self.equation_text()
         if not text:
+            return False
+        QGuiApplication.clipboard().setText(text)
+        return True
+
+    def copy_methods_text(self, style: Style) -> bool:
+        """Copy the shown fit's methods text in ``style``; ``False`` when there is none to copy.
+
+        The clipboard is left untouched when the tool refuses the fit; the refusal's message
+        is emitted as :attr:`methodsTextRefused` for whoever gives the control its place.
+        """
+        bundle, spec = self._bundle, self._spec
+        if bundle is None:
+            return False
+        try:
+            text = methods_clipboard_text(bundle, spec, style)
+        except ToolError as exc:
+            self.methodsTextRefused.emit(str(exc))  # a ToolError reads "CODE: message"
             return False
         QGuiApplication.clipboard().setText(text)
         return True

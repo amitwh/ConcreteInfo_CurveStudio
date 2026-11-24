@@ -9,7 +9,9 @@ comparing rows behind it.
 
 The six views are a :class:`ResultsTabs`, the same widget the fit path has always filled;
 nothing is re-implemented here. The equation is also shown large in JetBrains Mono and
-selectable, with Copy in both the tab and the footer.
+selectable, with Copy in both the tab and the footer; the footer also offers the fit's
+methods text for the clipboard, as the Equation tab does, and shows the reason when the
+tool that writes it refuses the fit.
 """
 
 from typing import cast
@@ -26,12 +28,18 @@ from PySide6.QtWidgets import (
 )
 
 from curvestudio.discovery import AutoFitResult
+from curvestudio.tools import Style
 from curvestudio.workflow import FitBundle, FitSpec, format_equation
 from curvestudio_desktop.theme import mono_font
 from curvestudio_desktop.views.fit_audit_view import CrossValidateCaller
 from curvestudio_desktop.views.fit_summary import apply_status_badge
 from curvestudio_desktop.views.ranking_table import format_metric, format_precise
-from curvestudio_desktop.views.results_tabs import PredictCaller, ResultsTabs
+from curvestudio_desktop.views.results_tabs import (
+    PredictCaller,
+    ResultsTabs,
+    methods_text_menu,
+    sync_methods_button,
+)
 
 GEOMETRY_KEY = "details/geometry"
 MINIMUM_SIZE = (900, 640)
@@ -74,6 +82,13 @@ class DetailsDialog(QDialog):
         outer.setSpacing(8)
         outer.addWidget(self._build_header())
         outer.addWidget(self.results, stretch=1)
+        # the one place either Copy methods text control reports a refusal; hidden otherwise
+        self.refusal_label = QLabel("")
+        self.refusal_label.setObjectName("bannerError")
+        self.refusal_label.setWordWrap(True)
+        self.refusal_label.hide()
+        self.results.methodsTextRefused.connect(self._show_refusal)
+        outer.addWidget(self.refusal_label)
         outer.addLayout(self._build_footer())
 
     def _build_header(self) -> QWidget:
@@ -108,6 +123,9 @@ class DetailsDialog(QDialog):
         self.copy_button = QPushButton("Copy equation")
         self.copy_button.setObjectName("detailsCopyButton")
         self.copy_button.clicked.connect(self.copy_equation)
+        self.methods_button = QPushButton("Copy methods text")
+        self.methods_button.setObjectName("detailsCopyMethodsButton")
+        self.methods_button.setMenu(methods_text_menu(self, self._copy_methods_text))
         self.export_button = QPushButton("Export…")
         self.export_button.setObjectName("detailsExportButton")
         self.export_button.clicked.connect(lambda: self.exportRequested.emit())
@@ -115,6 +133,7 @@ class DetailsDialog(QDialog):
         self.close_button.setObjectName("detailsCloseButton")
         self.close_button.clicked.connect(self.close)
         row.addWidget(self.copy_button)
+        row.addWidget(self.methods_button)
         row.addStretch(1)
         row.addWidget(self.export_button)
         row.addWidget(self.close_button)
@@ -162,7 +181,9 @@ class DetailsDialog(QDialog):
         )
         self.results.show_bundle(bundle, cast("FitSpec", spec), meta, ranking=ranking)
         self.copy_button.setEnabled(bool(format_equation(bundle.equation_text)))
+        sync_methods_button(self.methods_button, bundle)
         self.export_button.setEnabled(True)
+        self._hide_refusal()  # a refusal belongs to the fit that was shown before
 
     def clear(self) -> None:
         """No fit to show: empty views, as if the window had never been filled."""
@@ -174,7 +195,9 @@ class DetailsDialog(QDialog):
         self.metrics_label.setText("")
         self.results.clear_all()
         self.copy_button.setEnabled(False)
+        sync_methods_button(self.methods_button, None)
         self.export_button.setEnabled(False)
+        self._hide_refusal()
 
     # -- actions -----------------------------------------------------------------------------
 
@@ -200,6 +223,22 @@ class DetailsDialog(QDialog):
             return False
         QGuiApplication.clipboard().setText(text)
         return True
+
+    def _copy_methods_text(self, style: Style) -> None:
+        """The footer's Copy methods text: the tabs hold the fit, so they do the copying."""
+        self.results.copy_methods_text(style)
+
+    def _show_refusal(self, message: str) -> None:
+        self.refusal_label.setText(message)
+        self.refusal_label.show()
+
+    def _hide_refusal(self) -> None:
+        self.refusal_label.setText("")
+        self.refusal_label.hide()
+
+    def refusal_text(self) -> str:
+        """Why the methods tool refused the last copy ('' when it did not)."""
+        return self.refusal_label.text()
 
     def model_text(self) -> str:
         return self.model_label.text()
