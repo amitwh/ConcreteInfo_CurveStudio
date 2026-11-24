@@ -9882,6 +9882,11 @@
             "description": "Successful Response"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "List Tools",
         "tags": [
           "stats"

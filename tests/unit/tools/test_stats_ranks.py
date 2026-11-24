@@ -606,7 +606,9 @@ def test_the_three_tools_are_registered_under_ranks_with_described_fields() -> N
         assert [field.label for field in info.fields] == labels
         assert all(field.description for field in info.fields)
         assert info.fields[-1].option_schema is not None
-    assert {info.name for info in catalogue() if info.family == "ranks"} == set(expected)
+    # The family also holds the rank tests of the analysis-of-variance batch (kruskal,
+    # friedman); this test asks that these three are among them, not that they are alone.
+    assert {info.name for info in catalogue() if info.family == "ranks"} >= set(expected)
 
 
 def test_the_registry_builds_and_runs_the_mann_whitney_from_column_names() -> None:
