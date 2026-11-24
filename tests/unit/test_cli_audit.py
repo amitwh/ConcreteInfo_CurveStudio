@@ -270,6 +270,14 @@ def test_a_fit_that_did_not_converge_fails_and_says_why(
         assert f"[fail] The fit did not converge\n  Status {result.status.value}" in out
         assert result.termination_reason in out
 
+        # with --cv the cross-validation is skipped with a note on stderr: the audit is still
+        # the answer, and it is not a usage error
+        code = main(["audit", str(path), "--x", "x", "--y", "y", *flags, "--cv", "5"])
+        captured = capsys.readouterr()
+        assert code == 2
+        assert captured.out.startswith("Overall: FAIL\n")
+        assert "cross-validation was not run: the fit did not converge" in captured.err
+
 
 def test_a_refused_cross_validation_exits_3(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
@@ -345,6 +353,7 @@ def test_methods_prints_the_text_the_tools_wrote(
                 "Cite as:",
                 text.citation_curvestudio,
                 *text.citation_model,
+                "",
                 "For you to complete:",
                 *text.to_complete,
             ]
@@ -402,7 +411,7 @@ def test_methods_text_lists_what_is_missing(capsys: pytest.CaptureFixture[str]) 
     )
     _print_methods_text(text)
     out = capsys.readouterr().out
-    assert "For you to complete:\nInstrument and measurement method\nNot known:\n" in out
+    assert "For you to complete:\nInstrument and measurement method\n\nNot known:\n" in out
     assert out.endswith("Not known:\nCODE: a sentence.\nOTHER: another.\n")
 
 

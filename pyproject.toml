@@ -158,8 +158,10 @@ forbidden_modules = [
 ]
 
 [[tool.importlinter.contracts]]
-name = "Nothing in core imports the workflow layer (only the apps do)"
+name = "Nothing in the core below the command line imports the workflow layer"
 type = "forbidden"
+# The command line is a surface like the apps: its audit and methods commands go through the
+# workflow layer so that all three give the same numbers.
 source_modules = [
     "curvestudio.data",
     "curvestudio.fitting",
@@ -168,7 +170,6 @@ source_modules = [
     "curvestudio.testing",
     "curvestudio.statistics",
     "curvestudio.diagnostics",
-    "curvestudio.cli",
 ]
 forbidden_modules = ["curvestudio.workflow"]
 

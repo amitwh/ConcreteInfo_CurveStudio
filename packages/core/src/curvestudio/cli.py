@@ -806,13 +806,23 @@ def _run_audit(args: argparse.Namespace) -> int:
     if isinstance(fitted, int):
         return fitted
     spec, bundle = fitted.spec, fitted.bundle
+    cv = None
+    if args.cv is not None and bundle.result.status is FitStatus.CONVERGED:
+        try:
+            cv = cross_validate(bundle, spec, folds=args.cv)
+        except ToolError as exc:
+            return _fail(str(exc), EXIT_INPUT_ERROR)
+    elif args.cv is not None:
+        # Nothing to cross-validate. The audit's first check says why, and that is the answer.
+        print(
+            "curvestudio: note: cross-validation was not run: the fit did not converge "
+            f"({bundle.result.termination_reason})",
+            file=sys.stderr,
+        )
     try:
-        cv = None if args.cv is None else cross_validate(bundle, spec, folds=args.cv)
         # AutoFitConfig() is what the autofit command builds from its default flags.
         ranking = autofit(fitted.xy, AutoFitConfig()) if args.ranking else None
         audit = audit_fit(bundle, spec=spec, ranking=ranking, cv=cv)
-    except ToolError as exc:
-        return _fail(str(exc), EXIT_INPUT_ERROR)
     except AutoFitError as exc:
         return _fail(f"{exc.code}: {exc}", EXIT_INPUT_ERROR)
 
@@ -878,10 +888,12 @@ def _print_methods_text(text: MethodsText) -> None:
     print(text.citation_curvestudio)
     for reference in text.citation_model:
         print(reference)
+    print()
     print("For you to complete:")
     for item in text.to_complete:
         print(item)
     if text.missing:
+        print()
         print("Not known:")
         for entry in text.missing:
             print(entry)

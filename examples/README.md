@@ -33,13 +33,36 @@ uv run curvestudio models                                                 # list
 uv run curvestudio fit --help                                             # full option reference
 ```
 
-## Exit codes
+## Exit codes of `fit`
 
 | Code | Meaning                                                                       |
 |------|-------------------------------------------------------------------------------|
 | 0    | the fit converged                                                             |
 | 2    | invalid input: unreadable file, missing column, unknown model, validation errors, or a fit that cannot run (too few observations for the parameters, or a model that does not apply) |
 | 3    | the fit ran but did not converge or failed                                    |
+
+## Auditing a fit, and writing it up
+
+Two more commands take the same data arguments as `fit`, and read the fit through the same
+code the desktop and web apps use:
+
+```bash
+uv run curvestudio audit examples/decay.csv --x x --y y --model exp_decay_offset --cv 5
+uv run curvestudio methods examples/decay.csv --x x --y y --model exp_decay_offset --style markdown
+```
+
+`audit` prints an overall verdict, a summary, and then each check with its verdict, the
+evidence behind it and what to do next. `--cv K` (or `--cv loo`) adds the cross-validation
+check. `--ranking` also runs an Auto-fit, which takes as long as the `autofit` command, to
+name a simpler model that fits as well. Its exit codes are `0` for pass, `1` for caution or
+for nothing that could be checked, `2` for fail, and `3` for a usage or input error.
+
+`methods` prints the methods paragraph, the equation with each estimate and its standard
+error, the parameter table, the citations and what the author must complete, as plain text,
+Markdown (`--style markdown`) or LaTeX (`--style latex`). Its exit codes are `0`, and `3` for
+a usage or input error or a fit that did not converge.
+
+Both take `--json` for the result as JSON on standard output.
 
 ## Row numbers in messages
 
