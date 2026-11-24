@@ -462,4 +462,46 @@ describe("HomePage", () => {
     expect(document.querySelectorAll(".hp-aicc__bar")).toHaveLength(5);
     expect(screen.getByText(/ΔAICc against the best model/i)).toBeTruthy();
   });
+
+  it("renders the Statistics section with its three sentences and the record of the check", () => {
+    renderHome();
+    const section = document.getElementById("statistics");
+    expect(section).not.toBeNull();
+    const scoped = within(section as HTMLElement);
+
+    expect(
+      scoped.getByRole("heading", {
+        level: 2,
+        name: "Checked after the fit. Written up for the paper.",
+      }),
+    ).toBeTruthy();
+
+    const sentences = [
+      "After every fit, a fit audit checks the evidence for you: each check gets a verdict, the numbers behind it and what to do next.",
+      "A methods text writes the fit up for you: the model, the estimator, the estimates with their standard errors and the citations, as plain text, Markdown or LaTeX.",
+      "We looked for these two in the public documentation of CurveExpert and CurveExpert Pro, Origin, GraphPad Prism, LabPlot, SciDAVis, QtiPlot, jamovi and JASP in November 2026, and did not find either offered in its own right; those tools offer residual plots and tests, rankings, pairwise comparisons and equation export.",
+    ];
+    for (const sentence of sentences) {
+      expect(scoped.getByText(sentence)).toBeTruthy();
+    }
+
+    // The record of that check is a file of this repository, on the address the footer's
+    // source link uses.
+    const record = scoped.getByRole("link", { name: "How we checked" });
+    expect(record.getAttribute("href")).toBe(
+      "https://github.com/amitwh/ConcreteInfo_CurveStudio/blob/main/docs/prior-art.md",
+    );
+    expect(record.getAttribute("target")).toBe("_blank");
+    expect(record.getAttribute("rel")).toBe("noopener noreferrer");
+  });
+
+  it("claims no absence in the Statistics section: what was not found is not proof", () => {
+    renderHome();
+    const text = (document.getElementById("statistics")?.textContent ?? "").toLowerCase();
+    for (const banned of ["nowhere else", "unique", "only tool"]) {
+      expect(text).not.toContain(banned);
+      // and it is not written anywhere else on the page either
+      expect(HOME_PAGE_SOURCE.toLowerCase()).not.toContain(banned);
+    }
+  });
 });

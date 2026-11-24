@@ -83,6 +83,32 @@ research ones" test; each maps to families that exist in the catalogue today.
 | "174 candidates ranked in one run. AICc sets the order, not a hunch." | As trust strip above |
 | "The export keeps the full ranking" | `apps/api/src/curvestudio_api/export.py` (`autofit_csv`) |
 
+## Statistics
+
+The section `#statistics` (the fit audit and the methods text) is pinned by the "renders the
+Statistics section with its three sentences and the record of the check" test in
+`HomePage.test.tsx`. The test "claims no absence in the Statistics section" asserts that the
+section, and the page's source, say none of "nowhere else", "unique" or "only tool".
+
+| Claim | Backing |
+|---|---|
+| "After every fit, a fit audit checks the evidence for you: each check gets a verdict, the numbers behind it and what to do next." | `packages/core/src/curvestudio/tools/audit.py` (`audit_fit` runs `CHECKS` in a fixed order and returns each with its verdict, the statistic and threshold it turned on, its evidence and its next step); `GET /fits/{fit_id}/audit` in `apps/api/src/curvestudio_api/routers/fits.py`; the cross-validation check the Fit audit tab can queue is `POST /fits/{fit_id}/audit/cross-validation` in the same router |
+| "A methods text writes the fit up for you: the model, the estimator, the estimates with their standard errors and the citations, as plain text, Markdown or LaTeX." | `packages/core/src/curvestudio/tools/methods.py` (`methods_text` and `all_methods_texts`: the paragraph, the equation, the table and the citations, in the three styles); `GET /fits/{fit_id}/methods` in the same router |
+| "We looked for these two in the public documentation of CurveExpert and CurveExpert Pro, Origin, GraphPad Prism, LabPlot, SciDAVis, QtiPlot, jamovi and JASP in November 2026, and did not find either offered in its own right; those tools offer residual plots and tests, rankings, pairwise comparisons and equation export." | `docs/prior-art.md`, checked on 2026-11-24. No cell of its summary reads "Has" for fit audit or methods text in any of the nine products, and its "What this check supports" section names the nearest neighbours the last clause lists |
+| "How we checked" (the link) | `docs/prior-art.md` on the repository's `main` branch, under the repository address the footer's "CurveStudio source" link uses |
+
+The third sentence is worded as found, never as proof, because the record says its check is
+incomplete in four places:
+
+- LabPlot: an earlier handbook page describing the fit dialog (its residuals tab and parameter
+  confidence intervals) could not be reached; the old address redirects to the home page.
+- SciDAVis: its results log is documented only by a screenshot.
+- Origin: no version stated on the help pages read.
+- QtiPlot: no version stated.
+
+Before the sentence is changed, re-read `docs/prior-art.md`: its date is the date of the
+check it records, and a later capability repeats the check for itself first.
+
 ## Desktop and web
 
 | Claim | Backing |

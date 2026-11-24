@@ -3,8 +3,9 @@
  *
  * One long marketing page: hero with a working sign-in card, a trust strip, who it is
  * for, the research requirements table, the three pillars, how it works, the model
- * library, the statistics that matter, an auto-fit ranking mock, use cases, the
- * desktop/web split, the other ConcreteInfo projects, the FAQ and a closing CTA + footer.
+ * library, fits you can reproduce, the fit audit and the methods text, the statistics
+ * that matter, an auto-fit ranking mock, use cases, the desktop/web split, the other
+ * ConcreteInfo projects, the FAQ and a closing CTA + footer.
  *
  * Every illustration is a hand-authored inline SVG (no Plotly, no downloaded images) so
  * the page stays still, same-origin and cheap. Equations use the mono font; the single
@@ -32,8 +33,10 @@ import {
   Gauge,
   GraduationCap,
   Layers,
+  ListChecks,
   MonitorSmartphone,
   Presentation,
+  ScrollText,
   Sigma,
   Sparkles,
   TestTube,
@@ -275,6 +278,22 @@ const FAQ = [
     a: "CurveStudio is AGPL-3.0 open source. Create an account to use the hosted web app, or build and run the desktop app yourself.",
   },
 ] as const;
+
+/* ---- Statistics: the fit audit and the methods text -------------------------------- */
+
+/** The section's three sentences. Pinned verbatim by `HomePage.test.tsx` and backed, claim
+ *  by claim, in `homepage-claims.md`. The third says what a check found and where its record
+ *  is: a capability not found is not proof that nobody has it, so nothing here claims one. */
+const FIT_AUDIT_SENTENCE =
+  "After every fit, a fit audit checks the evidence for you: each check gets a verdict, the numbers behind it and what to do next.";
+const METHODS_TEXT_SENTENCE =
+  "A methods text writes the fit up for you: the model, the estimator, the estimates with their standard errors and the citations, as plain text, Markdown or LaTeX.";
+const PRIOR_ART_SENTENCE =
+  "We looked for these two in the public documentation of CurveExpert and CurveExpert Pro, Origin, GraphPad Prism, LabPlot, SciDAVis, QtiPlot, jamovi and JASP in November 2026, and did not find either offered in its own right; those tools offer residual plots and tests, rankings, pairwise comparisons and equation export.";
+
+/** The record of that check: a file of the repository the footer's source link names. */
+const PRIOR_ART_URL =
+  "https://github.com/amitwh/ConcreteInfo_CurveStudio/blob/main/docs/prior-art.md";
 
 /* ---- "Fits you can reproduce" gallery ------------------------------------------------ */
 
@@ -1063,6 +1082,39 @@ export function HomePage(): ReactElement {
               lede="Six shapes cover most measurements. Pick one to see the curve, the confidence band and the numbers CurveStudio reports. The values below are illustrative runs, not live data."
             />
             <FitGallery />
+          </div>
+        </section>
+
+        {/* 7c — the fit audit and the methods text */}
+        <section className="hp-sec" id="statistics">
+          <div className="hp-wrap">
+            <SectionHead
+              eyebrow="FIT AUDIT AND METHODS TEXT"
+              title="Checked after the fit. Written up for the paper."
+            />
+            <div className="hp-split">
+              <article className="hp-card">
+                <span className="hp-icon-tile" aria-hidden="true">
+                  <ListChecks />
+                </span>
+                <h3>Fit audit</h3>
+                <p>{FIT_AUDIT_SENTENCE}</p>
+              </article>
+              <article className="hp-card">
+                <span className="hp-icon-tile" aria-hidden="true">
+                  <ScrollText />
+                </span>
+                <h3>Methods text</h3>
+                <p>{METHODS_TEXT_SENTENCE}</p>
+              </article>
+            </div>
+            <p className="hp-note">
+              <span>{PRIOR_ART_SENTENCE}</span>{" "}
+              <a href={PRIOR_ART_URL} target="_blank" rel="noopener noreferrer">
+                How we checked
+              </a>
+              .
+            </p>
           </div>
         </section>
 
