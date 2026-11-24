@@ -824,6 +824,25 @@ def test_the_audit_names_the_simplest_model_within_two_aicc(scenarios) -> None:
 # -- rows ----------------------------------------------------------------------------------------
 
 
+def test_a_missing_weight_does_not_stop_the_audit(scenarios) -> None:
+    # A blank weight never survives an import, but a bundle can carry one. The exact
+    # Durbin-Watson test needs the fit's data rebuilt, and the data layer refuses a missing
+    # value: the audit still answers, on its other rule, and names the row.
+    fitted = scenarios.zero_weights()
+    snapshot = fitted.data
+    assert snapshot.weights is not None
+    weights = list(snapshot.weights)
+    weights[5] = float("nan")
+    bundle = fitted.model_copy(update={"data": snapshot.model_copy(update={"weights": weights})})
+
+    audit = audit_fit(bundle, spec=scenarios.WEIGHTED_QUADRATIC)
+
+    assert any(row.index == 5 and row.reason == "weight is missing" for row in audit.excluded)
+    independence = _check(audit, "residual_independence")
+    assert "Ljung-Box" in independence.evidence
+    assert "MISSING_VALUE" in independence.evidence
+
+
 def test_zero_weight_rows_are_excluded_and_listed(scenarios) -> None:
     bundle = scenarios.zero_weights()
     assert bundle.result.stats is not None and bundle.result.stats.n == 40

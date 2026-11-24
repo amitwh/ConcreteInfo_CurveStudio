@@ -19,6 +19,7 @@ the checks share, and the checks sit in :mod:`._checks_fit`, :mod:`._checks_resi
 from collections.abc import Mapping, Sequence
 
 from curvestudio.data import XY
+from curvestudio.data.errors import DataError
 from curvestudio.diagnostics import FitReport
 from curvestudio.discovery import AutoFitResult, RankedFit
 from curvestudio.fitting import FitResult, FitStatus
@@ -330,6 +331,11 @@ def _exact_durbin_watson(
     except WorkflowError as exc:
         reason = _WORKFLOW_REASONS.get(exc.code, "the workflow refused the request")
         return None, f"{reason} ({exc.code}: {exc.message})"
+    except DataError as exc:
+        # The exact test needs the fit's data rebuilt, and the data layer refuses a missing
+        # value (a blank weight, which no import lets through but a bundle can carry). The
+        # audit still answers, on its other rule.
+        return None, f"the fit's data hold a value the exact test cannot use ({exc.code})"
     try:
         return durbin_watson_test(carried.statistic, view.weighted_jacobian), None
     except ToolError as exc:
