@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from curvestudio_api import audit
 from curvestudio_api.errors import ApiError
-from curvestudio_api.orm import AuditLog, Dataset, Fit, Job, Plan, User
+from curvestudio_api.orm import AuditLog, Dataset, Fit, Job, Plan, StatResult, User
 from curvestudio_api.settings import Settings
 from curvestudio_api.timeutil import IST, utcnow
 
@@ -81,15 +81,28 @@ def effective_limits(db: Session, settings: Settings, override: str | None = Non
 def usage(db: Session, user_id: uuid.UUID) -> Usage:
     # A dataset's bytes are its two stored payloads. A dataset from before has no table
     # payload (NULL), which SUM leaves out; the sum of an account with none at all is NULL
-    # too, so each part is brought to 0 on its own.
+    # too, so each part is brought to 0 on its own. The stored statistical results count
+    # against the same bytes quota.
     stored = func.coalesce(func.sum(func.length(Dataset.payload)), 0) + func.coalesce(
         func.sum(func.length(Dataset.table)), 0
     )
     datasets, nbytes = db.execute(
         select(func.count(Dataset.id), stored).where(Dataset.user_id == user_id)
     ).one()
+    result_bytes = (
+        db.scalar(
+            select(func.coalesce(func.sum(StatResult.size_bytes), 0)).where(
+                StatResult.user_id == user_id
+            )
+        )
+        or 0
+    )
     fits = db.scalar(select(func.count(Fit.id)).where(Fit.user_id == user_id)) or 0
-    return Usage(datasets=int(datasets), dataset_bytes=int(nbytes), fits=int(fits))
+    return Usage(
+        datasets=int(datasets),
+        dataset_bytes=int(nbytes) + int(result_bytes),
+        fits=int(fits),
+    )
 
 
 def active_jobs(db: Session, user_id: uuid.UUID) -> int:

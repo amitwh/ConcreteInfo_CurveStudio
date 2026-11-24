@@ -37,6 +37,7 @@ from curvestudio_api.modules.errors.capture import (
 from curvestudio_api.modules.installs import router as installs
 from curvestudio_api.ratelimit import DailyCap, SlidingWindowLimiter
 from curvestudio_api.routers import auth, autofits, datasets, fits, oauth, system
+from curvestudio_api.routers import stats as stat_routes
 from curvestudio_api.security import JwtKeys
 from curvestudio_api.settings import Settings, load_jwt_keys
 from curvestudio_api.spa import mount_spa
@@ -139,7 +140,18 @@ def create_app(
     install_error_handlers(app)
 
     api = APIRouter(prefix=API_PREFIX)
-    for module in (system, auth, oauth, datasets, fits, autofits, installs, error_events, admin):
+    for module in (
+        system,
+        auth,
+        oauth,
+        datasets,
+        fits,
+        autofits,
+        stat_routes,
+        installs,
+        error_events,
+        admin,
+    ):
         api.include_router(module.router)
     app.include_router(api)
     if settings.web_dist is not None:

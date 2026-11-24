@@ -4,6 +4,21 @@ FastAPI backend for CurveStudio (AGPL-3.0-or-later). It contains no maths: every
 from `curvestudio.workflow` (`import_dataset`, `fit_dataset`, `predict`), so the web app and
 the desktop app show identical results.
 
+## Statistical tools
+
+`GET /api/v1/stats/tools` lists the core's statistical tools (the same ones the desktop app and
+the command line run), with the families they belong to and the fields each request takes.
+`POST /api/v1/datasets/{id}/stats/{tool}` runs one on a dataset's columns and `POST
+/api/v1/stats/{tool}` runs one that needs no data; the body is the request's fields by name
+(`{"values": "y", "groups": "batch"}`), and every number comes from
+`curvestudio.tools.stats`. A tool reads a column from the fit's payload when it is the x, y or
+weight column and from the dataset's stored table otherwise, so both surfaces see the same
+rows and the same group labels. Each run is stored and counts against the dataset-bytes quota:
+`GET /api/v1/stats/results` lists them (newest first, optionally for one dataset), and
+`GET`/`DELETE /api/v1/stats/results/{id}` reads or removes one. A tool reads at most
+`CURVESTUDIO_STATS_MAX_ROWS` rows on the web (the desktop app and the command line have no such
+limit), and a result over two megabytes is refused with `TOO_LARGE`.
+
 ## Run
 
 ```
@@ -11,7 +26,7 @@ cp apps/api/.env.example .env      # edit; see the comments in the file
 uv run curvestudio-api             # one uvicorn process on CURVESTUDIO_HOST:CURVESTUDIO_PORT
 ```
 
-The schema is migrated (Alembic, to the head revision, `0012` today) at start-up. With `CURVESTUDIO_WEB_DIST` pointing at
+The schema is migrated (Alembic, to the head revision, `0015` today) at start-up. With `CURVESTUDIO_WEB_DIST` pointing at
 the built web app the same process serves it, with a fallback to `index.html` for non-`/api`
 paths. The OpenAPI document is `apps/api/openapi.json`; regenerate it with
 `uv run python -m curvestudio_api.export_openapi` (a test fails when it is stale).

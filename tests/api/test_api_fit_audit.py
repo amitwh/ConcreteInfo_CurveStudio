@@ -687,7 +687,7 @@ def test_migration_0012_round_trip(tmp_path: Path) -> None:
     that no cross-validation has been run. The downgrade takes the column away and nothing else."""
     engine: Engine = create_app(make_settings(tmp_path)).state.ctx.engine
     upgrade_to_head(engine)
-    assert current_revision(engine) == "0014"
+    assert current_revision(engine) == "0015"
     assert "cv" in fit_columns(engine)
 
     command.downgrade(_config(engine), "0011")
@@ -719,7 +719,7 @@ def test_migration_0012_round_trip(tmp_path: Path) -> None:
         fit_id = fit.id
 
     upgrade_to_head(engine)
-    assert current_revision(engine) == "0014"
+    assert current_revision(engine) == "0015"
     column = next(c for c in inspect(engine).get_columns("fits") if c["name"] == "cv")
     assert column["nullable"] is True
     with Session(engine) as db:  # cv is a deferred column: read it while the session is open

@@ -19,6 +19,7 @@ import csv
 import io
 import sys
 import threading
+from collections.abc import Sequence
 from typing import Any, Literal
 
 import numpy as np
@@ -141,22 +142,32 @@ def _date_cells(dates: pd.Series) -> NDArray[np.object_]:
     return cells
 
 
-def decode_table(payload: bytes) -> dict[str, NumberArray | TextArray]:
+def decode_table(
+    payload: bytes, *, names: Sequence[str] | None = None
+) -> dict[str, NumberArray | TextArray]:
     """The columns of a stored table by name, in the payload's order; ``{}`` for no payload.
 
-    Every cell is read as text: no NA-like word becomes a missing value and nothing is
-    stripped. A blank cell is empty or spaces only. A column is a **number** column when
-    every cell of it that is not blank parses as a number: ``float64``, with NaN for a blank
-    cell. Any other column is a **text** column: an object array of ``str`` holding the cells
-    as written.
+    With ``names``, only those columns are read and returned; the others are neither
+    classified nor built. Every cell is read as text: no NA-like word becomes a missing value
+    and nothing is stripped. A blank cell is empty or spaces only. A column is a **number**
+    column when every cell of it that is not blank parses as a number: ``float64``, with NaN
+    for a blank cell. Any other column is a **text** column: an object array of ``str``
+    holding the cells as written.
 
     Raises:
         ValueError: when the payload is not a well-formed table (not UTF-8, a row that does
-            not match its header, a column named twice).
+            not match its header, a column named twice), or when ``names`` asks for a column
+            the table does not have.
     """
     decoded: dict[str, NumberArray | TextArray] = {}
-    for name, cells in _read(payload):
+    for name, cells in _read(payload, names):
         decoded[name] = _classify(cells)[2]
+    if names is not None:
+        missing = [name for name in names if name not in decoded]
+        if missing:
+            raise ValueError(
+                "the stored table has no column " + ", ".join(repr(name) for name in missing)
+            )
     return decoded
 
 
@@ -208,10 +219,15 @@ def table_column_list(
     return listed
 
 
-def _read(payload: bytes) -> list[tuple[str, list[str]]]:
-    """Each column of a stored table: its name and its cells, exactly as written."""
+def _read(payload: bytes, names: Sequence[str] | None = None) -> list[tuple[str, list[str]]]:
+    """Each column of a stored table: its name and its cells, exactly as written.
+
+    With ``names``, only those columns' cells are kept; a row is still checked against the
+    whole header.
+    """
     if not payload:
         return []
+    wanted = None if names is None else set(names)
     # The csv module refuses a field of more than 128 KiB. A text cell may be longer (a JSON
     # upload can hold one), so the limit is lifted for this read only.
     limit = csv.field_size_limit()
@@ -220,20 +236,22 @@ def _read(payload: bytes) -> list[tuple[str, list[str]]]:
         csv.field_size_limit(_FIELD_LIMIT)
         try:
             rows = csv.reader(io.StringIO(payload.decode("utf-8"), newline=""), strict=True)
-            columns = [(name, []) for name in next(rows, [])]
+            header = next(rows, [])
+            kept = [index for index, name in enumerate(header) if wanted is None or name in wanted]
+            columns = [(header[index], []) for index in kept]
             for position, row in enumerate(rows, start=1):
-                if len(row) != len(columns):
+                if len(row) != len(header):
                     raise ValueError(
                         f"row {position} of the stored table has {len(row)} cell(s); its "
-                        f"header names {len(columns)} column(s)"
+                        f"header names {len(header)} column(s)"
                     )
-                for cell, (_name, cells) in zip(row, columns, strict=True):
-                    cells.append(cell)
+                for index, (_name, cells) in zip(kept, columns, strict=True):
+                    cells.append(row[index])
         except csv.Error as exc:
             raise ValueError(f"the stored table is not well-formed CSV: {exc}") from exc
         finally:
             csv.field_size_limit(limit)
-    if len({name for name, _cells in columns}) != len(columns):
+    if len({name for name, _cells in columns}) != len(columns) or len(set(header)) != len(header):
         raise ValueError("the stored table names a column twice")
     return columns
 

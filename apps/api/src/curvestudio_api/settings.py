@@ -12,6 +12,10 @@ PRIVATE_KEY_FILE = "jwt_private.pem"
 PUBLIC_KEY_FILE = "jwt_public.pem"
 MIN_RSA_BITS = 2048
 
+DEFAULT_STATS_MAX_ROWS = 100_000
+STAT_RESULT_MAX_BYTES = 2 * 1024 * 1024
+"""The most rows a tool reads on the web, and the most bytes one stored result may take."""
+
 
 class Settings(BaseSettings):
     """Every runtime knob of the API. See ``.env.example`` for the full list."""
@@ -29,6 +33,9 @@ class Settings(BaseSettings):
     refresh_ttl_days: int = Field(default=14, ge=1)
     max_upload_bytes: int = Field(default=20_000_000, ge=1)
     max_rows: int = Field(default=1_000_000, ge=1)
+    # The most rows a statistical tool reads on the web; the desktop app and the command line
+    # have no such bound.
+    stats_max_rows: int = Field(default=DEFAULT_STATS_MAX_ROWS, ge=1)
     job_timeout_s: float = Field(default=120.0, gt=0)
     job_workers: int = Field(default=2, ge=1)
     job_grace_s: float = Field(default=10.0, ge=0)
@@ -132,6 +139,12 @@ class Settings(BaseSettings):
     @classmethod
     def _empty_quota_is_plan_default(cls, value: object) -> object:
         return None if isinstance(value, str) and not value.strip() else value
+
+    @field_validator("stats_max_rows", mode="before")
+    @classmethod
+    def _empty_stats_cap_is_default(cls, value: object) -> object:
+        """``CURVESTUDIO_STATS_MAX_ROWS=`` (as in ``.env.example``) means the default."""
+        return DEFAULT_STATS_MAX_ROWS if isinstance(value, str) and not value.strip() else value
 
     @field_validator("web_dist", mode="before")
     @classmethod

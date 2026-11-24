@@ -210,6 +210,76 @@
         "title": "AdminUserUpdateIn",
         "type": "object"
       },
+      "AuditCheck": {
+        "additionalProperties": false,
+        "description": "One check of the audit.\n\n``title`` states what was found, phrased for the verdict. ``statistic`` is the number\nthe verdict turned on, as text, and ``threshold`` the rule that turned it. ``evidence``\nsays what was read, or (for ``NOT_APPLICABLE``) why nothing could be. ``explanation``\nis one or two plain sentences on what the check is about, and ``next_step`` what to do\nabout a ``caution`` or ``fail``.",
+        "properties": {
+          "evidence": {
+            "title": "Evidence",
+            "type": "string"
+          },
+          "explanation": {
+            "title": "Explanation",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "next_step": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Step"
+          },
+          "statistic": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Statistic"
+          },
+          "threshold": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Threshold"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "verdict": {
+            "$ref": "#/components/schemas/Verdict"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "verdict",
+          "statistic",
+          "threshold",
+          "evidence",
+          "explanation",
+          "next_step"
+        ],
+        "title": "AuditCheck",
+        "type": "object"
+      },
       "AuditCheckOut": {
         "description": "One check of a fit's audit. ``title`` states what was found; ``statistic`` is the number\nthe verdict turned on and ``threshold`` the rule that turned it, both as text;\n``next_step`` is set for a check that needs a look.",
         "properties": {
@@ -774,86 +844,6 @@
         "title": "AutofitSummaryOut",
         "type": "object"
       },
-      "Band": {
-        "additionalProperties": false,
-        "description": "A pointwise band around the fitted curve at the requested ``x`` values.\n\n``extrapolated[i]`` is true where ``x[i]`` lies outside the range of the active\n(weight > 0) fitted points, where the band relies on the model form alone.",
-        "properties": {
-          "df": {
-            "title": "Df",
-            "type": "integer"
-          },
-          "extrapolated": {
-            "items": {
-              "type": "boolean"
-            },
-            "title": "Extrapolated",
-            "type": "array"
-          },
-          "fit": {
-            "items": {
-              "type": "number"
-            },
-            "title": "Fit",
-            "type": "array"
-          },
-          "kind": {
-            "enum": [
-              "confidence",
-              "prediction",
-              "monte_carlo"
-            ],
-            "title": "Kind",
-            "type": "string"
-          },
-          "level": {
-            "title": "Level",
-            "type": "number"
-          },
-          "lower": {
-            "items": {
-              "type": "number"
-            },
-            "title": "Lower",
-            "type": "array"
-          },
-          "note": {
-            "title": "Note",
-            "type": "string"
-          },
-          "pointwise": {
-            "default": true,
-            "title": "Pointwise",
-            "type": "boolean"
-          },
-          "upper": {
-            "items": {
-              "type": "number"
-            },
-            "title": "Upper",
-            "type": "array"
-          },
-          "x": {
-            "items": {
-              "type": "number"
-            },
-            "title": "X",
-            "type": "array"
-          }
-        },
-        "required": [
-          "kind",
-          "level",
-          "x",
-          "fit",
-          "lower",
-          "upper",
-          "extrapolated",
-          "df",
-          "note"
-        ],
-        "title": "Band",
-        "type": "object"
-      },
       "Body_create_dataset_api_v1_datasets_post": {
         "properties": {
           "file": {
@@ -915,6 +905,100 @@
           "file"
         ],
         "title": "Body_create_dataset_api_v1_datasets_post",
+        "type": "object"
+      },
+      "BoxGroup": {
+        "additionalProperties": false,
+        "description": "One box of a box plot: a group's quartiles and median, Tukey's whiskers and outliers.",
+        "properties": {
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "lower_whisker": {
+            "title": "Lower Whisker",
+            "type": "number"
+          },
+          "median": {
+            "title": "Median",
+            "type": "number"
+          },
+          "outliers": {
+            "default": [],
+            "items": {
+              "type": "number"
+            },
+            "maxItems": 2000,
+            "title": "Outliers",
+            "type": "array"
+          },
+          "q1": {
+            "title": "Q1",
+            "type": "number"
+          },
+          "q3": {
+            "title": "Q3",
+            "type": "number"
+          },
+          "upper_whisker": {
+            "title": "Upper Whisker",
+            "type": "number"
+          }
+        },
+        "required": [
+          "label",
+          "q1",
+          "median",
+          "q3",
+          "lower_whisker",
+          "upper_whisker"
+        ],
+        "title": "BoxGroup",
+        "type": "object"
+      },
+      "BoxPlot": {
+        "additionalProperties": false,
+        "description": "A box per group, all on one axis.",
+        "properties": {
+          "boxes": {
+            "items": {
+              "$ref": "#/components/schemas/BoxGroup"
+            },
+            "title": "Boxes",
+            "type": "array"
+          },
+          "kind": {
+            "const": "box",
+            "default": "box",
+            "title": "Kind",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "y_label": {
+            "title": "Y Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "y_label",
+          "boxes"
+        ],
+        "title": "BoxPlot",
         "type": "object"
       },
       "CandidateMetrics": {
@@ -1126,6 +1210,31 @@
           "active"
         ],
         "title": "CountOut",
+        "type": "object"
+      },
+      "Counts": {
+        "additionalProperties": false,
+        "description": "How many rows the tool was offered, used and left out.",
+        "properties": {
+          "n_excluded": {
+            "title": "N Excluded",
+            "type": "integer"
+          },
+          "n_offered": {
+            "title": "N Offered",
+            "type": "integer"
+          },
+          "n_used": {
+            "title": "N Used",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "n_offered",
+          "n_used",
+          "n_excluded"
+        ],
+        "title": "Counts",
         "type": "object"
       },
       "CrossValidation": {
@@ -2257,6 +2366,78 @@
         "title": "ErrorStatusUpdateIn",
         "type": "object"
       },
+      "Estimate": {
+        "additionalProperties": false,
+        "description": "One estimated number, with its standard error and interval where the tool has them.",
+        "properties": {
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "lower": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lower"
+          },
+          "se": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Se"
+          },
+          "upper": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Upper"
+          },
+          "value": {
+            "title": "Value",
+            "type": "number"
+          }
+        },
+        "required": [
+          "label",
+          "value"
+        ],
+        "title": "Estimate",
+        "type": "object"
+      },
+      "ExcludedRow": {
+        "description": "A row of the bundle's data that takes part in no check, and why. ``index`` is 0-based.",
+        "properties": {
+          "index": {
+            "title": "Index",
+            "type": "integer"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "index",
+          "reason"
+        ],
+        "title": "ExcludedRow",
+        "type": "object"
+      },
       "ExcludedRowOut": {
         "description": "A row of the fit's data that takes part in no check, and why (``index`` is 0-based).",
         "properties": {
@@ -2361,7 +2542,7 @@
           "confidence_band": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/Band"
+                "$ref": "#/components/schemas/curvestudio__statistics__bands__Band"
               },
               {
                 "type": "null"
@@ -2399,7 +2580,7 @@
           "prediction_band": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/Band"
+                "$ref": "#/components/schemas/curvestudio__statistics__bands__Band"
               },
               {
                 "type": "null"
@@ -2978,6 +3159,192 @@
         "title": "HealthOut",
         "type": "object"
       },
+      "HistogramPlot": {
+        "additionalProperties": false,
+        "description": "A histogram: counts per bin, with one more edge than bins.",
+        "properties": {
+          "counts": {
+            "items": {
+              "type": "number"
+            },
+            "maxItems": 2000,
+            "title": "Counts",
+            "type": "array"
+          },
+          "edges": {
+            "items": {
+              "type": "number"
+            },
+            "maxItems": 2000,
+            "title": "Edges",
+            "type": "array"
+          },
+          "kind": {
+            "const": "histogram",
+            "default": "histogram",
+            "title": "Kind",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "overlays": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/Series"
+            },
+            "title": "Overlays",
+            "type": "array"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "x_label": {
+            "title": "X Label",
+            "type": "string"
+          },
+          "y_label": {
+            "default": "Count",
+            "title": "Y Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "x_label",
+          "edges",
+          "counts"
+        ],
+        "title": "HistogramPlot",
+        "type": "object"
+      },
+      "HypothesisTest": {
+        "additionalProperties": false,
+        "description": "One hypothesis test as every surface shows it.\n\n``name`` is short, for a table; ``method`` is exact, for the methods text. A test that\ncould not run gives ``statistic`` and ``p_value`` as ``None`` and says why in ``reason``.",
+        "properties": {
+          "adjusted_p": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Adjusted P"
+          },
+          "adjustment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Adjustment"
+          },
+          "df": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Df"
+          },
+          "df_denominator": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Df Denominator"
+          },
+          "effect": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Estimate"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "method": {
+            "title": "Method",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "null_hypothesis": {
+            "title": "Null Hypothesis",
+            "type": "string"
+          },
+          "p_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P Value"
+          },
+          "p_value_text": {
+            "title": "P Value Text",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "statistic": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Statistic"
+          }
+        },
+        "required": [
+          "name",
+          "method",
+          "null_hypothesis",
+          "statistic",
+          "p_value_text"
+        ],
+        "title": "HypothesisTest",
+        "type": "object"
+      },
       "InformationCriteria": {
         "additionalProperties": false,
         "description": "AIC, AICc and BIC of one converged fit under the shared Gaussian convention.\n\n``k_total`` is ``k' = k + 1``: the fitted parameters plus the error variance.\n``aicc`` is ``None`` when ``n - k' - 1 <= 0``, because the small-sample correction is\nundefined there (it would divide by zero or turn negative), not because the fit failed.\n``convention`` records the exact formulas so a stored result stays self-describing.",
@@ -3389,6 +3756,47 @@
         "title": "LatencyWindow",
         "type": "integer"
       },
+      "Line": {
+        "additionalProperties": false,
+        "description": "A straight reference line from ``(x0, y0)`` to ``(x1, y1)``.",
+        "properties": {
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "x0": {
+            "title": "X0",
+            "type": "number"
+          },
+          "x1": {
+            "title": "X1",
+            "type": "number"
+          },
+          "y0": {
+            "title": "Y0",
+            "type": "number"
+          },
+          "y1": {
+            "title": "Y1",
+            "type": "number"
+          }
+        },
+        "required": [
+          "x0",
+          "y0",
+          "x1",
+          "y1"
+        ],
+        "title": "Line",
+        "type": "object"
+      },
       "LoginIn": {
         "additionalProperties": false,
         "properties": {
@@ -3626,6 +4034,70 @@
           "is_family"
         ],
         "title": "ModelInfo",
+        "type": "object"
+      },
+      "MultiLinePlot": {
+        "additionalProperties": false,
+        "description": "Several lines on one plot. ``x_labels`` names the x values when x is a category.",
+        "properties": {
+          "kind": {
+            "const": "lines",
+            "default": "lines",
+            "title": "Kind",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "series": {
+            "items": {
+              "$ref": "#/components/schemas/XYSeries"
+            },
+            "title": "Series",
+            "type": "array"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "x_label": {
+            "title": "X Label",
+            "type": "string"
+          },
+          "x_labels": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "X Labels"
+          },
+          "y_label": {
+            "title": "Y Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "x_label",
+          "y_label",
+          "series"
+        ],
+        "title": "MultiLinePlot",
         "type": "object"
       },
       "NameCount": {
@@ -4542,6 +5014,60 @@
         "title": "Provenance",
         "type": "object"
       },
+      "QQPlot": {
+        "additionalProperties": false,
+        "description": "A quantile-quantile plot: ordered values against theoretical quantiles.",
+        "properties": {
+          "kind": {
+            "const": "qq",
+            "default": "qq",
+            "title": "Kind",
+            "type": "string"
+          },
+          "line": {
+            "$ref": "#/components/schemas/Line"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "ordered": {
+            "items": {
+              "type": "number"
+            },
+            "maxItems": 2000,
+            "title": "Ordered",
+            "type": "array"
+          },
+          "theoretical": {
+            "items": {
+              "type": "number"
+            },
+            "maxItems": 2000,
+            "title": "Theoretical",
+            "type": "array"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "theoretical",
+          "ordered",
+          "line"
+        ],
+        "title": "QQPlot",
+        "type": "object"
+      },
       "RankBy": {
         "description": "Criterion the final list is ordered by.",
         "enum": [
@@ -4769,6 +5295,67 @@
           "id"
         ],
         "title": "RegisteredRef",
+        "type": "object"
+      },
+      "RequestField": {
+        "additionalProperties": false,
+        "description": "One field of a request, as a surface shows it to a person.\n\n``required`` is what the model says. ``option_schema`` is an option's JSON schema, built\nfrom the field's own type and ``Field`` (the whole model has none to give, since a column\nhas none); ``None`` for the three column kinds, which are chosen by name.",
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "kind": {
+            "enum": [
+              "column",
+              "group",
+              "columns",
+              "option"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "option_schema": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Option Schema"
+          },
+          "required": {
+            "title": "Required",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "label",
+          "kind",
+          "required",
+          "description",
+          "option_schema"
+        ],
+        "title": "RequestField",
         "type": "object"
       },
       "ResendVerificationIn": {
@@ -5132,6 +5719,108 @@
         "title": "RowCurve",
         "type": "object"
       },
+      "ScatterPlot": {
+        "additionalProperties": false,
+        "description": "Points against each other, with optional reference lines and an optional band.",
+        "properties": {
+          "band": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/curvestudio__tools__stats___display__Band"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "kind": {
+            "const": "scatter",
+            "default": "scatter",
+            "title": "Kind",
+            "type": "string"
+          },
+          "lines": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/Line"
+            },
+            "title": "Lines",
+            "type": "array"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "x": {
+            "items": {
+              "type": "number"
+            },
+            "maxItems": 2000,
+            "title": "X",
+            "type": "array"
+          },
+          "x_label": {
+            "title": "X Label",
+            "type": "string"
+          },
+          "y": {
+            "items": {
+              "type": "number"
+            },
+            "maxItems": 2000,
+            "title": "Y",
+            "type": "array"
+          },
+          "y_label": {
+            "title": "Y Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "x_label",
+          "y_label",
+          "x",
+          "y"
+        ],
+        "title": "ScatterPlot",
+        "type": "object"
+      },
+      "Series": {
+        "additionalProperties": false,
+        "description": "A line drawn over a histogram: one value per bin, read at the bin's centre.",
+        "properties": {
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "values": {
+            "items": {
+              "type": "number"
+            },
+            "maxItems": 2000,
+            "title": "Values",
+            "type": "array"
+          }
+        },
+        "required": [
+          "label",
+          "values"
+        ],
+        "title": "Series",
+        "type": "object"
+      },
       "SimplerModelOut": {
         "description": "A ranked model that fits as well with fewer parameters. ``delta_aicc`` is its distance\nfrom the best model's AICc.",
         "properties": {
@@ -5180,6 +5869,137 @@
         "title": "SimplerModelOut",
         "type": "object"
       },
+      "StatResultOut": {
+        "description": "One stored statistical result: the choices as sent and the result the core returned.",
+        "properties": {
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "dataset_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dataset Id"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "request": {
+            "additionalProperties": true,
+            "title": "Request",
+            "type": "object"
+          },
+          "result": {
+            "$ref": "#/components/schemas/ToolResult"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "tool": {
+            "title": "Tool",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "tool",
+          "title",
+          "dataset_id",
+          "request",
+          "result",
+          "created_at"
+        ],
+        "title": "StatResultOut",
+        "type": "object"
+      },
+      "StatResultSummaryOut": {
+        "description": "One stored statistical result as a listing shows it: no result body.",
+        "properties": {
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "dataset_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dataset Id"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "tool": {
+            "title": "Tool",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "tool",
+          "title",
+          "dataset_id",
+          "created_at"
+        ],
+        "title": "StatResultSummaryOut",
+        "type": "object"
+      },
+      "StatsToolsOut": {
+        "description": "The statistics catalogue: every family, and every tool as the core describes it.",
+        "properties": {
+          "families": {
+            "items": {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "string"
+                }
+              ],
+              "type": "array"
+            },
+            "title": "Families",
+            "type": "array"
+          },
+          "tools": {
+            "items": {
+              "$ref": "#/components/schemas/ToolInfo"
+            },
+            "title": "Tools",
+            "type": "array"
+          }
+        },
+        "required": [
+          "families",
+          "tools"
+        ],
+        "title": "StatsToolsOut",
+        "type": "object"
+      },
       "SystemOut": {
         "properties": {
           "current_release": {
@@ -5214,6 +6034,95 @@
           "database"
         ],
         "title": "SystemOut",
+        "type": "object"
+      },
+      "Table": {
+        "additionalProperties": false,
+        "description": "A table: its columns, and rows of one cell per column.\n\nA cell fits its column's kind (a bool is not a number here) and is never NaN or infinite:\nwhat a tool could not give is an empty cell.",
+        "properties": {
+          "columns": {
+            "items": {
+              "$ref": "#/components/schemas/TableColumn"
+            },
+            "title": "Columns",
+            "type": "array"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "rows": {
+            "items": {
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "type": "array"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "columns",
+          "rows"
+        ],
+        "title": "Table",
+        "type": "object"
+      },
+      "TableColumn": {
+        "additionalProperties": false,
+        "description": "One column of a table: ``key`` names the cell in a row, ``kind`` says how it reads.",
+        "properties": {
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "kind": {
+            "default": "number",
+            "enum": [
+              "text",
+              "int",
+              "number",
+              "p_value"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "label"
+        ],
+        "title": "TableColumn",
         "type": "object"
       },
       "TableColumnOut": {
@@ -5271,6 +6180,182 @@
           "expires_in"
         ],
         "title": "TokenOut",
+        "type": "object"
+      },
+      "ToolInfo": {
+        "additionalProperties": false,
+        "description": "What a surface lists about one tool.\n\n``needs_data``: the request has a field that names a column, so the tool runs on a\ndataset. ``fields`` come in the model's order.",
+        "properties": {
+          "family": {
+            "title": "Family",
+            "type": "string"
+          },
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/RequestField"
+            },
+            "title": "Fields",
+            "type": "array"
+          },
+          "max_rows": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Rows"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "needs_data": {
+            "title": "Needs Data",
+            "type": "boolean"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "family",
+          "title",
+          "needs_data",
+          "max_rows",
+          "fields"
+        ],
+        "title": "ToolInfo",
+        "type": "object"
+      },
+      "ToolResult": {
+        "additionalProperties": false,
+        "description": "What one statistical tool returns: the only thing a renderer is shown.\n\n``interpretation`` is one to three plain sentences for a person; ``methods_fragment`` is\none a methods paragraph can carry as it stands. ``level`` is the confidence level the\nintervals were built at. ``excluded`` lists the rows the tool left out and why: a tool\ngives it what :func:`list_excluded` returns, at most :data:`MAX_LISTED_EXCLUDED` rows,\nand ``excluded_unlisted`` counts the rest. No tool subclasses this: a result is built from\nits blocks and nothing else.",
+        "properties": {
+          "assumptions": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AuditCheck"
+            },
+            "title": "Assumptions",
+            "type": "array"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/Counts"
+          },
+          "estimates": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/Estimate"
+            },
+            "title": "Estimates",
+            "type": "array"
+          },
+          "excluded": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ExcludedRow"
+            },
+            "title": "Excluded",
+            "type": "array"
+          },
+          "excluded_unlisted": {
+            "default": 0,
+            "title": "Excluded Unlisted",
+            "type": "integer"
+          },
+          "interpretation": {
+            "title": "Interpretation",
+            "type": "string"
+          },
+          "level": {
+            "title": "Level",
+            "type": "number"
+          },
+          "methods_fragment": {
+            "title": "Methods Fragment",
+            "type": "string"
+          },
+          "plots": {
+            "default": [],
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "box": "#/components/schemas/BoxPlot",
+                  "histogram": "#/components/schemas/HistogramPlot",
+                  "lines": "#/components/schemas/MultiLinePlot",
+                  "qq": "#/components/schemas/QQPlot",
+                  "scatter": "#/components/schemas/ScatterPlot"
+                },
+                "propertyName": "kind"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/ScatterPlot"
+                },
+                {
+                  "$ref": "#/components/schemas/HistogramPlot"
+                },
+                {
+                  "$ref": "#/components/schemas/QQPlot"
+                },
+                {
+                  "$ref": "#/components/schemas/BoxPlot"
+                },
+                {
+                  "$ref": "#/components/schemas/MultiLinePlot"
+                }
+              ]
+            },
+            "title": "Plots",
+            "type": "array"
+          },
+          "tables": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/Table"
+            },
+            "title": "Tables",
+            "type": "array"
+          },
+          "tests": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/HypothesisTest"
+            },
+            "title": "Tests",
+            "type": "array"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "tool": {
+            "title": "Tool",
+            "type": "string"
+          },
+          "warnings": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "tool",
+          "title",
+          "level",
+          "interpretation",
+          "methods_fragment",
+          "counts"
+        ],
+        "title": "ToolResult",
         "type": "object"
       },
       "UsageOut": {
@@ -5375,6 +6460,17 @@
         "title": "ValidationError",
         "type": "object"
       },
+      "Verdict": {
+        "description": "What one check's evidence says. ``NOT_APPLICABLE``: the check had no number to read.",
+        "enum": [
+          "pass",
+          "caution",
+          "fail",
+          "not_applicable"
+        ],
+        "title": "Verdict",
+        "type": "string"
+      },
       "VerifyEmailIn": {
         "additionalProperties": false,
         "properties": {
@@ -5409,6 +6505,156 @@
           "count"
         ],
         "title": "WeekCount",
+        "type": "object"
+      },
+      "XYSeries": {
+        "additionalProperties": false,
+        "description": "One line of several on a plot: y against x.",
+        "properties": {
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "x": {
+            "items": {
+              "type": "number"
+            },
+            "maxItems": 2000,
+            "title": "X",
+            "type": "array"
+          },
+          "y": {
+            "items": {
+              "type": "number"
+            },
+            "maxItems": 2000,
+            "title": "Y",
+            "type": "array"
+          }
+        },
+        "required": [
+          "label",
+          "x",
+          "y"
+        ],
+        "title": "XYSeries",
+        "type": "object"
+      },
+      "curvestudio__statistics__bands__Band": {
+        "additionalProperties": false,
+        "description": "A pointwise band around the fitted curve at the requested ``x`` values.\n\n``extrapolated[i]`` is true where ``x[i]`` lies outside the range of the active\n(weight > 0) fitted points, where the band relies on the model form alone.",
+        "properties": {
+          "df": {
+            "title": "Df",
+            "type": "integer"
+          },
+          "extrapolated": {
+            "items": {
+              "type": "boolean"
+            },
+            "title": "Extrapolated",
+            "type": "array"
+          },
+          "fit": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Fit",
+            "type": "array"
+          },
+          "kind": {
+            "enum": [
+              "confidence",
+              "prediction",
+              "monte_carlo"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "level": {
+            "title": "Level",
+            "type": "number"
+          },
+          "lower": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Lower",
+            "type": "array"
+          },
+          "note": {
+            "title": "Note",
+            "type": "string"
+          },
+          "pointwise": {
+            "default": true,
+            "title": "Pointwise",
+            "type": "boolean"
+          },
+          "upper": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Upper",
+            "type": "array"
+          },
+          "x": {
+            "items": {
+              "type": "number"
+            },
+            "title": "X",
+            "type": "array"
+          }
+        },
+        "required": [
+          "kind",
+          "level",
+          "x",
+          "fit",
+          "lower",
+          "upper",
+          "extrapolated",
+          "df",
+          "note"
+        ],
+        "title": "Band",
+        "type": "object"
+      },
+      "curvestudio__tools__stats___display__Band": {
+        "additionalProperties": false,
+        "description": "An interval along a curve: ``lower`` and ``upper`` at every point of ``x``.",
+        "properties": {
+          "lower": {
+            "items": {
+              "type": "number"
+            },
+            "maxItems": 2000,
+            "title": "Lower",
+            "type": "array"
+          },
+          "upper": {
+            "items": {
+              "type": "number"
+            },
+            "maxItems": 2000,
+            "title": "Upper",
+            "type": "array"
+          },
+          "x": {
+            "items": {
+              "type": "number"
+            },
+            "maxItems": 2000,
+            "title": "X",
+            "type": "array"
+          }
+        },
+        "required": [
+          "x",
+          "lower",
+          "upper"
+        ],
+        "title": "Band",
         "type": "object"
       }
     },
@@ -7451,6 +8697,76 @@
         ]
       }
     },
+    "/api/v1/datasets/{dataset_id}/stats/{tool}": {
+      "post": {
+        "description": "Run a tool on a dataset's columns; the choices are its request fields by name.\n\nA tool that needs no data is still accepted here and stored with the dataset.",
+        "operationId": "run_on_dataset_api_v1_datasets__dataset_id__stats__tool__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dataset_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Dataset Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tool",
+            "required": true,
+            "schema": {
+              "title": "Tool",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Choices",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatResultOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Run On Dataset",
+        "tags": [
+          "stats"
+        ]
+      }
+    },
     "/api/v1/errors": {
       "post": {
         "description": "Record what a browser reported.\n\nAn address may report twenty times an hour. A repeat of an error already stored is rolled\nup. What the user typed (``description``) is kept in the event's context. Nothing in a\nreport identifies an account. The answer is 204 with no body.",
@@ -8400,6 +9716,235 @@
         "summary": "Ready",
         "tags": [
           "system"
+        ]
+      }
+    },
+    "/api/v1/stats/results": {
+      "get": {
+        "description": "The user's stored results, newest first; only one dataset's when ``dataset_id`` is given.",
+        "operationId": "list_results_api_v1_stats_results_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "dataset_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dataset Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/StatResultSummaryOut"
+                  },
+                  "title": "Response List Results Api V1 Stats Results Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Results",
+        "tags": [
+          "stats"
+        ]
+      }
+    },
+    "/api/v1/stats/results/{result_id}": {
+      "delete": {
+        "operationId": "delete_result_api_v1_stats_results__result_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "result_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Result Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Result",
+        "tags": [
+          "stats"
+        ]
+      },
+      "get": {
+        "operationId": "get_result_api_v1_stats_results__result_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "result_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Result Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatResultOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Result",
+        "tags": [
+          "stats"
+        ]
+      }
+    },
+    "/api/v1/stats/tools": {
+      "get": {
+        "description": "Every statistical tool, with the families a person meets them in.",
+        "operationId": "list_tools_api_v1_stats_tools_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatsToolsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Tools",
+        "tags": [
+          "stats"
+        ]
+      }
+    },
+    "/api/v1/stats/{tool}": {
+      "post": {
+        "description": "Run a tool that needs no data (a sample-size calculation). A tool that does need a\ndataset is a 422 ``INVALID_OPTION``.",
+        "operationId": "run_without_dataset_api_v1_stats__tool__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tool",
+            "required": true,
+            "schema": {
+              "title": "Tool",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Choices",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatResultOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Run Without Dataset",
+        "tags": [
+          "stats"
         ]
       }
     }

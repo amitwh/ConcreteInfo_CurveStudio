@@ -15,6 +15,7 @@ from pydantic import (
 )
 
 from curvestudio.discovery import AutoFitResult, CustomModelDefinition, RankBy, RankedFit
+from curvestudio.tools.stats import ToolInfo, ToolResult
 from curvestudio.workflow.spec import MAX_SEED
 from curvestudio_api.passwords import weakness
 from curvestudio_api.timeutil import IstDatetime
@@ -282,6 +283,35 @@ class DatasetDetailOut(DatasetOut):
     # and weight column alone.
     table_stored: bool
     table_columns: list[TableColumnOut]
+
+
+class StatsToolsOut(BaseModel):
+    """The statistics catalogue: every family, and every tool as the core describes it."""
+
+    families: list[tuple[str, str]]
+    tools: list[ToolInfo]
+
+
+class StatResultSummaryOut(BaseModel):
+    """One stored statistical result as a listing shows it: no result body."""
+
+    id: uuid.UUID
+    tool: str
+    title: str
+    dataset_id: uuid.UUID | None
+    created_at: IstDatetime
+
+
+class StatResultOut(BaseModel):
+    """One stored statistical result: the choices as sent and the result the core returned."""
+
+    id: uuid.UUID
+    tool: str
+    title: str
+    dataset_id: uuid.UUID | None
+    request: dict[str, Any]
+    result: ToolResult
+    created_at: IstDatetime
 
 
 class ProgressOut(BaseModel):

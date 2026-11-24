@@ -663,6 +663,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/datasets/{dataset_id}/stats/{tool}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run On Dataset
+         * @description Run a tool on a dataset's columns; the choices are its request fields by name.
+         *
+         *     A tool that needs no data is still accepted here and stored with the dataset.
+         */
+        post: operations["run_on_dataset_api_v1_datasets__dataset_id__stats__tool__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/errors": {
         parameters: {
             query?: never;
@@ -1062,6 +1084,85 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/stats/results": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Results
+         * @description The user's stored results, newest first; only one dataset's when ``dataset_id`` is given.
+         */
+        get: operations["list_results_api_v1_stats_results_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/stats/results/{result_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Result */
+        get: operations["get_result_api_v1_stats_results__result_id__get"];
+        put?: never;
+        post?: never;
+        /** Delete Result */
+        delete: operations["delete_result_api_v1_stats_results__result_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/stats/tools": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Tools
+         * @description Every statistical tool, with the families a person meets them in.
+         */
+        get: operations["list_tools_api_v1_stats_tools_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/stats/{tool}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run Without Dataset
+         * @description Run a tool that needs no data (a sample-size calculation). A tool that does need a
+         *     dataset is a 422 ``INVALID_OPTION``.
+         */
+        post: operations["run_without_dataset_api_v1_stats__tool__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1143,6 +1244,33 @@ export interface components {
             plan_override?: string | null;
             /** Role */
             role?: ("member" | "admin") | null;
+        };
+        /**
+         * AuditCheck
+         * @description One check of the audit.
+         *
+         *     ``title`` states what was found, phrased for the verdict. ``statistic`` is the number
+         *     the verdict turned on, as text, and ``threshold`` the rule that turned it. ``evidence``
+         *     says what was read, or (for ``NOT_APPLICABLE``) why nothing could be. ``explanation``
+         *     is one or two plain sentences on what the check is about, and ``next_step`` what to do
+         *     about a ``caution`` or ``fail``.
+         */
+        AuditCheck: {
+            /** Evidence */
+            evidence: string;
+            /** Explanation */
+            explanation: string;
+            /** Id */
+            id: string;
+            /** Next Step */
+            next_step: string | null;
+            /** Statistic */
+            statistic: string | null;
+            /** Threshold */
+            threshold: string | null;
+            /** Title */
+            title: string;
+            verdict: components["schemas"]["Verdict"];
         };
         /**
          * AuditCheckOut
@@ -1436,41 +1564,6 @@ export interface components {
             n_candidates: number;
             rank_by: components["schemas"]["RankBy"];
         };
-        /**
-         * Band
-         * @description A pointwise band around the fitted curve at the requested ``x`` values.
-         *
-         *     ``extrapolated[i]`` is true where ``x[i]`` lies outside the range of the active
-         *     (weight > 0) fitted points, where the band relies on the model form alone.
-         */
-        Band: {
-            /** Df */
-            df: number;
-            /** Extrapolated */
-            extrapolated: boolean[];
-            /** Fit */
-            fit: number[];
-            /**
-             * Kind
-             * @enum {string}
-             */
-            kind: "confidence" | "prediction" | "monte_carlo";
-            /** Level */
-            level: number;
-            /** Lower */
-            lower: number[];
-            /** Note */
-            note: string;
-            /**
-             * Pointwise
-             * @default true
-             */
-            pointwise: boolean;
-            /** Upper */
-            upper: number[];
-            /** X */
-            x: number[];
-        };
         /** Body_create_dataset_api_v1_datasets_post */
         Body_create_dataset_api_v1_datasets_post: {
             /**
@@ -1486,6 +1579,48 @@ export interface components {
             x_column?: string | null;
             /** Y Column */
             y_column?: string | null;
+        };
+        /**
+         * BoxGroup
+         * @description One box of a box plot: a group's quartiles and median, Tukey's whiskers and outliers.
+         */
+        BoxGroup: {
+            /** Label */
+            label: string;
+            /** Lower Whisker */
+            lower_whisker: number;
+            /** Median */
+            median: number;
+            /**
+             * Outliers
+             * @default []
+             */
+            outliers: number[];
+            /** Q1 */
+            q1: number;
+            /** Q3 */
+            q3: number;
+            /** Upper Whisker */
+            upper_whisker: number;
+        };
+        /**
+         * BoxPlot
+         * @description A box per group, all on one axis.
+         */
+        BoxPlot: {
+            /** Boxes */
+            boxes: components["schemas"]["BoxGroup"][];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "box";
+            /** Note */
+            note?: string | null;
+            /** Title */
+            title: string;
+            /** Y Label */
+            y_label: string;
         };
         /**
          * CandidateMetrics
@@ -1593,6 +1728,18 @@ export interface components {
             day: string;
             /** Signups */
             signups: number;
+        };
+        /**
+         * Counts
+         * @description How many rows the tool was offered, used and left out.
+         */
+        Counts: {
+            /** N Excluded */
+            n_excluded: number;
+            /** N Offered */
+            n_offered: number;
+            /** N Used */
+            n_used: number;
         };
         /**
          * CrossValidation
@@ -2025,6 +2172,32 @@ export interface components {
             status: "new" | "acknowledged" | "resolved" | "ignored";
         };
         /**
+         * Estimate
+         * @description One estimated number, with its standard error and interval where the tool has them.
+         */
+        Estimate: {
+            /** Label */
+            label: string;
+            /** Lower */
+            lower?: number | null;
+            /** Se */
+            se?: number | null;
+            /** Upper */
+            upper?: number | null;
+            /** Value */
+            value: number;
+        };
+        /**
+         * ExcludedRow
+         * @description A row of the bundle's data that takes part in no check, and why. ``index`` is 0-based.
+         */
+        ExcludedRow: {
+            /** Index */
+            index: number;
+            /** Reason */
+            reason: string;
+        };
+        /**
          * ExcludedRowOut
          * @description A row of the fit's data that takes part in no check, and why (``index`` is 0-based).
          */
@@ -2075,14 +2248,14 @@ export interface components {
         FitBundle: {
             /** Bands Reason */
             bands_reason: string | null;
-            confidence_band: components["schemas"]["Band"] | null;
+            confidence_band: components["schemas"]["curvestudio__statistics__bands__Band"] | null;
             curve: components["schemas"]["CurveSamples"] | null;
             /** Curve Reason */
             curve_reason: string | null;
             data: components["schemas"]["DataSnapshot"];
             /** Equation Text */
             equation_text: string;
-            prediction_band: components["schemas"]["Band"] | null;
+            prediction_band: components["schemas"]["curvestudio__statistics__bands__Band"] | null;
             result: components["schemas"]["FitResult"];
             summary: components["schemas"]["FitReport"] | null;
             /** Summary Reason */
@@ -2306,6 +2479,69 @@ export interface components {
             version: string;
         };
         /**
+         * HistogramPlot
+         * @description A histogram: counts per bin, with one more edge than bins.
+         */
+        HistogramPlot: {
+            /** Counts */
+            counts: number[];
+            /** Edges */
+            edges: number[];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "histogram";
+            /** Note */
+            note?: string | null;
+            /**
+             * Overlays
+             * @default []
+             */
+            overlays: components["schemas"]["Series"][];
+            /** Title */
+            title: string;
+            /** X Label */
+            x_label: string;
+            /**
+             * Y Label
+             * @default Count
+             */
+            y_label: string;
+        };
+        /**
+         * HypothesisTest
+         * @description One hypothesis test as every surface shows it.
+         *
+         *     ``name`` is short, for a table; ``method`` is exact, for the methods text. A test that
+         *     could not run gives ``statistic`` and ``p_value`` as ``None`` and says why in ``reason``.
+         */
+        HypothesisTest: {
+            /** Adjusted P */
+            adjusted_p?: number | null;
+            /** Adjustment */
+            adjustment?: string | null;
+            /** Df */
+            df?: number | null;
+            /** Df Denominator */
+            df_denominator?: number | null;
+            effect?: components["schemas"]["Estimate"] | null;
+            /** Method */
+            method: string;
+            /** Name */
+            name: string;
+            /** Null Hypothesis */
+            null_hypothesis: string;
+            /** P Value */
+            p_value?: number | null;
+            /** P Value Text */
+            p_value_text: string;
+            /** Reason */
+            reason?: string | null;
+            /** Statistic */
+            statistic: number | null;
+        };
+        /**
          * InformationCriteria
          * @description AIC, AICc and BIC of one converged fit under the shared Gaussian convention.
          *
@@ -2470,6 +2706,22 @@ export interface components {
          * @enum {integer}
          */
         LatencyWindow: 1 | 7 | 30;
+        /**
+         * Line
+         * @description A straight reference line from ``(x0, y0)`` to ``(x1, y1)``.
+         */
+        Line: {
+            /** Label */
+            label?: string | null;
+            /** X0 */
+            x0: number;
+            /** X1 */
+            x1: number;
+            /** Y0 */
+            y0: number;
+            /** Y1 */
+            y1: number;
+        };
         /** LoginIn */
         LoginIn: {
             /** Email */
@@ -2564,6 +2816,29 @@ export interface components {
             references: string[];
             /** Variables */
             variables: string[];
+        };
+        /**
+         * MultiLinePlot
+         * @description Several lines on one plot. ``x_labels`` names the x values when x is a category.
+         */
+        MultiLinePlot: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "lines";
+            /** Note */
+            note?: string | null;
+            /** Series */
+            series: components["schemas"]["XYSeries"][];
+            /** Title */
+            title: string;
+            /** X Label */
+            x_label: string;
+            /** X Labels */
+            x_labels?: string[] | null;
+            /** Y Label */
+            y_label: string;
         };
         /**
          * NameCount
@@ -2919,6 +3194,26 @@ export interface components {
             };
         };
         /**
+         * QQPlot
+         * @description A quantile-quantile plot: ordered values against theoretical quantiles.
+         */
+        QQPlot: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "qq";
+            line: components["schemas"]["Line"];
+            /** Note */
+            note?: string | null;
+            /** Ordered */
+            ordered: number[];
+            /** Theoretical */
+            theoretical: number[];
+            /** Title */
+            title: string;
+        };
+        /**
          * RankBy
          * @description Criterion the final list is ordered by.
          * @enum {string}
@@ -3046,6 +3341,33 @@ export interface components {
              */
             kind: "registered";
         };
+        /**
+         * RequestField
+         * @description One field of a request, as a surface shows it to a person.
+         *
+         *     ``required`` is what the model says. ``option_schema`` is an option's JSON schema, built
+         *     from the field's own type and ``Field`` (the whole model has none to give, since a column
+         *     has none); ``None`` for the three column kinds, which are chosen by name.
+         */
+        RequestField: {
+            /** Description */
+            description: string | null;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "column" | "group" | "columns" | "option";
+            /** Label */
+            label: string;
+            /** Name */
+            name: string;
+            /** Option Schema */
+            option_schema: {
+                [key: string]: unknown;
+            } | null;
+            /** Required */
+            required: boolean;
+        };
         /** ResendVerificationIn */
         ResendVerificationIn: {
             /** Email */
@@ -3171,6 +3493,45 @@ export interface components {
             y: number[];
         };
         /**
+         * ScatterPlot
+         * @description Points against each other, with optional reference lines and an optional band.
+         */
+        ScatterPlot: {
+            band?: components["schemas"]["curvestudio__tools__stats___display__Band"] | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "scatter";
+            /**
+             * Lines
+             * @default []
+             */
+            lines: components["schemas"]["Line"][];
+            /** Note */
+            note?: string | null;
+            /** Title */
+            title: string;
+            /** X */
+            x: number[];
+            /** X Label */
+            x_label: string;
+            /** Y */
+            y: number[];
+            /** Y Label */
+            y_label: string;
+        };
+        /**
+         * Series
+         * @description A line drawn over a histogram: one value per bin, read at the bin's centre.
+         */
+        Series: {
+            /** Label */
+            label: string;
+            /** Values */
+            values: number[];
+        };
+        /**
          * SimplerModelOut
          * @description A ranked model that fits as well with fewer parameters. ``delta_aicc`` is its distance
          *     from the best model's AICc.
@@ -3187,6 +3548,62 @@ export interface components {
             /** Name */
             name: string;
         };
+        /**
+         * StatResultOut
+         * @description One stored statistical result: the choices as sent and the result the core returned.
+         */
+        StatResultOut: {
+            /** Created At */
+            created_at: string;
+            /** Dataset Id */
+            dataset_id: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Request */
+            request: {
+                [key: string]: unknown;
+            };
+            result: components["schemas"]["ToolResult"];
+            /** Title */
+            title: string;
+            /** Tool */
+            tool: string;
+        };
+        /**
+         * StatResultSummaryOut
+         * @description One stored statistical result as a listing shows it: no result body.
+         */
+        StatResultSummaryOut: {
+            /** Created At */
+            created_at: string;
+            /** Dataset Id */
+            dataset_id: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Title */
+            title: string;
+            /** Tool */
+            tool: string;
+        };
+        /**
+         * StatsToolsOut
+         * @description The statistics catalogue: every family, and every tool as the core describes it.
+         */
+        StatsToolsOut: {
+            /** Families */
+            families: [
+                string,
+                string
+            ][];
+            /** Tools */
+            tools: components["schemas"]["ToolInfo"][];
+        };
         /** SystemOut */
         SystemOut: {
             /** Current Release */
@@ -3199,6 +3616,39 @@ export interface components {
             uptime_s: number;
             /** Version */
             version: string;
+        };
+        /**
+         * Table
+         * @description A table: its columns, and rows of one cell per column.
+         *
+         *     A cell fits its column's kind (a bool is not a number here) and is never NaN or infinite:
+         *     what a tool could not give is an empty cell.
+         */
+        Table: {
+            /** Columns */
+            columns: components["schemas"]["TableColumn"][];
+            /** Note */
+            note?: string | null;
+            /** Rows */
+            rows: (string | number | null)[][];
+            /** Title */
+            title: string;
+        };
+        /**
+         * TableColumn
+         * @description One column of a table: ``key`` names the cell in a row, ``kind`` says how it reads.
+         */
+        TableColumn: {
+            /** Key */
+            key: string;
+            /**
+             * Kind
+             * @default number
+             * @enum {string}
+             */
+            kind: "text" | "int" | "number" | "p_value";
+            /** Label */
+            label: string;
         };
         /**
          * TableColumnOut
@@ -3232,6 +3682,91 @@ export interface components {
              * @constant
              */
             token_type: "bearer";
+        };
+        /**
+         * ToolInfo
+         * @description What a surface lists about one tool.
+         *
+         *     ``needs_data``: the request has a field that names a column, so the tool runs on a
+         *     dataset. ``fields`` come in the model's order.
+         */
+        ToolInfo: {
+            /** Family */
+            family: string;
+            /** Fields */
+            fields: components["schemas"]["RequestField"][];
+            /** Max Rows */
+            max_rows: number | null;
+            /** Name */
+            name: string;
+            /** Needs Data */
+            needs_data: boolean;
+            /** Title */
+            title: string;
+        };
+        /**
+         * ToolResult
+         * @description What one statistical tool returns: the only thing a renderer is shown.
+         *
+         *     ``interpretation`` is one to three plain sentences for a person; ``methods_fragment`` is
+         *     one a methods paragraph can carry as it stands. ``level`` is the confidence level the
+         *     intervals were built at. ``excluded`` lists the rows the tool left out and why: a tool
+         *     gives it what :func:`list_excluded` returns, at most :data:`MAX_LISTED_EXCLUDED` rows,
+         *     and ``excluded_unlisted`` counts the rest. No tool subclasses this: a result is built from
+         *     its blocks and nothing else.
+         */
+        ToolResult: {
+            /**
+             * Assumptions
+             * @default []
+             */
+            assumptions: components["schemas"]["AuditCheck"][];
+            counts: components["schemas"]["Counts"];
+            /**
+             * Estimates
+             * @default []
+             */
+            estimates: components["schemas"]["Estimate"][];
+            /**
+             * Excluded
+             * @default []
+             */
+            excluded: components["schemas"]["ExcludedRow"][];
+            /**
+             * Excluded Unlisted
+             * @default 0
+             */
+            excluded_unlisted: number;
+            /** Interpretation */
+            interpretation: string;
+            /** Level */
+            level: number;
+            /** Methods Fragment */
+            methods_fragment: string;
+            /**
+             * Plots
+             * @default []
+             */
+            plots: (components["schemas"]["ScatterPlot"] | components["schemas"]["HistogramPlot"] | components["schemas"]["QQPlot"] | components["schemas"]["BoxPlot"] | components["schemas"]["MultiLinePlot"])[];
+            /**
+             * Tables
+             * @default []
+             */
+            tables: components["schemas"]["Table"][];
+            /**
+             * Tests
+             * @default []
+             */
+            tests: components["schemas"]["HypothesisTest"][];
+            /** Title */
+            title: string;
+            /** Tool */
+            tool: string;
+            /**
+             * Warnings
+             * @default []
+             */
+            warnings: string[];
         };
         /** UsageOut */
         UsageOut: {
@@ -3273,6 +3808,12 @@ export interface components {
             /** Error Type */
             type: string;
         };
+        /**
+         * Verdict
+         * @description What one check's evidence says. ``NOT_APPLICABLE``: the check had no number to read.
+         * @enum {string}
+         */
+        Verdict: "pass" | "caution" | "fail" | "not_applicable";
         /** VerifyEmailIn */
         VerifyEmailIn: {
             /** Token */
@@ -3290,6 +3831,65 @@ export interface components {
              * Format: date
              */
             week_start: string;
+        };
+        /**
+         * XYSeries
+         * @description One line of several on a plot: y against x.
+         */
+        XYSeries: {
+            /** Label */
+            label: string;
+            /** X */
+            x: number[];
+            /** Y */
+            y: number[];
+        };
+        /**
+         * Band
+         * @description A pointwise band around the fitted curve at the requested ``x`` values.
+         *
+         *     ``extrapolated[i]`` is true where ``x[i]`` lies outside the range of the active
+         *     (weight > 0) fitted points, where the band relies on the model form alone.
+         */
+        curvestudio__statistics__bands__Band: {
+            /** Df */
+            df: number;
+            /** Extrapolated */
+            extrapolated: boolean[];
+            /** Fit */
+            fit: number[];
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "confidence" | "prediction" | "monte_carlo";
+            /** Level */
+            level: number;
+            /** Lower */
+            lower: number[];
+            /** Note */
+            note: string;
+            /**
+             * Pointwise
+             * @default true
+             */
+            pointwise: boolean;
+            /** Upper */
+            upper: number[];
+            /** X */
+            x: number[];
+        };
+        /**
+         * Band
+         * @description An interval along a curve: ``lower`` and ``upper`` at every point of ``x``.
+         */
+        curvestudio__tools__stats___display__Band: {
+            /** Lower */
+            lower: number[];
+            /** Upper */
+            upper: number[];
+            /** X */
+            x: number[];
         };
     };
     responses: never;
@@ -4501,6 +5101,44 @@ export interface operations {
             };
         };
     };
+    run_on_dataset_api_v1_datasets__dataset_id__stats__tool__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: string;
+                tool: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatResultOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     report_errors_api_v1_errors_post: {
         parameters: {
             query?: never;
@@ -5132,6 +5770,154 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ReadyOut"];
+                };
+            };
+        };
+    };
+    list_results_api_v1_stats_results_get: {
+        parameters: {
+            query?: {
+                dataset_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatResultSummaryOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_result_api_v1_stats_results__result_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                result_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatResultOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_result_api_v1_stats_results__result_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                result_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_tools_api_v1_stats_tools_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatsToolsOut"];
+                };
+            };
+        };
+    };
+    run_without_dataset_api_v1_stats__tool__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tool: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatResultOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

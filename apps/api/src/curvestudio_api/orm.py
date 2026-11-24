@@ -218,6 +218,29 @@ class Autofit(_Timestamps, Base):
     best_model_id: Mapped[str | None] = mapped_column(String(100), default=None)
 
 
+class StatResult(_Timestamps, Base):
+    """One stored run of a statistical tool: the choices a person sent (``request``) and the
+    result the core returned (``result``), with the result's size for the bytes quota.
+
+    ``dataset_id`` is set for a tool run on a dataset's columns; a tool that needs no data may
+    be stored without one.
+    """
+
+    __tablename__ = "stat_results"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=_uuid)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    dataset_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("datasets.id", ondelete="CASCADE"), index=True, default=None
+    )
+    tool: Mapped[str] = mapped_column(String(40))
+    request: Mapped[dict[str, Any]] = mapped_column(JSON)
+    result: Mapped[dict[str, Any]] = mapped_column(JSON)
+    size_bytes: Mapped[int] = mapped_column(Integer)
+
+
 class Job(_Timestamps, Base):
     __tablename__ = "jobs"
 

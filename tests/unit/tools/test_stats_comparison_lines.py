@@ -602,6 +602,19 @@ def test_fewer_than_three_pairs_is_refused(tool: str, run: Runner) -> None:
     assert "at least 3 complete pairs" in refused.value.message
 
 
+def test_deming_refuses_more_than_ten_thousand_pairs() -> None:
+    """Its jackknife refits the line once per pair, so the cost is quadratic: the tool says
+    so rather than tying a request up for over a minute."""
+    values = np.arange(1.0, 10_002.0)
+
+    with pytest.raises(ToolError) as refused:
+        _run_deming(method_a=_column("a", values), method_b=_column("b", values * 1.01))
+
+    assert refused.value.code == "TOO_MANY_ROWS"
+    assert "10,000" in refused.value.message
+    assert "jackknife" in refused.value.message
+
+
 def test_passing_bablok_refuses_more_than_a_thousand_pairs() -> None:
     values = np.arange(1.0, 1002.0)
 

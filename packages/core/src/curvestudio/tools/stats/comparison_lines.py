@@ -60,6 +60,11 @@ MAX_PAIRS = 1000
 """The most complete pairs Passing-Bablok takes: every pair of them is a slope, a quadratic
 number, and the tool is not built to hold a million of them silently."""
 
+DEMING_MAX_PAIRS = 10_000
+"""The most complete pairs Deming takes. Its standard errors come from a delete-one jackknife,
+which refits the line once per pair: the cost is quadratic, about 0.8 s at this many pairs and
+75 s at ten times it, so the tool refuses above it instead of tying a request up for a minute."""
+
 TIE_EPS = 1e-12
 """Two readings count as equal when they differ by less than this fraction of their size, the
 same rule the mcr package uses, so a pair of near-equal x values is not given a huge slope."""
@@ -486,6 +491,12 @@ def _analyse_deming(request: DemingRequest) -> ToolResult:
             f"Deming regression needs at least {MIN_PAIRS} complete pairs, and {size} "
             f"{'is' if size == 1 else 'are'} left",
         )
+    if size > DEMING_MAX_PAIRS:
+        raise ToolError(
+            "TOO_MANY_ROWS",
+            f"Deming regression takes at most {DEMING_MAX_PAIRS:,} complete pairs, and "
+            f"{size:,} are left: its jackknife standard errors cost a refit per pair",
+        )
     _require_varying(a.name, a.values)
     _require_varying(b.name, b.values)
     fit = _deming_fit(a.values, b.values, request.error_ratio)
@@ -655,6 +666,7 @@ TOOLS.register(
         title=f"{DEMING} regression",
         request=DemingRequest,
         run=run_deming,
+        max_rows=DEMING_MAX_PAIRS,
     )
 )
 
