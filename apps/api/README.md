@@ -145,3 +145,35 @@ request thread pool, never on the event loop; the fitting happens in the job.
   recomputes the full fit. Prediction from an opened row works for registered models and
   polynomials; a row opened from a custom equation cannot be used with `/fits/{id}/predict`
   (the fit specification cannot name a custom model by id).
+
+## Fit audit
+
+The audit of a stored fit (the tools are `curvestudio.tools`; the API adds storage and a job).
+Nothing is refitted: the two `GET` routes read the fit as it was stored.
+
+| Endpoint | |
+|---|---|
+| `GET /fits/{id}/audit` | what the fit's evidence shows, check by check: `checks` in a fixed order (convergence, the fit itself, the residual tests, the parameters, the data size, cross-validation, a simpler model), each with a `verdict` (`pass`, `caution`, `fail`, `not_applicable`), its `statistic`, `threshold`, `evidence`, `explanation` and `next_step`; `overall` is the worst verdict, and `summary` and `methods_fragment` are sentences ready to show; `n_observations`, `n_parameters` and the `excluded` rows. The held-out error is read from the cross-validation stored on the fit and is `not_applicable` until one has run. A fit opened from an Auto-fit row is compared with its run's ranking for as long as the run exists |
+| `GET /fits/{id}/methods` | the methods text of a converged fit in three styles, `text`, `markdown` and `latex`, each with its `paragraph`, `equation` and `table`, its citations (`citation_curvestudio`, `citation_model`) and what the author has left to write (`to_complete`) or the text lacked (`missing`) |
+| `POST /fits/{id}/audit/cross-validation` | body `CrossValidationIn` (`folds`: a number, 5 by default, or `"loo"` for leave-one-out) -> 202 `{job_id}` |
+
+The cross-validation is a job of kind `audit`: follow it with `GET /jobs/{id}`. Once it has
+`succeeded`, its `result_id` is the fit's id (`result_ref` is then the dataset's) and the result
+is stored on the fit, where `GET /fits/{id}/audit` reads it: ask for the audit again. The job
+uses no quota. It is cancelled like any job (`POST /jobs/{id}/cancel`), and deleting the fit
+cancels it. One cross-validation of a fit runs at a time: while one is queued or running, to ask
+for another is a 409 `CONFLICT` with `detail.code = CROSS_VALIDATION_RUNNING` and
+`detail.job_id`, the job to follow. The fit is cross-validated on the data it was computed
+from: what its stored bundle carries, or, for a fit of more than 5 000 rows (whose bundle holds
+only a subsample), the dataset's whole table.
+
+A refusal of the tools layer comes back in the usual error envelope: 422 `VALIDATION_ERROR` with
+the tool's code in `detail.code` and its message in `message` (413 `TOO_LARGE` for that one
+code). Inside the job the same refusal fails it: `status` is `failed`, with the code in
+`error_code` and the message in `error_message`. The codes to expect on these routes:
+
+* `FIT_NOT_CONVERGED_INPUT`: the methods of a fit that did not converge (422), and the
+  cross-validation of one (the job fails).
+* `INVALID_FOLDS`: fewer than 2 folds (422, nothing is queued); more folds than the fit has
+  points, or `"loo"` on a fit of more than 2 000 points (the job fails).
+* `NO_DATA`: the audit of a fit whose bundle carries no observations (422).
