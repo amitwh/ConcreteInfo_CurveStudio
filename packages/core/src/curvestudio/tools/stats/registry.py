@@ -438,6 +438,7 @@ TOOL_MODULES: tuple[str, ...] = (
     "curvestudio.tools.stats.anova",
     "curvestudio.tools.stats.anova_more",
     "curvestudio.tools.stats.comparison",
+    "curvestudio.tools.stats.comparison_lines",
     "curvestudio.tools.stats.contingency",
     "curvestudio.tools.stats.correlation",
     "curvestudio.tools.stats.descriptives",
