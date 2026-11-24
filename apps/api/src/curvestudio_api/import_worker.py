@@ -22,6 +22,7 @@ MAX_ISSUE_ROWS = 100
 """Row numbers kept per data issue; the message already says what is wrong."""
 MIB = 1024 * 1024
 _LENGTH = struct.Struct(">Q")
+"""The fit payload's length at the head of the last message; the table payload follows it."""
 
 ImportWorker = Any
 """``Callable[[Connection, int, dict[str, Any]], None]``: see :func:`import_process_main`."""

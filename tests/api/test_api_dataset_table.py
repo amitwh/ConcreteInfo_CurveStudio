@@ -87,7 +87,7 @@ def add_from_before(
                 id=uuid.uuid4(),
                 user_id=account,
                 name="before",
-                n_rows=20,
+                n_rows=int(xy.x.size),
                 columns=["x", "y"],
                 x_column="x",
                 y_column="y",
