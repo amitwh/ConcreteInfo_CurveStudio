@@ -15,6 +15,10 @@ beside the ranking; ``--json`` prints the whole :class:`~curvestudio.discovery.A
 check (:func:`curvestudio.tools.audit_fit`). ``--cv`` adds a cross-validation and
 ``--ranking`` an Auto-fit run with the ``autofit`` command's defaults, so that the two checks
 that need them are decided; ``--json`` prints the :class:`~curvestudio.tools.FitAudit`.
+``curvestudio methods FILE`` makes the same fit and prints its methods text
+(:func:`curvestudio.tools.methods_text`): the paragraph, the equation, the table and the
+citations, laid out in the ``--style`` asked for; ``--json`` prints the
+:class:`~curvestudio.tools.MethodsText`.
 
 This module is the outermost layer of the package: it may import the layers below it (data,
 fitting, models, discovery, workflow and tools), and nothing imports it. A user mistake
@@ -23,9 +27,9 @@ method/loss combination) is reported as a message on stderr, never as a tracebac
 the exit code:
 
 ===========  =======================================================================
-Command     Exit codes
+Command      Exit codes
 ===========  =======================================================================
-``fit``     ``0`` the fit converged. ``2`` invalid input, including a fit result of
+``fit``      ``0`` the fit converged. ``2`` invalid input, including a fit result of
              ``invalid_input`` (too few observations, or a model that does not apply).
              ``3`` the fit ran but did not converge or failed.
 ``autofit``  ``0`` the run completed (whatever it found). ``1`` it could not run (an
@@ -37,6 +41,8 @@ Command     Exit codes
              number to read (``not_applicable``). ``2`` a check failed. ``3`` a usage or
              input error: bad arguments, an unreadable file, a specification the workflow
              refuses, or a cross-validation or Auto-fit run the tools refuse.
+``methods``  ``0`` the text was written. ``3`` a usage or input error, or a fit that did
+             not converge (the tool refuses it: there are no estimates to report).
 ===========  =======================================================================
 """
 
@@ -71,8 +77,18 @@ from curvestudio.fitting import (
 )
 from curvestudio.fitting.methods import LOSSES, METHODS
 from curvestudio.models import get_model, list_models
-from curvestudio.tools import FitAudit, ToolError, Verdict, audit_fit, cross_validate
+from curvestudio.tools import (
+    FitAudit,
+    MethodsText,
+    ToolError,
+    Verdict,
+    audit_fit,
+    cross_validate,
+    methods_text,
+)
+from curvestudio.tools.methods import STYLES
 from curvestudio.workflow import (
+    FitBundle,
     FitSpec,
     PolynomialRef,
     RegisteredRef,
@@ -87,7 +103,7 @@ EXIT_AUTOFIT_ERROR = 1
 """``autofit`` could not run: bad file, columns or data, or an ``AutoFitError``."""
 
 EXIT_USAGE = 2
-"""A usage error, as argparse reports it for every command but ``audit``."""
+"""A usage error, as argparse reports it for every command but ``audit`` and ``methods``."""
 
 EXIT_CAUTION = 1
 """``audit``: a check reads ``caution``, or none had a number to read (``not_applicable``)."""
@@ -96,8 +112,9 @@ EXIT_AUDIT_FAIL = 2
 """``audit``: a check failed."""
 
 EXIT_INPUT_ERROR = 3
-"""``audit``: a usage or input error. The numbers below it are verdicts, so its usage
-errors exit here too."""
+"""``audit`` and ``methods``: a usage or input error. For ``audit`` the numbers below it are
+verdicts, so its usage errors exit here too; for ``methods`` a fit that did not converge is
+one, as it has no estimates to report."""
 
 _AUDIT_EXIT_CODES = {
     Verdict.PASS: EXIT_OK,
@@ -107,8 +124,9 @@ _AUDIT_EXIT_CODES = {
 }
 """The exit code of ``audit`` for each overall verdict."""
 
-_AUDIT_USAGE_IS_INPUT_ERROR = frozenset({"audit"})
-"""The commands whose usage errors exit ``3``: argparse's ``2`` is a verdict for them."""
+_USAGE_IS_INPUT_ERROR = frozenset({"audit", "methods"})
+"""The commands whose usage errors exit ``3``: for ``audit`` argparse's ``2`` is a verdict, and
+``methods`` gives its input errors the same code."""
 
 MAX_STARTS = 1000
 """Upper bound for --starts: multistart cost and memory grow linearly in it."""
@@ -188,7 +206,7 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     commands = parser.add_subparsers(
-        dest="command", required=True, metavar="{fit,autofit,models,audit}"
+        dest="command", required=True, metavar="{fit,autofit,models,audit,methods}"
     )
 
     fit_command = commands.add_parser(
@@ -246,6 +264,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     _add_autofit_command(commands)
     _add_audit_command(commands)
+    _add_methods_command(commands)
 
     commands.add_parser(
         "models",
@@ -327,7 +346,8 @@ def _add_audit_command(commands: argparse._SubParsersAction[argparse.ArgumentPar
         description=(
             "Import FILE, fit one curve the way the apps do and print what the fit's evidence "
             "shows, check by check: the convergence, the residual tests, the parameters and "
-            "the points and, when asked for, a cross-validation and an Auto-fit ranking."
+            "the number of points, plus a cross-validation and an Auto-fit ranking when asked "
+            "for."
         ),
         epilog=(
             "A verdict is evidence, not proof: pass means no check found anything, caution "
@@ -359,6 +379,35 @@ def _add_audit_command(commands: argparse._SubParsersAction[argparse.ArgumentPar
     )
 
 
+def _add_methods_command(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    command = commands.add_parser(
+        "methods",
+        help="fit one curve and write the methods text for a report",
+        description=(
+            "Import FILE, fit one curve the way the apps do and print the methods text: the "
+            "paragraph, the equation, the parameter table and the citations."
+        ),
+        epilog=(
+            "Exit codes: 0 text written, 3 usage or input error, or a fit that did not "
+            "converge (there are no estimates to report). The text describes the fit; whether "
+            "to rely on it is what 'curvestudio audit' reports, and a verdict there is "
+            "evidence, not proof."
+        ),
+    )
+    _add_fit_target(command)
+    command.add_argument(
+        "--style",
+        choices=STYLES,
+        default="text",
+        help="layout of the equation and the table (default: text)",
+    )
+    command.add_argument(
+        "--json",
+        action="store_true",
+        help="print the whole text (MethodsText as JSON) instead of printing it laid out",
+    )
+
+
 # --- entry point ------------------------------------------------------------------------
 
 
@@ -368,9 +417,8 @@ def main(argv: list[str] | None = None) -> int:
     ``argv`` defaults to ``sys.argv[1:]`` (the console-script behaviour). Argparse's
     own exits (usage errors, ``--help``) are converted into return codes so that
     ``main`` is fully testable in process: a usage error is ``2`` as argparse reports
-    it, but ``3`` for a command whose ``2`` is a verdict. On Windows consoles the
-    report's ``R²`` needs a UTF-8 stdout, so the stream is reconfigured when that is
-    possible.
+    it, but ``3`` for ``audit`` and ``methods``. On Windows consoles the report's
+    ``R²`` needs a UTF-8 stdout, so the stream is reconfigured when that is possible.
     """
     reconfigure = getattr(sys.stdout, "reconfigure", None)
     if reconfigure is not None:
@@ -386,16 +434,18 @@ def main(argv: list[str] | None = None) -> int:
         return _run_autofit(args)
     if args.command == "audit":
         return _run_audit(args)
+    if args.command == "methods":
+        return _run_methods(args)
     return _run_models()
 
 
 def _argparse_exit_code(code: object, argv: list[str]) -> int:
     """The exit code of argparse's own exit.
 
-    A usage error is ``2`` as argparse reports it, except for a command whose ``2`` is a
-    verdict (``audit``): there it is ``3``, the code the command gives every input error.
+    A usage error is ``2`` as argparse reports it, except for ``audit`` and ``methods``, where
+    it is ``3``: the code both give every input error (and for ``audit`` a verdict).
     """
-    if code == EXIT_USAGE and _command_of(argv) in _AUDIT_USAGE_IS_INPUT_ERROR:
+    if code == EXIT_USAGE and _command_of(argv) in _USAGE_IS_INPUT_ERROR:
         return EXIT_INPUT_ERROR
     return code if isinstance(code, int) else 0
 
@@ -696,7 +746,17 @@ def _print_wrapped(text: str, indent: str = "  ") -> None:
     print(textwrap.fill(text, width=100, initial_indent=indent, subsequent_indent=indent))
 
 
-# --- audit -------------------------------------------------------------------------------
+# --- audit and methods --------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class _Fitted:
+    """One fit made through the workflow, with what the tools need to read it."""
+
+    xy: XY
+    spec: FitSpec
+    bundle: FitBundle
+    data_warnings: list[Issue]
 
 
 def _add_fit_target(command: argparse.ArgumentParser) -> None:
@@ -719,44 +779,67 @@ def _add_fit_target(command: argparse.ArgumentParser) -> None:
     )
 
 
-def _spec_for(args: argparse.Namespace) -> FitSpec:
-    """The specification ``audit`` gives the workflow: the model, and the weights if a column
-    was named."""
-    model = (
-        PolynomialRef(degree=args.poly) if args.poly is not None else RegisteredRef(id=args.model)
-    )
-    return FitSpec(model=model, use_weights=args.weights is not None)
+def _fit_for_tools(args: argparse.Namespace) -> _Fitted | int:
+    """Read the file and fit what the arguments name, the way the apps do.
 
-
-def _run_audit(args: argparse.Namespace) -> int:
-    """Import, validate, fit through the workflow, audit and print; the return value is the
-    exit code."""
+    Returns the fit, or the exit code of the failure, its message then being on stderr. The
+    weights are used when a column was named for them.
+    """
     loaded = _load_xy(args)
     if isinstance(loaded, list):
         return _fail_lines(loaded, EXIT_INPUT_ERROR)
     xy, _dataset_name, data_warnings = loaded
-
-    spec = _spec_for(args)
+    model = (
+        PolynomialRef(degree=args.poly) if args.poly is not None else RegisteredRef(id=args.model)
+    )
+    spec = FitSpec(model=model, use_weights=args.weights is not None)
     try:
         bundle = fit_dataset(xy, spec)
     except WorkflowError as exc:
         return _fail(str(exc), EXIT_INPUT_ERROR)
+    return _Fitted(xy=xy, spec=spec, bundle=bundle, data_warnings=data_warnings)
+
+
+def _run_audit(args: argparse.Namespace) -> int:
+    """Fit through the workflow, audit and print; the return value is the exit code."""
+    fitted = _fit_for_tools(args)
+    if isinstance(fitted, int):
+        return fitted
+    spec, bundle = fitted.spec, fitted.bundle
     try:
         cv = None if args.cv is None else cross_validate(bundle, spec, folds=args.cv)
         # AutoFitConfig() is what the autofit command builds from its default flags.
-        ranking = autofit(xy, AutoFitConfig()) if args.ranking else None
+        ranking = autofit(fitted.xy, AutoFitConfig()) if args.ranking else None
         audit = audit_fit(bundle, spec=spec, ranking=ranking, cv=cv)
     except ToolError as exc:
         return _fail(str(exc), EXIT_INPUT_ERROR)
     except AutoFitError as exc:
         return _fail(f"{exc.code}: {exc}", EXIT_INPUT_ERROR)
 
-    _warn(data_warnings)
+    _warn(fitted.data_warnings)
     if args.json:
         print(audit.model_dump_json())
     else:
         _print_audit(audit)
     return _AUDIT_EXIT_CODES[audit.overall]
+
+
+def _run_methods(args: argparse.Namespace) -> int:
+    """Fit through the workflow and print the methods text; the return value is the exit code."""
+    fitted = _fit_for_tools(args)
+    if isinstance(fitted, int):
+        return fitted
+    try:
+        text = methods_text(fitted.bundle, spec=fitted.spec, style=args.style)
+    except ToolError as exc:
+        return _fail(str(exc), EXIT_INPUT_ERROR)
+
+    _warn(fitted.data_warnings)
+    if args.json:
+        print(text.model_dump_json())
+    else:
+        _print_methods_text(text)
+    return EXIT_OK
 
 
 _AUDIT_TAGS = {
@@ -784,6 +867,24 @@ def _print_audit(audit: FitAudit) -> None:
             f"A simpler model fits as well: {simpler.name} ({simpler.model_id}), "
             f"{simpler.n_parameters} parameters"
         )
+
+
+def _print_methods_text(text: MethodsText) -> None:
+    """The paragraph, the equation and the table, each apart; then the citations and the lists."""
+    for part in (text.paragraph, text.equation, text.table):
+        print(part)
+        print()
+    print("Cite as:")
+    print(text.citation_curvestudio)
+    for reference in text.citation_model:
+        print(reference)
+    print("For you to complete:")
+    for item in text.to_complete:
+        print(item)
+    if text.missing:
+        print("Not known:")
+        for entry in text.missing:
+            print(entry)
 
 
 def _warn(warnings: list[Issue]) -> None:

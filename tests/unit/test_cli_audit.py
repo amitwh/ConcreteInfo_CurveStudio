@@ -1,11 +1,11 @@
-"""``curvestudio audit``: what a fit's evidence shows, from a file.
+"""``curvestudio audit`` and ``curvestudio methods``: the tools' findings and text, from a file.
 
-The command fits through the workflow layer and reads the fit through the tools layer, so
-its numbers are the apps' numbers: the JSON it prints is compared, as parsed dicts, with
-what ``audit_fit`` returns for the same data and specification. Every test drives ``main``
-through the real layers on the starter models (the installed catalogues are hidden by the
-test fixture). ``--ranking`` runs Auto-fit with the ``autofit`` command's defaults, worker
-processes included, so the tests that ask for one take a few seconds each.
+Both commands fit through the workflow layer and read the fit through the tools layer, so
+their numbers are the apps' numbers: the JSON each prints is compared, as parsed dicts, with
+what ``audit_fit`` and ``methods_text`` return for the same data and specification. Every
+test drives ``main`` through the real layers on the starter models (the installed catalogues
+are hidden by the test fixture). ``--ranking`` runs Auto-fit with the ``autofit`` command's
+defaults, worker processes included, so the tests that ask for one take a few seconds each.
 """
 
 import json
@@ -15,12 +15,19 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from curvestudio.cli import _AUDIT_EXIT_CODES, main
+from curvestudio.cli import _AUDIT_EXIT_CODES, _print_methods_text, main
 from curvestudio.data import XY, read_dataset, validate
 from curvestudio.discovery import AutoFitConfig, autofit
 from curvestudio.models.registry import _clear_registry
 from curvestudio.models.starter import register_starter_models
-from curvestudio.tools import FitAudit, Verdict, audit_fit, cross_validate
+from curvestudio.tools import (
+    FitAudit,
+    MethodsText,
+    Verdict,
+    audit_fit,
+    cross_validate,
+    methods_text,
+)
 from curvestudio.workflow import FitSpec, PolynomialRef, RegisteredRef, fit_dataset
 
 REPO = Path(__file__).resolve().parents[2]
@@ -28,7 +35,7 @@ DECAY = REPO / "examples" / "decay.csv"
 QUADRATIC = FitSpec(model=PolynomialRef(degree=2))
 TAGS = {"pass": "pass", "caution": "caution", "fail": "fail", "not_applicable": "n/a"}
 """The bracket tag the audit prints for each verdict."""
-COMMANDS = ["audit"]
+COMMANDS = ["audit", "methods"]
 
 
 @pytest.fixture(autouse=True)
@@ -227,6 +234,10 @@ def test_weights_reach_the_fit(tmp_path: Path, capsys: pytest.CaptureFixture[str
     # the same data without --weights are an unweighted fit: different numbers
     plain = expected_audit(as_xy(x, y), QUADRATIC, folds="loo")
     assert as_json(plain) != audit
+    assert (
+        main(["methods", str(path), "--x", "x", "--y", "y", "--weights", "w", "--poly", "2"]) == 0
+    )
+    assert "by weighted least squares" in capsys.readouterr().out
 
 
 def test_a_fit_that_did_not_converge_fails_and_says_why(
@@ -307,6 +318,107 @@ def test_exit_codes_follow_the_verdict() -> None:
     }
 
 
+# --- methods ----------------------------------------------------------------------------------
+
+
+def test_methods_prints_the_text_the_tools_wrote(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_csv(tmp_path / "quadratic.csv", *quadratic())
+    code = main(["methods", str(path), "--x", "x", "--y", "y", "--poly", "2"])
+    out = capsys.readouterr().out
+    assert code == 0
+    text = methods_text(fit_dataset(as_xy(*quadratic()), QUADRATIC), spec=QUADRATIC)
+    assert text.missing == ()
+    assert text.paragraph.startswith("A polynomial of degree 2 was fitted to 40 observations")
+    assert text.equation.startswith("y = b0 + b1*x + b2*x**2")
+    assert (
+        out
+        == "\n".join(
+            [
+                text.paragraph,
+                "",
+                text.equation,
+                "",
+                text.table,
+                "",
+                "Cite as:",
+                text.citation_curvestudio,
+                *text.citation_model,
+                "For you to complete:",
+                *text.to_complete,
+            ]
+        )
+        + "\n"
+    )
+
+
+def test_methods_json_is_the_tools_text(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    path = write_csv(tmp_path / "quadratic.csv", *quadratic())
+    code = main(["methods", str(path), "--x", "x", "--y", "y", "--poly", "2", "--json"])
+    out = capsys.readouterr().out
+    expected = methods_text(fit_dataset(as_xy(*quadratic()), QUADRATIC), spec=QUADRATIC)
+    assert code == 0
+    assert json.loads(out) == json.loads(expected.model_dump_json())
+
+
+def test_methods_style_markdown_and_latex(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_csv(tmp_path / "quadratic.csv", *quadratic())
+    code = main(
+        ["methods", str(path), "--x", "x", "--y", "y", "--poly", "2", "--style", "markdown"]
+    )
+    markdown = capsys.readouterr().out.splitlines()
+    assert code == 0
+    table = next(i for i, line in enumerate(markdown) if line.startswith("| Parameter |"))
+    assert markdown[table + 1] == "| " + " | ".join(["---"] * 5) + " |"  # the rule row
+    assert all(line.startswith("| b") for line in markdown[table + 2 : table + 5])
+    assert (
+        main(["methods", str(path), "--x", "x", "--y", "y", "--poly", "2", "--style", "latex"]) == 0
+    )
+    latex = capsys.readouterr().out
+    assert "\\begin{tabular}{lrrrr}" in latex
+    assert "\\end{tabular}" in latex
+
+
+def test_an_unknown_style_is_a_usage_error(capsys: pytest.CaptureFixture[str]) -> None:
+    code = main(["methods", str(DECAY), "--x", "x", "--y", "y", "--poly", "2", "--style", "bogus"])
+    captured = capsys.readouterr()
+    assert code == 3
+    assert "bogus" in captured.err
+    assert captured.out == ""
+
+
+def test_methods_text_lists_what_is_missing(capsys: pytest.CaptureFixture[str]) -> None:
+    text = MethodsText(
+        paragraph="A paragraph.",
+        equation="y = b0",
+        table="Parameter  Estimate",
+        citation_curvestudio="CurveStudio 0. ConcreteInfo. https://example.invalid",
+        citation_model=("A source.",),
+        to_complete=("Instrument and measurement method",),
+        missing=("CODE: a sentence.", "OTHER: another."),
+    )
+    _print_methods_text(text)
+    out = capsys.readouterr().out
+    assert "For you to complete:\nInstrument and measurement method\nNot known:\n" in out
+    assert out.endswith("Not known:\nCODE: a sentence.\nOTHER: another.\n")
+
+
+def test_methods_refuses_a_fit_that_did_not_converge(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    sparse = tmp_path / "three.csv"
+    sparse.write_text("x,y\n1,2.0\n2,4.1\n3,6.2\n")
+    code = main(["methods", str(sparse), "--x", "x", "--y", "y", "--poly", "3"])
+    captured = capsys.readouterr()
+    assert code == 3
+    assert "FIT_NOT_CONVERGED_INPUT" in captured.err
+    assert "Traceback" not in captured.err
+    assert captured.out == ""
+
+
 # --- errors and help -------------------------------------------------------------------------
 
 
@@ -370,7 +482,7 @@ def test_help_lists_the_commands_and_explains_the_verdicts(
 ) -> None:
     assert main(["--help"]) == 0
     out = capsys.readouterr().out
-    assert "{fit,autofit,models,audit}" in out
+    assert "{fit,autofit,models,audit,methods}" in out
     assert main(["audit", "--help"]) == 0
     audit_help = " ".join(capsys.readouterr().out.split())  # argparse wraps its epilog
     assert "evidence, not proof" in audit_help
@@ -378,3 +490,7 @@ def test_help_lists_the_commands_and_explains_the_verdicts(
         "Exit codes: 0 pass, 1 caution or not applicable, 2 fail, 3 usage or input error"
         in audit_help
     )
+    assert main(["methods", "--help"]) == 0
+    methods_help = " ".join(capsys.readouterr().out.split())
+    assert "Exit codes: 0 text written, 3 usage or input error" in methods_help
+    assert "evidence, not proof" in methods_help
