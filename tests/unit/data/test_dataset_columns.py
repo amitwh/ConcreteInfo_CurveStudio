@@ -14,6 +14,7 @@ from curvestudio.data import (
     ExcludeRows,
     GroupColumn,
     RenameColumn,
+    group_labels,
     read_text,
 )
 
@@ -91,7 +92,7 @@ def test_group_labels_are_strings_with_blanks_left_out() -> None:
     group = make(g=["low", "high", "", " low ", None]).group("g")
     assert isinstance(group, GroupColumn)
     assert group.name == "g"
-    assert group.labels.dtype.kind == "U"
+    assert group.labels.dtype.kind == "O"
     assert group.labels.tolist() == ["low", "high", "low"]
     assert group.rows.tolist() == [0, 1, 3]
     assert group.present == 3
@@ -107,6 +108,39 @@ def test_a_numeric_group_column_gives_its_numbers_as_text(blank: float | None) -
     # whole numbers lose their ".0" and arithmetic noise is not shown
     assert group.labels.tolist() == ["1", "2", "0.3", "0.3", "2.5"]
     assert group.rows.tolist() == [0, 1, 2, 3, 4]
+
+
+def test_one_long_label_costs_its_length_once_not_in_every_row() -> None:
+    labels = ["short"] * 3_000
+    labels[7] = "x" * 200_000
+    group = make(g=labels).group("g")
+    # a fixed-width Unicode array would hold 4 bytes x 200,000 characters for each of 3,000 rows
+    assert group.labels.dtype.kind == "O"
+    assert group.labels.nbytes == 3_000 * group.labels.itemsize
+    assert len(group.labels[7]) == 200_000
+
+
+def test_group_labels_follow_the_accessors_rule() -> None:
+    cells = [
+        1.0,
+        " low ",
+        None,
+        math.nan,
+        pd.Timestamp("2026-01-01"),
+        pd.Timestamp("2026-01-02 09:30"),
+    ]
+    labels, rows = group_labels(cells)
+    assert labels.dtype.kind == "O"
+    assert labels.tolist() == ["1", "low", "2026-01-01", "2026-01-02 09:30:00"]
+    assert rows.tolist() == [0, 1, 4, 5]
+    by_group = make(g=cells).group("g")
+    assert by_group.labels.tolist() == labels.tolist()
+    assert by_group.rows.tolist() == rows.tolist()
+
+
+def test_labels_that_are_not_strings_are_refused() -> None:
+    with pytest.raises(ValueError, match="strings"):
+        GroupColumn(name="g", labels=[1, 2], rows=[0, 1])
 
 
 def test_a_date_column_serves_as_a_group() -> None:

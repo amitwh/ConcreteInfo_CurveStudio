@@ -3,6 +3,7 @@
 import datetime
 import hashlib
 import numbers
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any, Self
 
@@ -17,7 +18,9 @@ from curvestudio.data.operations import ExcludeRows, Operation, RenameColumn, Tr
 FloatArray = NDArray[np.float64]
 BoolArray = NDArray[np.bool_]
 IntArray = NDArray[np.intp]
-StrArray = NDArray[np.str_]
+StrArray = NDArray[np.object_]
+"""A one-dimensional array of Python ``str``. The object dtype, not a fixed-width Unicode
+one: that would cost four bytes for every character of the longest label, in every row."""
 
 
 @dataclass(frozen=True, eq=False)
@@ -122,7 +125,8 @@ class GroupColumn(BaseModel):
     :meth:`Dataset.group` builds it for the statistical tools, which take NumPy
     arrays and never pandas. ``labels`` holds one string per entry of ``rows`` (0-based
     positions in :meth:`Dataset.table`); blank cells are left out of both. Every array
-    is a detached read-only copy, also when the model is built directly.
+    is a detached read-only copy, also when the model is built directly. The labels follow
+    :func:`group_labels`, the one rule every surface reads a column by.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid", arbitrary_types_allowed=True)
@@ -134,7 +138,10 @@ class GroupColumn(BaseModel):
     @field_validator("labels", mode="before")
     @classmethod
     def _detached_labels(cls, value: object) -> StrArray:
-        return _one_dimensional(np.asarray(value, dtype=np.str_), "labels")
+        labels = _one_dimensional(np.asarray(value, dtype=object), "labels")
+        if not all(isinstance(label, str) for label in labels):
+            raise ValueError("labels must all be strings")
+        return labels
 
     @field_validator("rows", mode="before")
     @classmethod
@@ -339,19 +346,10 @@ class Dataset:
         table, active = self._materialise()
         if name not in table.columns:
             raise DataError("UNKNOWN_COLUMN", f"Column {name!r} does not exist")
-        cells = table[name].to_numpy(dtype=object)
-        labels: list[str] = []
-        rows: list[int] = []
-        for position in np.flatnonzero(active):
-            label = _label(cells[position])
-            if label is not None:
-                rows.append(int(position))
-                labels.append(label)
-        return GroupColumn(
-            name=name,
-            labels=np.array(labels, dtype=np.str_),
-            rows=np.array(rows, dtype=np.intp),
-        )
+        taking_part = np.flatnonzero(active)
+        labels, within = group_labels(table[name].to_numpy(dtype=object)[taking_part])
+        # ``within`` counts the rows that take part; the positions are those of the whole table.
+        return GroupColumn(name=name, labels=labels, rows=taking_part[within])
 
     def excluded_rows(self) -> IntArray:
         """0-based positions in :meth:`table` of the rows that take no part."""
@@ -434,13 +432,29 @@ def _numeric_column(table: pd.DataFrame, name: str, active: BoolArray) -> FloatA
     return values
 
 
-def _label(cell: object) -> str | None:
-    """A group label for ``cell``, or ``None`` when the cell is blank.
+def group_labels(cells: Sequence[object] | NDArray[np.object_]) -> tuple[StrArray, IntArray]:
+    """The label of each cell, and the positions of those that carry one.
 
-    A number reads as a person sees it: a whole number without ``.0``, and no
-    rounding noise (15 significant digits). Any other cell is ``str(cell)``
-    without surrounding whitespace.
+    This is the rule :meth:`Dataset.group` reads a column by, and the one the web service
+    follows on its stored columns, so that a column gives the same groups everywhere. A
+    blank cell carries no label: ``None``, a missing number or date, or text that is empty
+    once stripped. A number reads as a person sees it: a whole number without ``.0``, and no
+    rounding noise (15 significant digits). A date at midnight is its day alone; one with a
+    time of day keeps it. Any other cell is ``str(cell)`` without surrounding whitespace.
+    Both arrays are read-only copies.
     """
+    labels: list[str] = []
+    rows: list[int] = []
+    for position, cell in enumerate(np.asarray(cells, dtype=object)):
+        label = _label(cell)
+        if label is not None:
+            rows.append(position)
+            labels.append(label)
+    return _read_only(np.array(labels, dtype=object)), _read_only(np.array(rows, dtype=np.intp))
+
+
+def _label(cell: object) -> str | None:
+    """A group label for ``cell``, or ``None`` when the cell is blank."""
     if cell is None or pd.isna(cell):
         return None
     if isinstance(cell, numbers.Integral):
