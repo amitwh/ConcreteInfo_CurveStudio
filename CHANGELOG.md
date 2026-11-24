@@ -62,6 +62,42 @@ All notable changes are listed here. Dates are IST. Format: [Keep a Changelog](h
   in the app's data folder, rotating at 1 MB, and the crash dialog can open that folder. The
   README, About and help now say exactly this where they said nothing is uploaded. Ships with
   the next desktop build.
+- **A fit audit after every fit**: eleven checks of the evidence for a fit, each with a
+  verdict (pass, caution, fail, not applicable), the statistic and the threshold it was judged
+  by, what it means and what to do next: that the fit converged; the residuals' distribution,
+  independence, constant variance and trend; influential points; parameters at a bound or
+  poorly determined; points per parameter; the held-out error against what a correct model
+  shows; and a simpler model that fits as well. It is the **Fit audit** tab on the web and in
+  the desktop app, and `curvestudio audit` on the command line. A verdict is evidence, not
+  proof: a caution is a p-value below 0.05 and a fail one below 0.001, so on data that meet
+  every assumption few clean fits are flagged. The checks are calibrated on well-behaved
+  fits, and each verdict is tested on data built to trigger it.
+- **A methods text**: the fit written up for a paper, as plain text, Markdown or LaTeX: the
+  model, the estimator, the observations used and those left out, any bounds, the equation
+  with each estimate and its standard error, a parameter table with 95 % confidence
+  intervals, the software with its version and address, and the model's references. It states
+  only what the fit recorded and lists what only the author can write. **Copy methods** on
+  the web, **Copy methods text** in the desktop app, `curvestudio methods` on the command line.
+- **Cross-validation of a stored fit**: a control in the audit tab runs 5, 10 or
+  leave-one-out folds as a job you can cancel, and the audit's held-out-error check is then
+  decided. On the web the job uses none of the day's quota and its result is kept with the
+  fit; in the desktop app it is a background job whose result is not saved with the project.
+  On the command line, `curvestudio audit --cv 5` (or `--cv loo`).
+- **Exact Durbin–Watson p-values for the fitted model**, computed from the model's own
+  Jacobian for up to 1,000 points and verified against simulation; Ljung–Box is reported
+  beside them and does not change the verdict, because on the residuals of a fitted model it
+  runs low.
+- **PDF and Excel fit reports carry the methods paragraph and the fit audit**, in the
+  desktop app's export and the API's workbook export. A report without them is unchanged.
+- **API**: `GET /fits/{id}/audit`, `GET /fits/{id}/methods` and
+  `POST /fits/{id}/audit/cross-validation` for a signed-in user's own fit; a fit stores its
+  cross-validation (schema revision `0012`).
+- **The home page has a Statistics section** for the two tools. It says, with the date, that
+  they were looked for in the public documentation of nine other products and not found there
+  in their own right, and links to the record (`docs/prior-art.md`); it does not claim they
+  exist nowhere else.
+- **The help has a section on both** (section 11, "Fit audit and methods text"), in the web
+  and desktop apps from one source.
 
 ### Fixed
 - **The OAuth callback log names the sign-in provider's error code** (Microsoft's AADSTS
