@@ -1768,6 +1768,10 @@ export interface components {
             /** Name */
             name: string;
             points: components["schemas"]["PointsOut"] | null;
+            /** Table Columns */
+            table_columns: components["schemas"]["TableColumnOut"][];
+            /** Table Stored */
+            table_stored: boolean;
             /** Weight Column */
             weight_column: string | null;
             /** X Column */
@@ -3195,6 +3199,24 @@ export interface components {
             uptime_s: number;
             /** Version */
             version: string;
+        };
+        /**
+         * TableColumnOut
+         * @description One column of a dataset's table.
+         *
+         *     ``kind`` is ``number`` or ``text``; ``n_missing`` counts the column's blank cells (empty
+         *     or spaces only). The x, y and weight column are always ``number`` with none missing.
+         */
+        TableColumnOut: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "number" | "text";
+            /** N Missing */
+            n_missing: number;
+            /** Name */
+            name: string;
         };
         /** TokenOut */
         TokenOut: {

@@ -52,6 +52,11 @@ const DATASET: DatasetOut = {
 const DETAIL: DatasetDetailOut = {
   ...DATASET,
   points: { n_total: 2, x: [1, 2], y: [2, 4], w: null },
+  table_stored: true,
+  table_columns: [
+    { name: "x", kind: "number", n_missing: 0 },
+    { name: "y", kind: "number", n_missing: 0 },
+  ],
 };
 
 const SUMMARY: AutofitSummaryOut = {

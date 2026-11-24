@@ -18,6 +18,12 @@ const dataset = (weightColumn: string | null): DatasetDetailOut => ({
   issues: [],
   created_at: "2026-11-17T05:00:00Z",
   points: { n_total: 40, x: [1, 2], y: [2, 4], w: null },
+  table_stored: true,
+  table_columns: ["t", "y", "w"].map((name) => ({
+    name,
+    kind: "number" as const,
+    n_missing: 0,
+  })),
 });
 
 const models: ModelInfo[] = [

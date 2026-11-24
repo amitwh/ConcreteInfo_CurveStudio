@@ -98,6 +98,13 @@ All notable changes are listed here. Dates are IST. Format: [Keep a Changelog](h
   exist nowhere else.
 - **The help has a section on both** (section 11, "Fit audit and methods text"), in the web
   and desktop apps from one source.
+- **API**: an upload keeps the other columns of its table. The web service stored only the
+  x, y and weight columns, so a tool that reads any column of a dataset (a group label, a
+  second measurement, a batch code) had nothing to read there. Both stored parts count
+  against the dataset-bytes quota, and `GET /datasets/{id}` answers `table_stored` and
+  `table_columns`: every column of the table with its kind (`number` or `text`) and how many
+  of its cells are blank. A dataset stored before keeps its slim form, is never migrated and
+  says so (`table_stored: false`). Schema revisions `0013` and `0014`.
 
 ### Fixed
 - **The OAuth callback log names the sign-in provider's error code** (Microsoft's AADSTS

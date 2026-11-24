@@ -43,6 +43,11 @@ const dataset = {
   issues: [],
   created_at: "2026-11-17T05:00:00Z",
   points: { n_total: 2, x: [1, 2], y: [2, 4], w: null },
+  table_stored: true,
+  table_columns: [
+    { name: "x", kind: "number" as const, n_missing: 0 },
+    { name: "y", kind: "number" as const, n_missing: 0 },
+  ],
 };
 
 const RANKED = [1, 2, 3].map(
