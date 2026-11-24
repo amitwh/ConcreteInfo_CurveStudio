@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 )
 
 from curvestudio.discovery import RankedFit
+from curvestudio.tools import Verdict
 from curvestudio.workflow import FitBundle, WorkflowError, get_model
 from curvestudio_desktop.theme import mono_font
 from curvestudio_desktop.views.ranking_table import format_metric, format_precise
@@ -29,14 +30,34 @@ METRIC_TITLES = ("R²", "adj. R²", "RMSE", "k")
 MINIMUM_HEIGHT = 112
 
 
-def apply_status_badge(label: QLabel, status: str) -> None:
-    """Text plus the semantic state the QSS colours (green for converged, red otherwise)."""
+def apply_status_badge(label: QLabel, status: str, state: str | None = None) -> None:
+    """Text plus the semantic state the QSS colours.
+
+    ``state`` is ``ok`` (green), ``caution`` (amber), ``failed`` (red) or ``not_applicable``
+    (grey). Left out, it follows a fit's status: ``converged`` reads ``ok``, every other
+    status ``failed``.
+    """
+    if state is None:
+        state = "ok" if status == "converged" else "failed"
     label.setText(status)
-    label.setProperty("state", "ok" if status == "converged" else "failed")
+    label.setProperty("state", state)
     style = label.style()
     if style is not None:
         style.unpolish(label)
         style.polish(label)
+
+
+_VERDICT_STATE = {
+    Verdict.PASS: "ok",
+    Verdict.CAUTION: "caution",
+    Verdict.FAIL: "failed",
+    Verdict.NOT_APPLICABLE: "not_applicable",
+}
+
+
+def apply_verdict_badge(label: QLabel, verdict: Verdict) -> None:
+    """An audit verdict as a badge: the verdict in words, in the colour of its state."""
+    apply_status_badge(label, verdict.value.replace("_", " ").capitalize(), _VERDICT_STATE[verdict])
 
 
 def model_identity(model_id: str) -> tuple[str, str]:
@@ -245,4 +266,10 @@ class FitSummaryPanel(QWidget):
         return " ".join(f"{title}={self.metric_text(title)}" for title in METRIC_TITLES)
 
 
-__all__ = ["HINT_TEXT", "FitSummaryPanel", "apply_status_badge", "model_identity"]
+__all__ = [
+    "HINT_TEXT",
+    "FitSummaryPanel",
+    "apply_status_badge",
+    "apply_verdict_badge",
+    "model_identity",
+]

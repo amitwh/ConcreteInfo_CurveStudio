@@ -1,5 +1,5 @@
-"""ResultsTabs: the five result tabs every fit fills (Parameters, Statistics, Diagnostics,
-Equation, Predict).
+"""ResultsTabs: the six result tabs every fit fills (Parameters, Statistics, Diagnostics, Fit
+audit, Equation, Predict).
 
 The widget is deliberately self-contained: the analysis dock no longer shows it, the
 details window hosts it, and any other home could add it without re-implementing a tab.
@@ -10,7 +10,10 @@ never 0 or NaN. The Statistics tab reuses the report layer's shared ``statistics
 the tabs and every exported report state identical numbers, conventions and notes; the
 diagnostic tests appear with their assumption and limitation text — none of them ever says
 a model is "valid". Diagnostics are four small pyqtgraph panels (vs fitted, vs x, Q-Q,
-histogram); an undefined panel says ``n/a`` instead of drawing empty axes.
+histogram); an undefined panel says ``n/a`` instead of drawing empty axes. The Fit audit tab
+(:class:`~curvestudio_desktop.views.fit_audit_view.FitAuditView`) reads the fit through
+``curvestudio.tools``; for a fit that did not converge it shows that failure's audit in
+place of the "No fit" empty state the other tabs fall back to.
 """
 
 from collections.abc import Callable
@@ -36,6 +39,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from curvestudio.discovery import AutoFitResult
 from curvestudio.workflow import (
     MAX_PREDICT_POINTS,
     FitBundle,
@@ -45,6 +49,7 @@ from curvestudio.workflow import (
     format_equation,
 )
 from curvestudio_desktop.theme import mono_font
+from curvestudio_desktop.views.fit_audit_view import FitAuditView
 from curvestudio_reporting.csv_report import statistics_rows
 
 EMPTY_TEXT = "No fit yet"
@@ -153,11 +158,22 @@ class _Tab(QStackedLayout):
     def placeholder_text(self) -> str:
         return self._placeholder.text()
 
+    def content_shown(self) -> bool:
+        """Whether the page shows its content (``False`` while the tab's empty state stands in)."""
+        return self.currentWidget() is self._content
+
 
 class ResultsTabs(QWidget):
     """The tabbed results area of the analysis dock."""
 
-    TAB_TITLES = ("Parameters", "Statistics", "Diagnostics", "Equation", "Predict")
+    TAB_TITLES = (
+        "Parameters",
+        "Statistics",
+        "Diagnostics",
+        "Fit audit",
+        "Equation",
+        "Predict",
+    )
 
     def __init__(
         self,
@@ -169,6 +185,7 @@ class ResultsTabs(QWidget):
         self._predict_fn = predict_fn
         self._bundle: FitBundle | None = None
         self._spec: FitSpec | None = None
+        self._ranking: AutoFitResult | None = None
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         self._banner = QLabel("")
@@ -181,6 +198,7 @@ class ResultsTabs(QWidget):
         self._build_parameters()
         self._build_statistics()
         self._build_diagnostics()
+        self._build_audit()
         self._build_equation()
         self._build_predict()
         for title, tab in zip(self.TAB_TITLES, self._tabs_of, strict=True):
@@ -238,6 +256,11 @@ class ResultsTabs(QWidget):
         grid.addWidget(self._diag_note, 3, 0, 1, 2)
         self._diagnostics_tab = _Tab(content)
         self._tabs_of.append(self._diagnostics_tab)
+
+    def _build_audit(self) -> None:
+        self._audit = FitAuditView()
+        self._audit_tab = _Tab(self._audit)
+        self._tabs_of.append(self._audit_tab)
 
     def _build_equation(self) -> None:
         content = QWidget()
@@ -308,9 +331,11 @@ class ResultsTabs(QWidget):
         """Back to the honest empty state: no fit is shown."""
         self._bundle = None
         self._spec = None
+        self._ranking = None
         self._banner.hide()
         self._banner.setText("")
         for tab in self._tabs_of:
+            tab.set_placeholder(EMPTY_TEXT)  # not the "No fit: the fit is …" of the fit that was
             tab.show_content(False)
         self._parameters.setRowCount(0)
         self._statistics.setRowCount(0)
@@ -320,12 +345,25 @@ class ResultsTabs(QWidget):
         for plot in self._diag_plots:
             plot.clear()
         self._diag_note.setText("")
+        self._audit.clear()
 
-    def show_bundle(self, bundle: FitBundle, spec: FitSpec, meta: object) -> None:
-        """Fill every tab from ``bundle`` (``spec`` drives the Predict tab)."""
+    def show_bundle(
+        self,
+        bundle: FitBundle,
+        spec: FitSpec,
+        meta: object,
+        *,
+        ranking: AutoFitResult | None = None,
+    ) -> None:
+        """Fill every tab from ``bundle`` (``spec`` drives the Predict tab).
+
+        ``ranking`` is the fit's Auto-fit run, when it was opened from one of its rows: it
+        is what the audit's simpler-model check compares against.
+        """
         del meta  # the tabs show the bundle; who produced it does not change the numbers
         self._bundle = bundle
         self._spec = spec
+        self._ranking = ranking
         result = bundle.result
         converged = str(result.status) == "converged"
         if not converged:
@@ -344,7 +382,13 @@ class ResultsTabs(QWidget):
         self._fill_statistics(bundle)
         self._fill_diagnostics(bundle)
         self._fill_equation(bundle)
+        self._fill_audit(bundle)
         self._reset_predict()
+
+    def _fill_audit(self, bundle: FitBundle) -> None:
+        """Audit the fit in place; the tab shows it, where the others show their empty state."""
+        self._audit.show_audit(bundle, self._spec, self._ranking)
+        self._audit_tab.show_content(True)
 
     def _fill_parameters(self, bundle: FitBundle) -> None:
         estimates = bundle.result.parameters

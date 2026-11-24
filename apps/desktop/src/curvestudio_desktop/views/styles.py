@@ -465,6 +465,21 @@ QLabel#statusBadge[state="failed"] {
     color: $danger;
     border-color: $danger;
 }
+QLabel#statusBadge[state="caution"] {
+    color: $warning;
+    border-color: $warning;
+}
+QLabel#statusBadge[state="not_applicable"] {
+    color: $muted;
+    border-color: $border;
+}
+QLabel#auditTitle {
+    color: $heading;
+    font-weight: 600;
+}
+QLabel#auditExplanation, QLabel#auditStatistic, QLabel#auditThreshold, QLabel#auditCounts {
+    color: $muted;
+}
 QTableView#rankingTable::item {
     padding: 3px 4px;
 }

@@ -1,13 +1,13 @@
 """DetailsDialog: one fit's complete result in a reusable, non-modal window.
 
 The dock stays a ranking plus a headline summary; the full result — equation, parameters,
-statistics, diagnostics and prediction — opens here. The dialog is a single instance per
-main window: asking for another fit updates the same window and raises it, so a pile of
-stale result windows can never form. It remembers its geometry in QSettings
+statistics, diagnostics, fit audit and prediction — opens here. The dialog is a single
+instance per main window: asking for another fit updates the same window and raises it, so
+a pile of stale result windows can never form. It remembers its geometry in QSettings
 (``details/geometry``), is resizable and is explicitly non-modal, so the user can keep
 comparing rows behind it.
 
-The five views are a :class:`ResultsTabs`, the same widget the fit path has always filled;
+The six views are a :class:`ResultsTabs`, the same widget the fit path has always filled;
 nothing is re-implemented here. The equation is also shown large in JetBrains Mono and
 selectable, with Copy in both the tab and the footer.
 """
@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from curvestudio.discovery import AutoFitResult
 from curvestudio.workflow import FitBundle, FitSpec, format_equation
 from curvestudio_desktop.theme import mono_font
 from curvestudio_desktop.views.fit_summary import apply_status_badge
@@ -128,8 +129,13 @@ class DetailsDialog(QDialog):
         name: str | None = None,
         category: str | None = None,
         meta: object = None,
+        ranking: AutoFitResult | None = None,
     ) -> None:
-        """Fill every view from ``bundle``; the same window is reused for later fits."""
+        """Fill every view from ``bundle``; the same window is reused for later fits.
+
+        ``ranking`` is the Auto-fit run the fit was opened from, for the fit audit's
+        simpler-model check; ``None`` for any other fit.
+        """
         self._bundle = bundle
         self._spec = spec
         result = bundle.result
@@ -152,7 +158,7 @@ class DetailsDialog(QDialog):
                 )
             )
         )
-        self.results.show_bundle(bundle, cast("FitSpec", spec), meta)
+        self.results.show_bundle(bundle, cast("FitSpec", spec), meta, ranking=ranking)
         self.copy_button.setEnabled(bool(format_equation(bundle.equation_text)))
         self.export_button.setEnabled(True)
 

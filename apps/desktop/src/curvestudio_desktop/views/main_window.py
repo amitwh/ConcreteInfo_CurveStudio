@@ -835,6 +835,7 @@ class MainWindow(QMainWindow):
             name=name,
             category=category,
             meta=meta_dict,
+            ranking=self._ranking_of(fit_meta=meta_dict),
         )
         panel.manual_view.clear_banner()
         self._refresh_export_actions()
@@ -860,6 +861,20 @@ class MainWindow(QMainWindow):
     def _on_fit_failed(self, message: str) -> None:
         self.analysis_panel.manual_view.show_failure(message)
         self._refresh_export_actions()
+
+    def _ranking_of(self, fit_meta: dict[str, Any]) -> AutoFitResult | None:
+        """The Auto-fit run a fit opened from one of its rows came from; ``None`` for any other fit.
+
+        It is the run the ranking table holds for that dataset — the one the row was clicked
+        in — and it is what the fit audit's simpler-model check compares against.
+        """
+        source = fit_meta.get("source")
+        dataset_id = fit_meta.get("dataset_id")
+        if not isinstance(source, dict) or source.get("kind") != "autofit":
+            return None
+        if not isinstance(dataset_id, str):
+            return None
+        return self.analysis.autofit_for_display(dataset_id)
 
     def _plot_candidate(self, candidate_id: str) -> None:
         """A ranking row was selected: draw its stored curve and mirror it in the summary.

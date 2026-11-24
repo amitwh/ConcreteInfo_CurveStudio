@@ -265,7 +265,7 @@ source_modules = ["curvestudio_plotting", "curvestudio_reporting"]
 forbidden_modules = ["PySide6", "fastapi", "sqlalchemy", "starlette", "uvicorn", "curvestudio.cli"]
 
 [[tool.importlinter.contracts]]
-name = "Desktop uses the workflow, project and data layers only"
+name = "Desktop uses the workflow, tools, project and data layers only"
 type = "forbidden"
 source_modules = ["curvestudio_desktop"]
 forbidden_modules = [
