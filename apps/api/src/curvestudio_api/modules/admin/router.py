@@ -25,7 +25,6 @@ from curvestudio_api.modules.admin.schemas import (
     ErrorEventOut,
     ErrorStatus,
     ErrorStatusUpdateIn,
-    InstallSummaryOut,
     LatencyWindow,
     OverviewOut,
     PageOut,
@@ -35,6 +34,7 @@ from curvestudio_api.modules.admin.schemas import (
     RouteLatencyOut,
     SystemOut,
 )
+from curvestudio_api.modules.installs.schemas import InstallSummaryOut
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 

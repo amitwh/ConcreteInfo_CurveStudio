@@ -210,6 +210,10 @@ def _strings(value: Any) -> Iterator[str]:
 
 
 def _cut_strings(value: Any, allowance: int) -> Any:
+    """The value with every string in it, keys included, cut to ``allowance`` characters.
+
+    A string comes back as its cut prefix and a dict or a list is rebuilt; any other value is
+    given back unchanged, so the result is of the same kind as the argument."""
     if isinstance(value, str):
         return value[:allowance]
     if isinstance(value, dict):
@@ -243,7 +247,7 @@ def _fit_context(context: Any) -> dict[str, Any] | None:
     allowance = max(map(len, _strings(scrubbed)), default=0)
     while allowance > 0:
         allowance //= 2
-        fitted = _cut_strings(scrubbed, allowance)
+        fitted: dict[str, Any] = _cut_strings(scrubbed, allowance)
         if context_bytes(fitted) <= MAX_CONTEXT_BYTES:
             return fitted
     preview = json.dumps(scrubbed, default=str, ensure_ascii=False)[: MAX_CONTEXT_BYTES - 64]
