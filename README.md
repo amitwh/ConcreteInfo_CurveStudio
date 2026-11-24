@@ -19,6 +19,7 @@ CurveStudio fits mathematical models to experimental data, ranks the candidates 
 - **Large model library.** 200 named models plus generated families (polynomial, rational, sums of exponentials and peaks, and more), including a set of engineering models.
 - **Custom equations.** Type your own equation. It is parsed into a restricted expression tree, never run through `eval`.
 - **Full statistics.** Parameter standard errors and confidence intervals, confidence and prediction bands, residual diagnostics and bootstrap uncertainty.
+- **Fit audit and methods text.** After a fit, an audit checks the evidence check by check (the residuals, influential points, the parameters, cross-validation, a simpler model) and gives each a verdict, the numbers behind it and what to do next. A methods text writes the fit up for a paper: the model, the estimator, the estimates with their standard errors and the citations, as plain text, Markdown or LaTeX.
 - **Reproducible projects.** Portable `.cstudio` files record the original data, every cleaning step, the fit settings, random seeds and software versions.
 - **Desktop and web.** A native offline desktop app (Windows and Linux) and a browser app share one engine and give the same numbers.
 
@@ -30,6 +31,7 @@ CurveStudio fits mathematical models to experimental data, ranks the candidates 
 | Data layer: import (CSV, TSV, Excel, JSON, clipboard), validation, reversible cleaning, `.cstudio` projects | Done |
 | Fitting core: linear, polynomial, nonlinear least squares, robust loss, NIST validation | Done |
 | Statistics: bands, information criteria, diagnostics, cross-validation, bootstrap | Done |
+| Fit audit, methods text and cross-validation of a stored fit: core, web, command line, desktop | Done on the web and the command line; in the desktop source, and so in its next build |
 | Model library (190+ ids, 30+ engineering), custom equations, Auto-fit engine and CLI | Done |
 | Web app (React) and API (FastAPI) with accounts, jobs, quotas; live at curvestudio.concreteinfo.cloud | Done |
 | Desktop app (PySide6) with Auto-fit-first analysis and report export | Done; packaged builds via the release workflow |
