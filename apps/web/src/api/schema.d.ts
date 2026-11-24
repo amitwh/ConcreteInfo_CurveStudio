@@ -705,6 +705,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/fits/{fit_id}/audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Fit Audit
+         * @description What a stored fit's evidence shows, check by check: convergence, the residual tests,
+         *     the parameters, the held-out error once the fit has been cross-validated, and a simpler
+         *     model once the fit was ranked by an Auto-fit run. Read from the stored fit; nothing is
+         *     refitted. A bundle with no observations is a 422 whose ``detail.code`` is ``NO_DATA``.
+         */
+        get: operations["get_fit_audit_api_v1_fits__fit_id__audit_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/fits/{fit_id}/audit/cross-validation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cross Validate Fit
+         * @description Queue the cross-validation of a stored fit on its dataset's table. The result is stored
+         *     on the fit, where ``GET /fits/{id}/audit`` reads it: follow the job (``GET /jobs/{id}``),
+         *     then read the audit again. The job uses no quota. One cross-validation of a fit runs at a
+         *     time: while one is queued or running, to ask for another is a 409 whose ``detail.job_id``
+         *     names the job to follow. A fit that did not converge, or more folds than the data hold
+         *     points, fails the job with the code the tools refuse it by.
+         */
+        post: operations["cross_validate_fit_api_v1_fits__fit_id__audit_cross_validation_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/fits/{fit_id}/export": {
         parameters: {
             query?: never;
@@ -718,6 +766,28 @@ export interface paths {
          *     or XLSX (the Excel workbook, with its plot sheet).
          */
         get: operations["export_fit_api_v1_fits__fit_id__export_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/fits/{fit_id}/methods": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Fit Methods
+         * @description The methods text of a converged fit in three styles: the paragraph, the equation and
+         *     the table, the citations, what the author must complete and what is missing. A fit that
+         *     did not converge is a 422 whose ``detail.code`` is ``FIT_NOT_CONVERGED_INPUT``.
+         */
+        get: operations["get_fit_methods_api_v1_fits__fit_id__methods_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1063,6 +1133,33 @@ export interface components {
             plan_override?: string | null;
             /** Role */
             role?: ("member" | "admin") | null;
+        };
+        /**
+         * AuditCheckOut
+         * @description One check of a fit's audit. ``title`` states what was found; ``statistic`` is the number
+         *     the verdict turned on and ``threshold`` the rule that turned it, both as text;
+         *     ``next_step`` is set for a check that needs a look.
+         */
+        AuditCheckOut: {
+            /** Evidence */
+            evidence: string;
+            /** Explanation */
+            explanation: string;
+            /** Id */
+            id: string;
+            /** Next Step */
+            next_step: string | null;
+            /** Statistic */
+            statistic: string | null;
+            /** Threshold */
+            threshold: string | null;
+            /** Title */
+            title: string;
+            /**
+             * Verdict
+             * @enum {string}
+             */
+            verdict: "pass" | "caution" | "fail" | "not_applicable";
         };
         /**
          * AuditOut
@@ -1518,6 +1615,20 @@ export interface components {
             status: "ok" | "incomplete";
         };
         /**
+         * CrossValidationIn
+         * @description How to cross-validate a fit: in ``folds`` folds (5 by default), or ``"loo"`` to leave one
+         *     point out at a time. A count below 2 is refused before a job is queued, with the code the
+         *     tools use (``INVALID_FOLDS``); one the data cannot bear (more folds than points) fails the
+         *     job with the same code.
+         */
+        CrossValidationIn: {
+            /**
+             * Folds
+             * @default 5
+             */
+            folds: number | "loo";
+        };
+        /**
          * CurveSamples
          * @description The fitted curve sampled at ``CURVE_POINTS`` x values; every ``y`` is finite.
          */
@@ -1900,6 +2011,44 @@ export interface components {
             status: "new" | "acknowledged" | "resolved" | "ignored";
         };
         /**
+         * ExcludedRowOut
+         * @description A row of the fit's data that takes part in no check, and why (``index`` is 0-based).
+         */
+        ExcludedRowOut: {
+            /** Index */
+            index: number;
+            /** Reason */
+            reason: string;
+        };
+        /**
+         * FitAuditOut
+         * @description The audit of one stored fit. ``checks`` come in a fixed order and ``overall`` is the
+         *     worst of their verdicts; ``summary`` is a sentence or two for a banner and
+         *     ``methods_fragment`` what a methods paragraph can carry as it stands. ``simpler_model`` is
+         *     set only when that check reads ``caution``; ``n_observations`` counts the rows that took
+         *     part and ``excluded`` lists the rest.
+         */
+        FitAuditOut: {
+            /** Checks */
+            checks: components["schemas"]["AuditCheckOut"][];
+            /** Excluded */
+            excluded: components["schemas"]["ExcludedRowOut"][];
+            /** Methods Fragment */
+            methods_fragment: string;
+            /** N Observations */
+            n_observations: number;
+            /** N Parameters */
+            n_parameters: number;
+            /**
+             * Overall
+             * @enum {string}
+             */
+            overall: "pass" | "caution" | "fail" | "not_applicable";
+            simpler_model: components["schemas"]["SimplerModelOut"] | null;
+            /** Summary */
+            summary: string;
+        };
+        /**
          * FitBundle
          * @description One fit with everything a UI or report needs.
          *
@@ -1926,6 +2075,16 @@ export interface components {
             summary_reason: string | null;
             /** Warnings */
             warnings: string[];
+        };
+        /**
+         * FitMethodsOut
+         * @description The methods text of one fit in three styles: the paragraph is the same in each (escaped
+         *     for LaTeX in that one); the equation and the table are laid out for each.
+         */
+        FitMethodsOut: {
+            latex: components["schemas"]["MethodsTextOut"];
+            markdown: components["schemas"]["MethodsTextOut"];
+            text: components["schemas"]["MethodsTextOut"];
         };
         /**
          * FitReport
@@ -2231,7 +2390,12 @@ export interface components {
              */
             job_id: string;
         };
-        /** JobOut */
+        /**
+         * JobOut
+         * @description A job. ``result_ref`` is set when the job succeeds: the fit it stored (``fit``,
+         *     ``open_row``), the Auto-fit run (``autofit``) or, for a cross-validation (``audit``), the
+         *     dataset it ran on: its result is stored on the fit, which is then ``result_id``.
+         */
         JobOut: {
             /** Created At */
             created_at: string;
@@ -2255,7 +2419,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "fit" | "autofit" | "open_row";
+            kind: "fit" | "autofit" | "open_row" | "audit";
             progress?: components["schemas"]["ProgressOut"] | null;
             /** Result Id */
             result_id?: string | null;
@@ -2337,6 +2501,29 @@ export interface components {
         MessageOut: {
             /** Message */
             message: string;
+        };
+        /**
+         * MethodsTextOut
+         * @description The methods text of one fit in one style. ``citation_curvestudio`` cites the software and
+         *     ``citation_model`` the model's sources, one per string. ``to_complete`` lists what only the
+         *     author can write and ``missing`` what the text needed and did not get: each entry is a
+         *     code, a colon and a sentence.
+         */
+        MethodsTextOut: {
+            /** Citation Curvestudio */
+            citation_curvestudio: string;
+            /** Citation Model */
+            citation_model: string[];
+            /** Equation */
+            equation: string;
+            /** Missing */
+            missing: string[];
+            /** Paragraph */
+            paragraph: string;
+            /** Table */
+            table: string;
+            /** To Complete */
+            to_complete: string[];
         };
         /**
          * ModelInfo
@@ -2968,6 +3155,23 @@ export interface components {
             x: number[];
             /** Y */
             y: number[];
+        };
+        /**
+         * SimplerModelOut
+         * @description A ranked model that fits as well with fewer parameters. ``delta_aicc`` is its distance
+         *     from the best model's AICc.
+         */
+        SimplerModelOut: {
+            /** Cv Rmse */
+            cv_rmse: number | null;
+            /** Delta Aicc */
+            delta_aicc: number | null;
+            /** Model Id */
+            model_id: string;
+            /** N Parameters */
+            n_parameters: number;
+            /** Name */
+            name: string;
         };
         /** SystemOut */
         SystemOut: {
@@ -4356,6 +4560,72 @@ export interface operations {
             };
         };
     };
+    get_fit_audit_api_v1_fits__fit_id__audit_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                fit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FitAuditOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cross_validate_fit_api_v1_fits__fit_id__audit_cross_validation_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                fit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CrossValidationIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobCreatedOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     export_fit_api_v1_fits__fit_id__export_get: {
         parameters: {
             query?: {
@@ -4376,6 +4646,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_fit_methods_api_v1_fits__fit_id__methods_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                fit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FitMethodsOut"];
                 };
             };
             /** @description Validation Error */

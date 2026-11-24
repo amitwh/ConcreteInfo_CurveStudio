@@ -225,7 +225,7 @@ source_modules = ["curvestudio_engineering"]
 forbidden_modules = ["curvestudio_models"]
 
 [[tool.importlinter.contracts]]
-name = "The API reaches core only through the workflow layer (and its data/fitting types)"
+name = "The API reaches core only through the workflow and tools layers (and its data/fitting types)"
 type = "forbidden"
 source_modules = ["curvestudio_api"]
 forbidden_modules = [

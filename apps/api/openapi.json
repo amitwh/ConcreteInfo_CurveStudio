@@ -210,6 +210,82 @@
         "title": "AdminUserUpdateIn",
         "type": "object"
       },
+      "AuditCheckOut": {
+        "description": "One check of a fit's audit. ``title`` states what was found; ``statistic`` is the number\nthe verdict turned on and ``threshold`` the rule that turned it, both as text;\n``next_step`` is set for a check that needs a look.",
+        "properties": {
+          "evidence": {
+            "title": "Evidence",
+            "type": "string"
+          },
+          "explanation": {
+            "title": "Explanation",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "next_step": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Step"
+          },
+          "statistic": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Statistic"
+          },
+          "threshold": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Threshold"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "verdict": {
+            "enum": [
+              "pass",
+              "caution",
+              "fail",
+              "not_applicable"
+            ],
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "verdict",
+          "statistic",
+          "threshold",
+          "evidence",
+          "explanation",
+          "next_step"
+        ],
+        "title": "AuditCheckOut",
+        "type": "object"
+      },
       "AuditOut": {
         "description": "One audit row.",
         "properties": {
@@ -1119,6 +1195,27 @@
           "reasons"
         ],
         "title": "CrossValidation",
+        "type": "object"
+      },
+      "CrossValidationIn": {
+        "additionalProperties": false,
+        "description": "How to cross-validate a fit: in ``folds`` folds (5 by default), or ``\"loo\"`` to leave one\npoint out at a time. A count below 2 is refused before a job is queued, with the code the\ntools use (``INVALID_FOLDS``); one the data cannot bear (more folds than points) fails the\njob with the same code.",
+        "properties": {
+          "folds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "const": "loo",
+                "type": "string"
+              }
+            ],
+            "default": 5,
+            "title": "Folds"
+          }
+        },
+        "title": "CrossValidationIn",
         "type": "object"
       },
       "CurveSamples": {
@@ -2147,6 +2244,92 @@
         "title": "ErrorStatusUpdateIn",
         "type": "object"
       },
+      "ExcludedRowOut": {
+        "description": "A row of the fit's data that takes part in no check, and why (``index`` is 0-based).",
+        "properties": {
+          "index": {
+            "title": "Index",
+            "type": "integer"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "index",
+          "reason"
+        ],
+        "title": "ExcludedRowOut",
+        "type": "object"
+      },
+      "FitAuditOut": {
+        "description": "The audit of one stored fit. ``checks`` come in a fixed order and ``overall`` is the\nworst of their verdicts; ``summary`` is a sentence or two for a banner and\n``methods_fragment`` what a methods paragraph can carry as it stands. ``simpler_model`` is\nset only when that check reads ``caution``; ``n_observations`` counts the rows that took\npart and ``excluded`` lists the rest.",
+        "properties": {
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/AuditCheckOut"
+            },
+            "title": "Checks",
+            "type": "array"
+          },
+          "excluded": {
+            "items": {
+              "$ref": "#/components/schemas/ExcludedRowOut"
+            },
+            "title": "Excluded",
+            "type": "array"
+          },
+          "methods_fragment": {
+            "title": "Methods Fragment",
+            "type": "string"
+          },
+          "n_observations": {
+            "title": "N Observations",
+            "type": "integer"
+          },
+          "n_parameters": {
+            "title": "N Parameters",
+            "type": "integer"
+          },
+          "overall": {
+            "enum": [
+              "pass",
+              "caution",
+              "fail",
+              "not_applicable"
+            ],
+            "title": "Overall",
+            "type": "string"
+          },
+          "simpler_model": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SimplerModelOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "checks",
+          "overall",
+          "summary",
+          "methods_fragment",
+          "simpler_model",
+          "n_observations",
+          "n_parameters",
+          "excluded"
+        ],
+        "title": "FitAuditOut",
+        "type": "object"
+      },
       "FitBundle": {
         "additionalProperties": false,
         "description": "One fit with everything a UI or report needs.\n\n``result.status`` says whether the fit converged. When it did not (or a quantity is not\ndefined) the matching field is ``None`` and the ``*_reason`` field says why; a curve is\nnever substituted for a failed fit. ``summary`` is the ``describe_fit`` report\n(information criteria, residual diagnostics, tests); ``curve`` covers the data range\nextended by 5 % each side; the bands are pointwise at the curve's x values.",
@@ -2256,6 +2439,27 @@
           "data"
         ],
         "title": "FitBundle",
+        "type": "object"
+      },
+      "FitMethodsOut": {
+        "description": "The methods text of one fit in three styles: the paragraph is the same in each (escaped\nfor LaTeX in that one); the equation and the table are laid out for each.",
+        "properties": {
+          "latex": {
+            "$ref": "#/components/schemas/MethodsTextOut"
+          },
+          "markdown": {
+            "$ref": "#/components/schemas/MethodsTextOut"
+          },
+          "text": {
+            "$ref": "#/components/schemas/MethodsTextOut"
+          }
+        },
+        "required": [
+          "text",
+          "markdown",
+          "latex"
+        ],
+        "title": "FitMethodsOut",
         "type": "object"
       },
       "FitReport": {
@@ -2997,6 +3201,7 @@
         "type": "object"
       },
       "JobOut": {
+        "description": "A job. ``result_ref`` is set when the job succeeds: the fit it stored (``fit``,\n``open_row``), the Auto-fit run (``autofit``) or, for a cross-validation (``audit``), the\ndataset it ran on: its result is stored on the fit, which is then ``result_id``.",
         "properties": {
           "created_at": {
             "title": "Created At",
@@ -3049,7 +3254,8 @@
             "enum": [
               "fit",
               "autofit",
-              "open_row"
+              "open_row",
+              "audit"
             ],
             "title": "Kind",
             "type": "string"
@@ -3285,6 +3491,59 @@
           "message"
         ],
         "title": "MessageOut",
+        "type": "object"
+      },
+      "MethodsTextOut": {
+        "description": "The methods text of one fit in one style. ``citation_curvestudio`` cites the software and\n``citation_model`` the model's sources, one per string. ``to_complete`` lists what only the\nauthor can write and ``missing`` what the text needed and did not get: each entry is a\ncode, a colon and a sentence.",
+        "properties": {
+          "citation_curvestudio": {
+            "title": "Citation Curvestudio",
+            "type": "string"
+          },
+          "citation_model": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Citation Model",
+            "type": "array"
+          },
+          "equation": {
+            "title": "Equation",
+            "type": "string"
+          },
+          "missing": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing",
+            "type": "array"
+          },
+          "paragraph": {
+            "title": "Paragraph",
+            "type": "string"
+          },
+          "table": {
+            "title": "Table",
+            "type": "string"
+          },
+          "to_complete": {
+            "items": {
+              "type": "string"
+            },
+            "title": "To Complete",
+            "type": "array"
+          }
+        },
+        "required": [
+          "paragraph",
+          "equation",
+          "table",
+          "citation_curvestudio",
+          "citation_model",
+          "to_complete",
+          "missing"
+        ],
+        "title": "MethodsTextOut",
         "type": "object"
       },
       "ModelInfo": {
@@ -4858,6 +5117,54 @@
           "y"
         ],
         "title": "RowCurve",
+        "type": "object"
+      },
+      "SimplerModelOut": {
+        "description": "A ranked model that fits as well with fewer parameters. ``delta_aicc`` is its distance\nfrom the best model's AICc.",
+        "properties": {
+          "cv_rmse": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cv Rmse"
+          },
+          "delta_aicc": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delta Aicc"
+          },
+          "model_id": {
+            "title": "Model Id",
+            "type": "string"
+          },
+          "n_parameters": {
+            "title": "N Parameters",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "model_id",
+          "name",
+          "n_parameters",
+          "delta_aicc",
+          "cv_rmse"
+        ],
+        "title": "SimplerModelOut",
         "type": "object"
       },
       "SystemOut": {
@@ -7233,6 +7540,114 @@
         ]
       }
     },
+    "/api/v1/fits/{fit_id}/audit": {
+      "get": {
+        "description": "What a stored fit's evidence shows, check by check: convergence, the residual tests,\nthe parameters, the held-out error once the fit has been cross-validated, and a simpler\nmodel once the fit was ranked by an Auto-fit run. Read from the stored fit; nothing is\nrefitted. A bundle with no observations is a 422 whose ``detail.code`` is ``NO_DATA``.",
+        "operationId": "get_fit_audit_api_v1_fits__fit_id__audit_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "fit_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Fit Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FitAuditOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Fit Audit",
+        "tags": [
+          "fits"
+        ]
+      }
+    },
+    "/api/v1/fits/{fit_id}/audit/cross-validation": {
+      "post": {
+        "description": "Queue the cross-validation of a stored fit on its dataset's table. The result is stored\non the fit, where ``GET /fits/{id}/audit`` reads it: follow the job (``GET /jobs/{id}``),\nthen read the audit again. The job uses no quota. One cross-validation of a fit runs at a\ntime: while one is queued or running, to ask for another is a 409 whose ``detail.job_id``\nnames the job to follow. A fit that did not converge, or more folds than the data hold\npoints, fails the job with the code the tools refuse it by.",
+        "operationId": "cross_validate_fit_api_v1_fits__fit_id__audit_cross_validation_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "fit_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Fit Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CrossValidationIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobCreatedOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Cross Validate Fit",
+        "tags": [
+          "fits"
+        ]
+      }
+    },
     "/api/v1/fits/{fit_id}/export": {
       "get": {
         "description": "Download a fit as JSON (the bundle), CSV (parameters, then fitted values per row)\nor XLSX (the Excel workbook, with its plot sheet).",
@@ -7290,6 +7705,55 @@
           }
         ],
         "summary": "Export Fit",
+        "tags": [
+          "fits"
+        ]
+      }
+    },
+    "/api/v1/fits/{fit_id}/methods": {
+      "get": {
+        "description": "The methods text of a converged fit in three styles: the paragraph, the equation and\nthe table, the citations, what the author must complete and what is missing. A fit that\ndid not converge is a 422 whose ``detail.code`` is ``FIT_NOT_CONVERGED_INPUT``.",
+        "operationId": "get_fit_methods_api_v1_fits__fit_id__methods_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "fit_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Fit Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FitMethodsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Fit Methods",
         "tags": [
           "fits"
         ]
