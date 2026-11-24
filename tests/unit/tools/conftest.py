@@ -169,8 +169,14 @@ class Scenarios:
         return fit(make_xy(X, CURVE + noise), self.QUADRATIC)
 
     def heteroscedastic(self) -> FitBundle:
-        noise = np.random.default_rng(0).normal(0.0, 1.0, 40) * (0.01 + 0.3 * X)
-        return fit(make_xy(X, CURVE + noise), self.QUADRATIC)
+        """A quadratic whose noise spreads from almost nothing at x = 0 to 3 at x = 10.
+
+        On 150 points: on 40 the first draw gives a Breusch-Pagan p of 0.0036, a caution
+        rather than the failure this scenario is built to show.
+        """
+        x = np.linspace(0.0, 10.0, 150)
+        noise = np.random.default_rng(0).normal(0.0, 1.0, 150) * (0.01 + 0.3 * x)
+        return fit(make_xy(x, quadratic(x) + noise), self.QUADRATIC)
 
     def in_range_outlier(self, sd: float = 8.0) -> FitBundle:
         """Row 31 displaced by ``sd`` noise standard deviations, at an ordinary x."""

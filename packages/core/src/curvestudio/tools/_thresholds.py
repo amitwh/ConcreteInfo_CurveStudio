@@ -10,18 +10,20 @@ import re
 
 NORMALITY_CAUTION_P = 0.05
 """Shapiro-Wilk p below this, but not below ``NORMALITY_FAIL_P``, reads ``caution``."""
-NORMALITY_FAIL_P = 0.01
-"""Shapiro-Wilk p below this reads ``fail``."""
+NORMALITY_FAIL_P = 0.001
+"""Shapiro-Wilk p below this reads ``fail``: the level every residual p-value fails at. One
+honest fit in a thousand shows it by chance, so with four residual tests at this level
+about four in a thousand honest fits fail one of them."""
 SMALL_SAMPLE_N = 20
 """With fewer points than this the normality evidence says the test rarely detects anything."""
 VARIANCE_CAUTION_P = 0.05
 """Breusch-Pagan p below this, but not below ``VARIANCE_FAIL_P``, reads ``caution``."""
-VARIANCE_FAIL_P = 0.01
-"""Breusch-Pagan p below this reads ``fail``."""
+VARIANCE_FAIL_P = 0.001
+"""Breusch-Pagan p below this reads ``fail``: the level every residual p-value fails at."""
 TREND_CAUTION_P = 0.05
 """Residual-trend p below this, but not below ``TREND_FAIL_P``, reads ``caution``."""
-TREND_FAIL_P = 0.01
-"""Residual-trend p below this reads ``fail``."""
+TREND_FAIL_P = 0.001
+"""Residual-trend p below this reads ``fail``: the level every residual p-value fails at."""
 TREND_EXTRA_TERMS = 2
 """Legendre degrees tested beyond a fitted polynomial's degree ``d``: ``d + 1`` up to
 ``d + TREND_EXTRA_TERMS``."""
@@ -62,13 +64,13 @@ WIDE_INTERVAL_SHARE = 0.99
 ``caution``."""
 DW_CAUTION_P = 0.05
 """Either exact Durbin-Watson p-value below this, but not below ``DW_FAIL_P``, reads
-``caution`` for independence: the smaller of the two is the chance of a statistic that far
-out on its side. Ljung-Box's p is supporting evidence there, and on its own it is the test
+``caution`` for independence: each is the chance of a statistic that far out on its side.
+Ljung-Box's p is supporting evidence there, and the test
 :func:`~curvestudio.tools.audit_fit` decides by without the fit's settings."""
-DW_FAIL_P = 0.01
+DW_FAIL_P = 0.001
 """Either exact Durbin-Watson p-value below this reads ``fail`` for independence: the level
-every residual test fails at. It is also the level at which Ljung-Box fails when it
-decides alone."""
+every residual p-value fails at, and the one at which Ljung-Box fails when it decides
+alone."""
 AUTOCORRELATION_CAUTION_P = 0.05
 """Ljung-Box p below this reads ``caution``: on its own when Ljung-Box decides, or by
 raising a pass of the exact Durbin-Watson test when that test decided."""

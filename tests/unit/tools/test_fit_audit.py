@@ -421,7 +421,7 @@ EXACT_STATISTIC = re.compile(
     rf"\(positive autocorrelation\), (?P<negative>{NUMBER}) \(negative\)"
 )
 DECIDED = "Ljung-Box decided: the exact Durbin-Watson test was not run because "
-LJUNG_BOX_RULE = "p >= 0.05 pass; 0.01 <= p < 0.05 caution; p < 0.01 fail"
+P_VALUE_RULE = "p >= 0.05 pass; 0.001 <= p < 0.05 caution; p < 0.001 fail"
 
 
 def _two_p_values(check: AuditCheck) -> tuple[float, float]:
@@ -470,7 +470,7 @@ def test_with_the_fit_s_settings_the_exact_durbin_watson_test_decides_independen
         "estimates over 600 points (597 residual degrees of freedom). Ljung-Box p = 0.697, "
         "residuals taken in ascending x."
     )
-    assert clean.threshold == f"smaller Durbin-Watson p: {LJUNG_BOX_RULE}"
+    assert clean.threshold == f"smaller Durbin-Watson p: {P_VALUE_RULE}"
     assert clean.next_step is None
     assert (
         "no autocorrelation (Durbin-Watson p = 0.324)"
@@ -535,7 +535,7 @@ def test_without_the_fit_s_settings_ljung_box_decides_and_the_evidence_says_why(
     for name in ("autocorrelated", "alternating", "clean"):
         check = _check(audits[name], "residual_independence")
         assert check.statistic.startswith("Q"), check.statistic
-        assert check.threshold == LJUNG_BOX_RULE
+        assert check.threshold == P_VALUE_RULE
         assert DECIDED + "the exact Durbin-Watson test needs the fit's settings." in check.evidence
         assert re.search(r"Durbin-Watson statistic [\d.]+", check.evidence), check.evidence
     assert _check(audits["autocorrelated"], "residual_independence").verdict is Verdict.FAIL
@@ -620,8 +620,14 @@ def test_the_independence_check_is_calibrated_on_well_behaved_fits(scenarios, n)
     #
     # The exact rule is a two-sided test at 10 % (either p-value below 0.05) with Ljung-Box's
     # own 5 % laid over it, so a clean fit passes about 85 times in 100: under the 90 % bar
-    # by construction. At 20 and 400 points these forty seeds read under it; the bar stays,
-    # as a strict expected failure.
+    # by construction. On these forty seeds, pass / caution / fail, none fails:
+    #
+    #     n     exact          Ljung-Box alone
+    #     20    82.5 / 17.5     87.5 / 12.5
+    #     40    92.5 / 7.5      97.5 / 2.5
+    #     400   85 / 15         95 / 2.5 / 2.5
+    #
+    # At 20 and 400 points the bar is missed; it stays, as a strict expected failure.
     exact: list[Verdict] = []
     ljung_box: list[Verdict] = []
     for seed in SEEDS:
