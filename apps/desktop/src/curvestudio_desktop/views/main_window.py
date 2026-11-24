@@ -1438,7 +1438,13 @@ class MainWindow(QMainWindow):
         byline = report_identity(self._settings).byline()
         self._run_job(
             f"Exporting {target.name}",
-            partial(exports.export_fit, target, bundle, byline=byline),
+            partial(
+                exports.export_fit,
+                target,
+                bundle,
+                byline=byline,
+                spec=self.analysis.current_spec,
+            ),
             on_result=lambda _done: self.statusBar().showMessage(f"Exported {target.name}"),
             on_error=lambda exc: self.controller.messenger.show_error("Export failed", str(exc)),
         )

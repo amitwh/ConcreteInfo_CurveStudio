@@ -116,3 +116,28 @@ def test_a_fit_that_did_not_converge_exports_with_its_audit_and_no_methods_text(
     summary = _summary(tmp_path / "fit.xlsx")
     assert "methods paragraph" not in summary and "Fit audit" not in summary
     assert summary["status"] == "not_converged"
+
+
+def test_the_window_hands_the_export_the_fit_s_settings(
+    make_window, qtbot, monkeypatch, tmp_path
+) -> None:
+    """Export results gives ``export_fit`` the fit and the specification it ran with."""
+    window = make_window()
+    qtbot.addWidget(window)
+    bundle, spec = _line_bundle(), LINEAR
+    analysis = type(window.analysis)
+    monkeypatch.setattr(analysis, "current_bundle", property(lambda self: bundle))
+    monkeypatch.setattr(analysis, "current_spec", property(lambda self: spec))
+    window.controller.paths.export_paths.append(tmp_path / "report.pdf")
+    handed: dict[str, object] = {}
+
+    def recording(target: Path, given: FitBundle, *, byline=None, spec=None) -> None:
+        handed["bundle"] = given
+        handed["spec"] = spec
+
+    monkeypatch.setattr(exports, "export_fit", recording)
+    monkeypatch.setattr(window, "_run_job", lambda label, work, **callbacks: work())
+
+    window.export_results()
+
+    assert handed == {"bundle": bundle, "spec": spec}
