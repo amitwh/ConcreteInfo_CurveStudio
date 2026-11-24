@@ -1673,6 +1673,15 @@ li.dataset:hover .dataset__delete,
   flex-basis: 100%;
 }
 
+/* Under the summary: what the audit ran on, and the rows it left out. */
+.audit-summary__counts,
+.audit-summary__excluded {
+  margin: 0;
+  flex-basis: 100%;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
 .audit-checks {
   display: grid;
   gap: 0.5rem;
@@ -1730,6 +1739,21 @@ li.dataset:hover .dataset__delete,
   color: var(--muted);
   font-size: 0.8rem;
   font-weight: 600;
+}
+
+/* A check's statistic and threshold: quiet lines, their value in the face the app gives numbers. */
+.audit-check__figure {
+  margin: 0.25rem 0 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+/* The value is shown as the server wrote it: no ligatures, so ">=" never reads as a glyph it did not send. */
+.audit-check__value {
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  font-variant-ligatures: none;
+  overflow-wrap: anywhere;
 }
 
 .audit-simpler {

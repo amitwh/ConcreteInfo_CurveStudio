@@ -1,5 +1,6 @@
 /**
- * The fit audit: each check with its verdict, the evidence behind it and what to do next.
+ * The fit audit: each check with its verdict, the evidence and the numbers behind it, and
+ * what to do next.
  * The server computes it from the stored fit, and nothing is refitted here except by the
  * cross-validation job the control at the end queues. A verdict is a statement of evidence,
  * never of proof, and the wording is the server's: this tab shows it and rewrites none of it.
@@ -52,6 +53,16 @@ function VerdictPill({
   );
 }
 
+/** A number or rule a check's verdict turned on, labelled. Only called for a check that has one: a check without it gets no line, and no label. */
+function Figure({ label, value }: { label: string; value: string }): ReactElement {
+  return (
+    <p className="audit-check__figure">
+      <span className="audit-check__lead">{label}:</span>{" "}
+      <span className="audit-check__value">{value}</span>
+    </p>
+  );
+}
+
 function CheckCard({ check }: { check: AuditCheckOut }): ReactElement {
   // A check that did not apply is no finding: quiet, with the reason it could not run.
   const quiet = check.verdict === "not_applicable";
@@ -65,6 +76,8 @@ function CheckCard({ check }: { check: AuditCheckOut }): ReactElement {
         <span>{check.title}</span>
       </h4>
       <p className="audit-check__evidence">{check.evidence}</p>
+      {check.statistic !== null && <Figure label="Statistic" value={check.statistic} />}
+      {check.threshold !== null && <Figure label="Threshold" value={check.threshold} />}
       {!quiet && <p className="muted">{check.explanation}</p>}
       {check.next_step !== null && (
         <p className="audit-check__next">
@@ -88,6 +101,31 @@ function SimplerModelLine({
       {fmtNumber(simpler.cv_rmse)}.
     </p>
   );
+}
+
+/** How many rows that took no part are named before the rest are only counted. */
+const EXCLUDED_LISTED_MAX = 8;
+
+/** "40 observations, 3 parameters": what the audit ran on. */
+function countsText(observations: number, parameters: number): string {
+  return `${fmtInt(observations)} ${observations === 1 ? "observation" : "observations"}, ${fmtInt(parameters)} ${parameters === 1 ? "parameter" : "parameters"}`;
+}
+
+/**
+ * The rows the audit left out, each with its reason, as one sentence: the lowest few named,
+ * then how many more. The server numbers rows from zero; a reader counts from one.
+ */
+function excludedRowsText(rows: FitAuditOut["excluded"]): string | null {
+  if (rows.length === 0) return null;
+  const inRowOrder = [...rows].sort((first, second) => first.index - second.index);
+  const named = inRowOrder
+    .slice(0, EXCLUDED_LISTED_MAX)
+    .map((row) => `row ${fmtInt(row.index + 1)} (${row.reason})`);
+  const rest = inRowOrder.length - named.length;
+  const list = rest > 0 ? `${named.join(", ")}, and ${fmtInt(rest)} more` : named.join(", ");
+  const count =
+    rows.length === 1 ? "1 row took no part" : `${fmtInt(rows.length)} rows took no part`;
+  return `${count}: ${list}.`;
 }
 
 /** The job a 409 names: a cross-validation of this fit that is already queued or running. */
@@ -156,6 +194,7 @@ export function FitAuditTab({ fitId, converged }: FitAuditTabProps): ReactElemen
   }, []);
 
   const audit = auditQuery.data;
+  const excluded = audit === undefined ? null : excludedRowsText(audit.excluded);
   const crossValidation = audit?.checks.find((check) => check.id === "cross_validation");
   const decided = crossValidation !== undefined && crossValidation.verdict !== "not_applicable";
   const busy = posting || job.phase === "polling";
@@ -199,6 +238,10 @@ export function FitAuditTab({ fitId, converged }: FitAuditTabProps): ReactElemen
             <span className="audit-summary__label">Overall verdict</span>
             <VerdictPill verdict={audit.overall} overall />
             <p className="audit-summary__text">{audit.summary}</p>
+            <p className="audit-summary__counts">
+              {countsText(audit.n_observations, audit.n_parameters)}
+            </p>
+            {excluded !== null && <p className="audit-summary__excluded">{excluded}</p>}
           </div>
           {audit.checks.length === 0 ? (
             <Empty>

@@ -95,6 +95,8 @@ const TREND_NEXT_STEP =
   "Try a model with one more parameter.";
 const SIMPLER_NEXT_STEP =
   "Report the simpler model unless the extra parameter answers a question of your own.";
+/** The rule on a p-value, as the server words it for a residual check. */
+const P_THRESHOLD = "p >= 0.1 pass; 0.01 <= p < 0.1 caution; p < 0.01 fail";
 
 function check(
   id: string,
@@ -125,10 +127,16 @@ function convergedAudit(overrides: Partial<FitAuditOut> = {}): FitAuditOut {
       check("perfect_fit", "pass", "The fit is not exact", "RMSE 0.0412 against a y range of 2.6"),
       check("residual_normality", "caution", "Residuals may depart from a normal distribution", "Shapiro-Wilk p = 0.081", {
         statistic: "0.081",
-        threshold: "p >= 0.1 pass; 0.01 <= p < 0.1 caution; p < 0.01 fail",
+        threshold: P_THRESHOLD,
         next_step: NORMALITY_NEXT_STEP,
       }),
-      check("residual_independence", "pass", "Residuals show no autocorrelation in x order", "Ljung-Box p = 0.62 at 10 lags"),
+      check(
+        "residual_independence",
+        "pass",
+        "Residuals show no autocorrelation in x order",
+        "Ljung-Box p = 0.78, residuals taken in ascending x.",
+        { statistic: "Q(10) = 6.4, p = 0.78", threshold: P_THRESHOLD },
+      ),
       check("constant_variance", "fail", "Residual variance changes with the fitted value", "Breusch-Pagan p = 0.0004", {
         statistic: "0.0004",
         next_step: VARIANCE_NEXT_STEP,
@@ -241,8 +249,8 @@ function card(id: string): HTMLElement {
   return found as HTMLElement;
 }
 
-function renderTab(converged = true): void {
-  renderWithQuery(<FitAuditTab fitId={FIT} converged={converged} />);
+function renderTab(converged = true): ReturnType<typeof renderWithQuery> {
+  return renderWithQuery(<FitAuditTab fitId={FIT} converged={converged} />);
 }
 
 function runButton(): HTMLButtonElement {
@@ -410,6 +418,153 @@ describe("FitAuditTab — the checks", () => {
     const overall = document.querySelector(".audit-summary .verdict") as HTMLElement;
     expect(overall.textContent).toBe("Fail");
     expect(document.querySelector(".audit-summary")?.textContent).toContain(audit.summary);
+  });
+});
+
+describe("FitAuditTab — the numbers behind the checks", () => {
+  /** The labelled lines of a card, in order: "Statistic: …", "Threshold: …". */
+  function figures(id: string): Array<string | null> {
+    return Array.from(card(id).querySelectorAll(".audit-check__figure")).map(
+      (line) => line.textContent,
+    );
+  }
+
+  it("shows a check's statistic and threshold as labelled lines under its evidence", async () => {
+    const audit = convergedAudit();
+    answer(AUDIT_PATH, { ok: audit });
+    renderTab();
+    await settle();
+
+    expect(figures("residual_independence")).toEqual([
+      `Statistic: Q(10) = 6.4, p = 0.78`,
+      `Threshold: ${P_THRESHOLD}`,
+    ]);
+    expect(figures("constant_variance")).toEqual(["Statistic: 0.0004"]);
+
+    // The evidence leads; the explanation and the next step keep their places after the numbers.
+    const order = Array.from(card("constant_variance").children).map((child) => child.className);
+    expect(order.slice(0, 3)).toEqual([
+      "audit-check__title",
+      "audit-check__evidence",
+      "audit-check__figure",
+    ]);
+    expect(order[order.length - 1]).toBe("audit-check__next");
+  });
+
+  it("leaves no line, and no label, for a check with neither a statistic nor a threshold", async () => {
+    const audit = convergedAudit();
+    const bare = audit.checks.find((item) => item.id === "perfect_fit") as AuditCheckOut;
+    expect(bare.statistic).toBeNull();
+    expect(bare.threshold).toBeNull();
+    answer(AUDIT_PATH, { ok: audit });
+    renderTab();
+    await settle();
+
+    expect(figures("perfect_fit")).toEqual([]);
+    expect(card("perfect_fit").textContent).not.toMatch(/Statistic|Threshold/);
+    // A check that did not apply has neither either.
+    expect(figures("cross_validation")).toEqual([]);
+
+    // Every field the server set has its one line, and nothing else has.
+    const set = audit.checks.reduce(
+      (count, item) => count + Number(item.statistic !== null) + Number(item.threshold !== null),
+      0,
+    );
+    expect(set).toBeGreaterThan(0);
+    expect(document.querySelectorAll(".audit-check__figure")).toHaveLength(set);
+  });
+
+  it("counts the observations and parameters the audit used", async () => {
+    answer(AUDIT_PATH, { ok: convergedAudit({ n_observations: 40, n_parameters: 3 }) });
+    renderTab();
+    await settle();
+
+    const counts = document.querySelector(".audit-summary__counts");
+    expect(counts?.textContent).toBe("40 observations, 3 parameters");
+  });
+
+  it("counts in en-IN digits, and says observation and parameter when there is one", async () => {
+    answer(AUDIT_PATH, { ok: convergedAudit({ n_observations: 40000, n_parameters: 1 }) });
+    const first = renderTab();
+    await settle();
+
+    expect(document.querySelector(".audit-summary__counts")?.textContent).toBe(
+      "40,000 observations, 1 parameter",
+    );
+
+    answer(AUDIT_PATH, { ok: convergedAudit({ n_observations: 1, n_parameters: 2 }) });
+    first.unmount();
+    renderTab();
+    await settle();
+
+    expect(document.querySelector(".audit-summary__counts")?.textContent).toBe(
+      "1 observation, 2 parameters",
+    );
+  });
+
+  it("names the rows that took no part, with their reasons, numbered from one and in row order", async () => {
+    // Sent out of order: the line still reads lowest row first.
+    answer(AUDIT_PATH, {
+      ok: convergedAudit({
+        excluded: [
+          { index: 30, reason: "weight is missing" },
+          { index: 4, reason: "weight is zero" },
+        ],
+      }),
+    });
+    const first = renderTab();
+    await settle();
+
+    expect(document.querySelector(".audit-summary__excluded")?.textContent).toBe(
+      "2 rows took no part: row 5 (weight is zero), row 31 (weight is missing).",
+    );
+
+    answer(AUDIT_PATH, {
+      ok: convergedAudit({ excluded: [{ index: 4, reason: "weight is zero" }] }),
+    });
+    first.unmount();
+    renderTab();
+    await settle();
+
+    expect(document.querySelector(".audit-summary__excluded")?.textContent).toBe(
+      "1 row took no part: row 5 (weight is zero).",
+    );
+  });
+
+  it("names the first eight rows that took no part, then how many more", async () => {
+    const excluded = Array.from({ length: 12 }, (_, index) => ({
+      index: index * 3,
+      reason: index % 2 === 0 ? "weight is zero" : "weight is missing",
+    }));
+    answer(AUDIT_PATH, { ok: convergedAudit({ excluded }) });
+    renderTab();
+    await settle();
+
+    const line = document.querySelector(".audit-summary__excluded")?.textContent ?? "";
+    expect(line).toBe(
+      "12 rows took no part: " +
+        ["row 1 (weight is zero)", "row 4 (weight is missing)", "row 7 (weight is zero)", "row 10 (weight is missing)", "row 13 (weight is zero)", "row 16 (weight is missing)", "row 19 (weight is zero)", "row 22 (weight is missing)"].join(", ") +
+        ", and 4 more.",
+    );
+  });
+
+  it("says nothing about rows when none were excluded", async () => {
+    answer(AUDIT_PATH, { ok: convergedAudit({ excluded: [] }) });
+    renderTab();
+    await settle();
+
+    expect(document.querySelector(".audit-summary__excluded")).toBeNull();
+    expect(document.querySelector(".audit-summary")?.textContent).not.toMatch(/took no part/);
+  });
+
+  it("shows the methods fragment nowhere: the reports carry it", async () => {
+    const audit = convergedAudit({ methods_fragment: "Residuals showed no trend in x (p = 0.5)." });
+    answer(AUDIT_PATH, { ok: audit });
+    renderTab();
+    await settle();
+
+    expect(screen.queryByText(audit.methods_fragment)).toBeNull();
+    expect(document.body.textContent).not.toContain(audit.methods_fragment);
   });
 });
 
