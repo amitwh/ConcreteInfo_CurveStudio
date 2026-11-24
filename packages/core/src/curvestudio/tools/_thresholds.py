@@ -62,18 +62,29 @@ SIMPLE_DELTA_AICC = 2.0
 WIDE_INTERVAL_SHARE = 0.99
 """A confidence interval covering at least this share of the parameter's allowed range reads
 ``caution``."""
-DW_CAUTION_P = 0.05
+DW_CAUTION_P = 0.025
 """Either exact Durbin-Watson p-value below this, but not below ``DW_FAIL_P``, reads
-``caution`` for independence: each is the chance of a statistic that far out on its side.
-Ljung-Box's p is supporting evidence there, and the test
-:func:`~curvestudio.tools.audit_fit` decides by without the fit's settings."""
-DW_FAIL_P = 0.001
-"""Either exact Durbin-Watson p-value below this reads ``fail`` for independence: the level
-every residual p-value fails at, and the one at which Ljung-Box fails when it decides
-alone."""
-AUTOCORRELATION_CAUTION_P = 0.05
-"""Ljung-Box p below this reads ``caution``: on its own when Ljung-Box decides, or by
-raising a pass of the exact Durbin-Watson test when that test decided."""
+``caution`` for independence. Each p-value is one side of the test, so on a clean fit the
+two spend 5 % between them. Where the exact test ran it alone decides: Ljung-Box's p is
+reported beside it and changes nothing."""
+DW_FAIL_P = 0.0005
+"""Either exact Durbin-Watson p-value below this reads ``fail`` for independence: 0.05 % on
+each side, 0.1 % for the check, the level every residual p-value fails at."""
+AUTOCORRELATION_CAUTION_P = 0.025
+"""Ljung-Box p below this, but not below ``AUTOCORRELATION_FAIL_P``, reads ``caution`` for
+independence when Ljung-Box decides alone, as it does without the fit's settings.
+
+The cut-off is halved on purpose. The test comes from the core's diagnostics, whose p-value
+is approximate here: it ignores the parameters that were estimated, so on the residuals of
+a fitted model it runs low. Measured on clean quadratic fits (2,000, 1,000 and 500 of them
+at 20, 40 and 400 points, on seeds beyond the calibration's forty), 10.8 / 8.8 / 6.2 % of
+the fits fell below 0.05 and 6.9 / 5.5 / 3.2 % below this 0.025."""
+AUTOCORRELATION_FAIL_P = 0.0002
+"""Ljung-Box p below this reads ``fail`` for independence when Ljung-Box decides alone.
+
+A fifth of the 0.001 every other residual p-value fails at, for the reason given at
+``AUTOCORRELATION_CAUTION_P``. On the same clean quadratic fits at 20 / 40 / 400 points,
+0.55 / 1.0 / 0.6 % fell below 0.001 and 0.4 / 0.4 / 0.2 % below this 0.0002."""
 DW_MIN_RESIDUAL_DF = 3
 """The exact Durbin-Watson test is computed only with at least this many residual degrees of
 freedom: with two the statistic is confined between two values, with one it never moves."""

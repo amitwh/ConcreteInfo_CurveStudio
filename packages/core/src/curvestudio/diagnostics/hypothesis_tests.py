@@ -127,7 +127,9 @@ _METADATA: dict[str, tuple[str, tuple[str, ...], tuple[str, ...]]] = {
             "The errors are independent apart from any first-order dependence.",
         ),
         (
-            "Only a statistic is produced: the Durbin-Watson statistic has no exact p-value.",
+            "Only a statistic is given here, without a p-value: the statistic's distribution "
+            "depends on the fitted model. The fit audit gives the exact p-values for the "
+            "fitted model.",
             "Only first-order autocorrelation is detected.",
             "The statistic depends on the order of the observations.",
         ),
@@ -459,9 +461,10 @@ def ljung_box(
 def durbin_watson(residuals: FloatArray, *, tied_x: bool = False) -> DiagnosticTest:
     """Durbin-Watson statistic for first-order autocorrelation of the residuals.
 
-    The statistic is ``sum((r[t] - r[t-1])**2) / sum(r[t]**2)``.  It has no exact
-    p-value, so only the statistic is reported.  ``tied_x`` says that the ordering used
-    has duplicated x values, which makes that order ambiguous.
+    The statistic is ``sum((r[t] - r[t-1])**2) / sum(r[t]**2)``.  Only the statistic is
+    reported here: its distribution depends on the fitted model, and the fit audit
+    (``curvestudio.tools``) gives the exact p-values for it.  ``tied_x`` says that the
+    ordering used has duplicated x values, which makes that order ambiguous.
     """
     values = _as_vector(residuals, "residuals")
     unusable = _unusable(values)

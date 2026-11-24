@@ -264,6 +264,16 @@ class Scenarios:
             noise[i] = -0.8 * noise[i - 1] + rng.normal(0.0, 0.3)
         return fit(make_xy(X, 0.5 * X + noise), self.LINE)
 
+    def replicated_x(self) -> FitBundle:
+        """A straight line through 35 points, ten of which share five x values.
+
+        The replicates' order among themselves is not fixed by x.
+        """
+        spaced = np.linspace(0.0, 10.0, 30)
+        x = np.concatenate([spaced, spaced[:5]])
+        y = 0.5 * x + np.random.default_rng(0).normal(0.0, 0.1, x.size)
+        return fit(make_xy(x, y), self.LINE)
+
     @staticmethod
     def subsampled(bundle: FitBundle) -> FitBundle:
         """The same bundle, marked as holding only a subsample of its data (compact mode).
@@ -358,9 +368,9 @@ class Scenarios:
             "alternating": audit_fit(self.alternating()),
             "autocorrelated_with_spec": audit_fit(self.autocorrelated(), spec=self.LINE),
             "alternating_with_spec": audit_fit(self.alternating(), spec=self.LINE),
+            "replicated_x_with_spec": audit_fit(self.replicated_x(), spec=self.LINE),
             "clean_with_spec": audit_fit(clean, spec=self.QUADRATIC),
             "large_quadratic": audit_fit(self.large_quadratic()),
-            "large_quadratic_with_spec": audit_fit(self.large_quadratic(), spec=self.QUADRATIC),
             "overfit_with_cv": audit_fit(overfit, cv=overfit_cv),
             "line_with_cv": audit_fit(line, cv=line_cv),
             "zero_weights": audit_fit(zero_weights),

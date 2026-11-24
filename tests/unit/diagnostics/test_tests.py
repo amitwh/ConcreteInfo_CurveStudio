@@ -268,6 +268,17 @@ def test_durbin_watson_notes_tied_x_in_its_limitations() -> None:
     assert any("duplicate" in text.lower() for text in tied.limitations)
 
 
+def test_durbin_watson_says_where_its_p_values_are() -> None:
+    # This report gives the statistic alone; its distribution belongs to the fitted model,
+    # and the fit audit is what computes it.
+    result = durbin_watson(np.random.default_rng(6).normal(size=20))
+    assert result.p_value is None
+    limitations = " ".join(result.limitations)
+    assert "without a p-value" in limitations
+    assert "fit audit gives the exact p-values for the fitted model" in limitations
+    assert "no exact p-value" not in limitations
+
+
 def test_weighted_residuals_are_used_for_a_weighted_fit() -> None:
     x, y = noisy_line(n=20)
     weights = 1.0 / (x + 1.0) ** 2

@@ -41,6 +41,7 @@ from curvestudio.tools._common import Check, Inputs, core_test, skipped, split_r
 from curvestudio.tools._errors import ToolError
 from curvestudio.tools._thresholds import (
     AUTOCORRELATION_CAUTION_P,
+    AUTOCORRELATION_FAIL_P,
     CHANCE_CAUTION_Q,
     CHANCE_FAIL_Q,
     COOKS_CAUTION_REGION,
@@ -85,6 +86,7 @@ from curvestudio.workflow import FitBundle, FitSpec, WorkflowError, fit_view, fi
 
 __all__ = [
     "AUTOCORRELATION_CAUTION_P",
+    "AUTOCORRELATION_FAIL_P",
     "CHANCE_CAUTION_Q",
     "CHANCE_FAIL_Q",
     "COOKS_CAUTION_REGION",
@@ -198,7 +200,7 @@ _CLAUSES: dict[str, dict[Verdict, str]] = {
 }
 """How each residual check reads in a methods sentence, by verdict. The independence
 clause names the test that decided it: the exact Durbin-Watson test when it ran, else
-Ljung-Box, and Ljung-Box too where its small p raised the exact test's pass to a caution."""
+Ljung-Box."""
 _TEST_OF = {
     "residual_normality": ("shapiro_wilk", "Shapiro-Wilk"),
     "residual_independence": ("ljung_box", "Ljung-Box"),
@@ -217,17 +219,7 @@ def _residual_test(inp: Inputs, check_id: str) -> tuple[str, float] | None:
         return ("F test", trend.p_value) if isinstance(trend, Trend) else None
     if check_id == "residual_independence" and inp.durbin_watson is not None:
         exact = inp.durbin_watson
-        smaller = min(exact.positive, exact.negative)
-        if smaller >= DW_CAUTION_P:
-            # The exact test passed, so only a small Ljung-Box p can lie behind the verdict.
-            box = core_test(summary, "ljung_box")
-            if (
-                box is not None
-                and box.p_value is not None
-                and box.p_value < AUTOCORRELATION_CAUTION_P
-            ):
-                return "Ljung-Box", box.p_value
-        return "Durbin-Watson", smaller
+        return "Durbin-Watson", min(exact.positive, exact.negative)
     test = core_test(summary, _TEST_OF[check_id][0])
     if test is None or test.p_value is None:
         return None

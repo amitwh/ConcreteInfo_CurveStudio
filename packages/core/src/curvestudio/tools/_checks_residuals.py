@@ -5,7 +5,7 @@ The trend check, which computes something of its own, lives in :mod:`curvestudio
 
 from scipy import stats as scipy_stats
 
-from curvestudio.diagnostics import DiagnosticTest
+from curvestudio.diagnostics import DiagnosticTest, FitReport
 from curvestudio.tools._common import (
     Check,
     Inputs,
@@ -15,12 +15,14 @@ from curvestudio.tools._common import (
     no_summary,
     p_verdict,
     read_test,
+    repeated_x_rows,
     skipped,
     title_for,
     where,
 )
 from curvestudio.tools._thresholds import (
     AUTOCORRELATION_CAUTION_P,
+    AUTOCORRELATION_FAIL_P,
     CHANCE_CAUTION_Q,
     CHANCE_FAIL_Q,
     COOKS_CAUTION_REGION,
@@ -72,8 +74,9 @@ def check_residual_independence(inp: Inputs) -> AuditCheck:
     """Decided by the exact Durbin-Watson test when it ran, else by Ljung-Box alone.
 
     Either exact p-value below ``DW_FAIL_P`` fails the check, either below ``DW_CAUTION_P``
-    makes it a caution. Ljung-Box's p stays in the evidence, and a small one raises a pass
-    of the exact test to a caution.
+    makes it a caution; Ljung-Box's p is reported beside them and changes nothing. Without
+    the exact test Ljung-Box's p alone decides, on ``AUTOCORRELATION_CAUTION_P`` and
+    ``AUTOCORRELATION_FAIL_P``.
     """
     found = read_test(inp, INDEPENDENCE, "ljung_box", "Ljung-Box")
     if isinstance(found, AuditCheck):
@@ -88,23 +91,37 @@ def check_residual_independence(inp: Inputs) -> AuditCheck:
     evidence = (
         "Exact Durbin-Watson p-values for the fitted model, from its Jacobian at the "
         f"estimates over {inp.n} points ({exact.df} residual degrees of freedom). {ljung_box}"
+        " That p does not change this verdict: on the residuals of a fitted model Ljung-Box "
+        "runs low, since it ignores the parameters that were estimated, so it is reported, "
+        "not followed."
     )
-    if verdict is Verdict.PASS and p < AUTOCORRELATION_CAUTION_P:
-        verdict = Verdict.CAUTION
-        evidence += (
-            f" Ljung-Box p is below {num(AUTOCORRELATION_CAUTION_P)}, so the verdict is caution."
-        )
     return audit_check(
         INDEPENDENCE,
         verdict,
         title_for(INDEPENDENCE_TITLES, verdict),
-        evidence,
+        evidence + _on_repeated_x(inp.summary),
         statistic=(
             f"Durbin-Watson d = {num(exact.statistic)}; p = {num(exact.positive)} "
             f"(positive autocorrelation), {num(exact.negative)} (negative)"
         ),
         threshold=f"smaller Durbin-Watson p: {p_threshold(DW_CAUTION_P, DW_FAIL_P)}",
         next_step=None if verdict is Verdict.PASS else INDEPENDENCE_NEXT_STEP,
+    )
+
+
+def _on_repeated_x(summary: FitReport | None) -> str:
+    """A sentence when x values repeat among the points the fit used, else nothing.
+
+    The core orders the residuals by ascending x and breaks ties by residual size, which is
+    the data's own doing: the exact statistic's distribution is then not quite the computed
+    one, and Ljung-Box's statistic moves with the order as well.
+    """
+    repeated = 0 if summary is None else repeated_x_rows(summary)
+    if not repeated:
+        return ""
+    return (
+        f" Some x values are repeated ({repeated} rows); the order of their residuals is "
+        "arbitrary, so the test is approximate there."
     )
 
 
@@ -128,18 +145,19 @@ def _by_ljung_box(inp: Inputs, test: DiagnosticTest, p: float, ljung_box: str) -
     else:
         why = durbin_watson.reason or "the test did not apply"
         evidence += f" The Durbin-Watson statistic is not available ({why})."
+    evidence += _on_repeated_x(inp.summary)
     statistic = f"p = {num(p)}"
     if test.statistic is not None:
         lags = "" if test.df is None else f"({num(test.df)})"
         statistic = f"Q{lags} = {num(test.statistic)}, {statistic}"
-    verdict = p_verdict(p, AUTOCORRELATION_CAUTION_P, DW_FAIL_P)
+    verdict = p_verdict(p, AUTOCORRELATION_CAUTION_P, AUTOCORRELATION_FAIL_P)
     return audit_check(
         INDEPENDENCE,
         verdict,
         title_for(INDEPENDENCE_TITLES, verdict),
         evidence,
         statistic=statistic,
-        threshold=p_threshold(AUTOCORRELATION_CAUTION_P, DW_FAIL_P),
+        threshold=p_threshold(AUTOCORRELATION_CAUTION_P, AUTOCORRELATION_FAIL_P),
         next_step=None if verdict is Verdict.PASS else INDEPENDENCE_NEXT_STEP,
     )
 

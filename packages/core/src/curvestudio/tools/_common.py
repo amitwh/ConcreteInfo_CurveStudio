@@ -6,6 +6,7 @@ share here the refusal of a specification that is not the one the fit was comput
 """
 
 import math
+from collections import Counter
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
@@ -120,6 +121,16 @@ def where(inp: Inputs, positions: Sequence[int], points: int) -> str:
 def core_test(summary: FitReport, name: str) -> DiagnosticTest | None:
     """The diagnostic test the core calls ``name``, when the summary holds it."""
     return next((test for test in summary.diagnostics.tests if test.name == name), None)
+
+
+def repeated_x_rows(summary: FitReport) -> int:
+    """How many of the points the fit used share their x value with another.
+
+    Among those rows the ascending-x order is the core's choice (it breaks ties by residual
+    size), not something the data fix, which is what the exact Durbin-Watson test assumes.
+    """
+    counts = Counter(summary.residuals.x)
+    return sum(count for count in counts.values() if count > 1)
 
 
 def no_summary(inp: Inputs) -> str:
