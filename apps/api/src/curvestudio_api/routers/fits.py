@@ -12,7 +12,15 @@ from sqlalchemy.orm import Session, defer
 
 from curvestudio.data import XY
 from curvestudio.discovery import AutoFitResult
-from curvestudio.tools import CrossValidation, ToolError, all_methods_texts, audit_fit
+from curvestudio.tools import (
+    CrossValidation,
+    FitAudit,
+    MethodsText,
+    ToolError,
+    all_methods_texts,
+    audit_fit,
+    methods_text,
+)
 from curvestudio.workflow import FitBundle, FitSpec, Prediction, WorkflowError, predict
 from curvestudio_api import audit, quotas
 from curvestudio_api.deps import Context, Ctx, CurrentUser, Db, own_dataset, own_fit, own_job
@@ -237,7 +245,8 @@ def export_fit(
     format: Annotated[Literal["json", "csv", "xlsx"], Query()] = "json",
 ) -> Response:
     """Download a fit as JSON (the bundle), CSV (parameters, then fitted values per row)
-    or XLSX (the Excel workbook, with its plot sheet)."""
+    or XLSX (the Excel workbook, with its plot sheet, and the fit's methods paragraph and
+    audit on its summary sheet)."""
     fit = own_fit(db, user, fit_id)
     disposition = {"Content-Disposition": f'attachment; filename="fit-{fit.id}.{format}"'}
     if format == "json":
@@ -248,8 +257,9 @@ def export_fit(
         )
     bundle = FitBundle.model_validate(fit.bundle)
     if format == "xlsx":
+        found, texts = _export_texts(db, fit, bundle)
         return StreamingResponse(
-            iter([xlsx_bytes(bundle)]),
+            iter([xlsx_bytes(bundle, audit=found, methods=texts)]),
             media_type=XLSX_MEDIA_TYPE,
             headers=disposition,
         )
@@ -282,6 +292,22 @@ def _stored_cv(fit: Fit) -> CrossValidation | None:
     tools package re-exports it.
     """
     return None if fit.cv is None else CrossValidation.model_validate(fit.cv)
+
+
+def _export_texts(db: Session, fit: Fit, bundle: FitBundle) -> tuple[FitAudit, MethodsText | None]:
+    """The audit and the methods text a report of a stored fit carries.
+
+    The audit is the one ``GET /fits/{id}/audit`` gives: it reads the stored specification,
+    the Auto-fit ranking and the stored cross-validation. The methods text is the ``text``
+    style of ``GET /fits/{id}/methods``, or ``None`` when the tool refuses to write it, as it
+    does for a fit that did not converge: the report is then written without it.
+    """
+    spec = FitSpec.model_validate(fit.spec)
+    try:
+        texts = methods_text(bundle, spec=spec, style="text")
+    except ToolError:
+        texts = None
+    return audit_fit(bundle, spec=spec, ranking=_ranking_of(db, fit), cv=_stored_cv(fit)), texts
 
 
 @router.get("/fits/{fit_id}/audit", response_model=FitAuditOut)

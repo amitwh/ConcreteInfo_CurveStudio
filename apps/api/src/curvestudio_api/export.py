@@ -1,6 +1,6 @@
 """Export of a fit and of an Auto-fit run: the CSV writers here, and the XLSX workbook
-(a parameters table, one row per observation with fitted values, statistics and a plot
-sheet) through ``curvestudio_reporting``.
+(a summary with the fit's methods paragraph and audit, a parameters table, one row per
+observation with fitted values, statistics and a plot sheet) through ``curvestudio_reporting``.
 
 Undefined values are empty cells; in a fit export the ``note`` column says which cells are
 empty and why.
@@ -12,6 +12,7 @@ from collections.abc import Iterator
 
 from curvestudio.data import XY
 from curvestudio.discovery import AutoFitResult, RankBy
+from curvestudio.tools import FitAudit, MethodsText
 from curvestudio.workflow import FitBundle
 from curvestudio_reporting import fit_to_xlsx
 
@@ -36,11 +37,20 @@ def _lines(rows: list[list[str]]) -> str:
     return buffer.getvalue()
 
 
-def xlsx_bytes(bundle: FitBundle) -> bytes:
+def xlsx_bytes(
+    bundle: FitBundle,
+    *,
+    audit: FitAudit | None = None,
+    methods: MethodsText | None = None,
+) -> bytes:
     """The fit as an Excel workbook (summary, parameters, observations, statistics, plot),
-    written into memory and ready to stream."""
+    written into memory and ready to stream.
+
+    ``audit`` and ``methods`` are the fit's audit and methods text; given, the summary
+    sheet carries them (see ``fit_to_xlsx``).
+    """
     buffer = io.BytesIO()
-    fit_to_xlsx(bundle, buffer)
+    fit_to_xlsx(bundle, buffer, audit=audit, methods=methods)
     return buffer.getvalue()
 
 

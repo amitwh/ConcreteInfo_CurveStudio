@@ -13,7 +13,8 @@ from pathlib import Path
 from typing import cast
 
 from curvestudio.discovery import AutoFitResult, RankBy
-from curvestudio.workflow import FitBundle, format_equation
+from curvestudio.tools import FitAudit, MethodsText, ToolError, audit_fit, methods_text
+from curvestudio.workflow import FitBundle, FitSpec, format_equation
 from curvestudio_plotting import (
     FigureFormat,
     add_byline,
@@ -96,22 +97,27 @@ def export_ranking_csv(target: Path, result: AutoFitResult, rank_by: RankBy) -> 
     target.write_text(ranking_csv(result, rank_by), encoding="utf-8", newline="")
 
 
-def export_fit(target: Path, bundle: FitBundle, *, byline: str | None = None) -> None:
+def export_fit(
+    target: Path, bundle: FitBundle, *, byline: str | None = None, spec: FitSpec | None = None
+) -> None:
     """Write one fit's report; the suffix picks the format (csv writes the three tables).
 
     A ``.csv`` export writes ``<stem>.csv`` (parameters) plus ``<stem>_statistics.csv`` and
     ``<stem>_observations.csv``: the reporting layer deliberately produces three plain
     tables rather than one multi-section file, and the desktop export keeps that shape.
     A set ``byline`` is the identity text (a name, an organisation, or both); the PDF
-    report and the workbook print it as a "Prepared by …" line. JSON and CSV carry none.
+    report and the workbook print it as a "Prepared by …" line. They also carry the fit's
+    audit and its methods paragraph, both read through ``spec``, the specification the fit
+    ran with; without one each says what it can from the fit result alone. JSON and CSV
+    carry none of this.
     """
     suffix = target.suffix.lower()
     if suffix == ".json":
         target.write_text(fit_to_json(bundle), encoding="utf-8")
-    elif suffix == ".xlsx":
-        fit_to_xlsx(bundle, target, byline=byline)
-    elif suffix == ".pdf":
-        fit_to_pdf(bundle, target, byline=byline)
+    elif suffix in (".xlsx", ".pdf"):
+        found, texts = _audit_and_methods(bundle, spec)
+        write = fit_to_xlsx if suffix == ".xlsx" else fit_to_pdf
+        write(bundle, target, byline=byline, audit=found, methods=texts)
     elif suffix == ".csv":
         target.write_text(parameters_csv(bundle), encoding="utf-8", newline="")
         target.with_name(f"{target.stem}_statistics.csv").write_text(
@@ -122,6 +128,22 @@ def export_fit(target: Path, bundle: FitBundle, *, byline: str | None = None) ->
         )
     else:
         raise ValueError(f"unsupported export format {suffix!r}; use .json .xlsx .pdf or .csv")
+
+
+def _audit_and_methods(
+    bundle: FitBundle, spec: FitSpec | None
+) -> tuple[FitAudit, MethodsText | None]:
+    """The audit and the methods text the PDF report and the workbook carry.
+
+    The audit reads a fit that did not converge too; the report then prints none of it,
+    its banner says it. The methods text is ``None`` when the tool refuses to write it, as
+    it does for a fit that did not converge: the report is written without it.
+    """
+    try:
+        texts = methods_text(bundle, spec=spec, style="text")
+    except ToolError:
+        texts = None
+    return audit_fit(bundle, spec=spec), texts
 
 
 def export_publication_plot(
