@@ -61,12 +61,20 @@ WIDE_INTERVAL_SHARE = 0.99
 """A confidence interval covering at least this share of the parameter's allowed range reads
 ``caution``."""
 DW_CAUTION_P = 0.05
-"""Ljung-Box p below this, but not below ``DW_FAIL_P``, reads ``caution`` for independence.
-This task decides on Ljung-Box; the Durbin-Watson statistic itself gets no verdict."""
+"""Either exact Durbin-Watson p-value below this, but not below ``DW_FAIL_P``, reads
+``caution`` for independence: the smaller of the two is the chance of a statistic that far
+out on its side. Ljung-Box's p is supporting evidence there, and on its own it is the test
+:func:`~curvestudio.tools.audit_fit` decides by without the fit's settings."""
 DW_FAIL_P = 0.01
-"""Ljung-Box p below this reads ``fail`` for residual independence."""
+"""Either exact Durbin-Watson p-value below this reads ``fail`` for independence: the level
+every residual test fails at. It is also the level at which Ljung-Box fails when it
+decides alone."""
 AUTOCORRELATION_CAUTION_P = 0.05
-"""Ljung-Box p below this, but not below ``DW_FAIL_P``, reads ``caution`` for independence."""
+"""Ljung-Box p below this reads ``caution``: on its own when Ljung-Box decides, or by
+raising a pass of the exact Durbin-Watson test when that test decided."""
+DW_MIN_RESIDUAL_DF = 3
+"""The exact Durbin-Watson test is computed only with at least this many residual degrees of
+freedom: with two the statistic is confined between two values, with one it never moves."""
 
 BOUND_RTOL = 1e-8
 """A parameter within this relative distance of a finite bound sits on it: the fitting

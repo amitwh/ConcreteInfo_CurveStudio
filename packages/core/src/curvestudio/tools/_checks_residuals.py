@@ -5,6 +5,7 @@ The trend check, which computes something of its own, lives in :mod:`curvestudio
 
 from scipy import stats as scipy_stats
 
+from curvestudio.diagnostics import DiagnosticTest
 from curvestudio.tools._common import (
     Check,
     Inputs,
@@ -25,6 +26,7 @@ from curvestudio.tools._thresholds import (
     COOKS_CAUTION_REGION,
     COOKS_CHANCE_SHARE,
     COOKS_FAIL_REGION,
+    DW_CAUTION_P,
     DW_FAIL_P,
     NORMALITY_CAUTION_P,
     NORMALITY_FAIL_P,
@@ -67,19 +69,61 @@ def check_residual_normality(inp: Inputs) -> AuditCheck:
 
 
 def check_residual_independence(inp: Inputs) -> AuditCheck:
+    """Decided by the exact Durbin-Watson test when it ran, else by Ljung-Box alone.
+
+    Either exact p-value below ``DW_FAIL_P`` fails the check, either below ``DW_CAUTION_P``
+    makes it a caution. Ljung-Box's p stays in the evidence, and a small one raises a pass
+    of the exact test to a caution.
+    """
     found = read_test(inp, INDEPENDENCE, "ljung_box", "Ljung-Box")
     if isinstance(found, AuditCheck):
         return found
     test, p = found
-    verdict = p_verdict(p, AUTOCORRELATION_CAUTION_P, DW_FAIL_P)
-    evidence = f"Ljung-Box p = {num(p)}, residuals taken in ascending x."
+    ljung_box = f"Ljung-Box p = {num(p)}, residuals taken in ascending x."
+    exact = inp.durbin_watson
+    if exact is None:
+        return _by_ljung_box(inp, test, p, ljung_box)
+    smaller = min(exact.positive, exact.negative)
+    verdict = p_verdict(smaller, DW_CAUTION_P, DW_FAIL_P)
+    evidence = (
+        "Exact Durbin-Watson p-values for the fitted model, from its Jacobian at the "
+        f"estimates over {inp.n} points ({exact.df} residual degrees of freedom). {ljung_box}"
+    )
+    if verdict is Verdict.PASS and p < AUTOCORRELATION_CAUTION_P:
+        verdict = Verdict.CAUTION
+        evidence += (
+            f" Ljung-Box p is below {num(AUTOCORRELATION_CAUTION_P)}, so the verdict is caution."
+        )
+    return audit_check(
+        INDEPENDENCE,
+        verdict,
+        title_for(INDEPENDENCE_TITLES, verdict),
+        evidence,
+        statistic=(
+            f"Durbin-Watson d = {num(exact.statistic)}; p = {num(exact.positive)} "
+            f"(positive autocorrelation), {num(exact.negative)} (negative)"
+        ),
+        threshold=f"smaller Durbin-Watson p: {p_threshold(DW_CAUTION_P, DW_FAIL_P)}",
+        next_step=None if verdict is Verdict.PASS else INDEPENDENCE_NEXT_STEP,
+    )
+
+
+def _by_ljung_box(inp: Inputs, test: DiagnosticTest, p: float, ljung_box: str) -> AuditCheck:
+    """The check as Ljung-Box alone decides it, saying why the exact Durbin-Watson test did
+    not: a reason was given, or the summary carries no statistic to test."""
+    evidence = ljung_box
+    if inp.durbin_watson_reason is not None:
+        evidence += (
+            f" Ljung-Box decided: the exact Durbin-Watson test was not run because "
+            f"{inp.durbin_watson_reason}."
+        )
     durbin_watson = None if inp.summary is None else core_test(inp.summary, "durbin_watson")
     if durbin_watson is None:
         evidence += " The Durbin-Watson statistic is not in the summary."
     elif durbin_watson.statistic is not None:
         evidence += (
-            f" Durbin-Watson statistic {num(durbin_watson.statistic)}, which is reported "
-            "here without a verdict of its own."
+            f" Durbin-Watson statistic {num(durbin_watson.statistic)}, which carries no "
+            "verdict here."
         )
     else:
         why = durbin_watson.reason or "the test did not apply"
@@ -88,6 +132,7 @@ def check_residual_independence(inp: Inputs) -> AuditCheck:
     if test.statistic is not None:
         lags = "" if test.df is None else f"({num(test.df)})"
         statistic = f"Q{lags} = {num(test.statistic)}, {statistic}"
+    verdict = p_verdict(p, AUTOCORRELATION_CAUTION_P, DW_FAIL_P)
     return audit_check(
         INDEPENDENCE,
         verdict,
@@ -271,8 +316,8 @@ NORMALITY = Check(
 INDEPENDENCE = Check(
     "residual_independence",
     "Independence of the residuals was not tested",
-    "Points taken in sequence often carry information from their neighbours. The Ljung-Box "
-    "test asks whether residuals close together in x are also alike.",
+    "Points taken in sequence often carry information from their neighbours. The Durbin-Watson "
+    "and Ljung-Box tests ask whether residuals close together in x are also alike.",
     check_residual_independence,
 )
 CONSTANT_VARIANCE = Check(

@@ -59,6 +59,7 @@ class Scenarios:
 
     QUADRATIC = FitSpec(model=PolynomialRef(degree=2))
     LINE = FitSpec(model=PolynomialRef(degree=1))
+    WEIGHTED_QUADRATIC = QUADRATIC.model_copy(update={"use_weights": True})
     ZERO_WEIGHT_ROWS = (3, 10, 17, 24, 31)
     CUSTOM_LINE = CustomRef(equation="a*x + b", parameters=["a", "b"])
     PINNED_SPEC = FitSpec(model=CUSTOM_LINE, bounds={"a": (0.0, 5.0)})
@@ -249,6 +250,31 @@ class Scenarios:
             noise[i] = 0.8 * noise[i - 1] + rng.normal(0.0, 0.3)
         return fit(make_xy(X, 0.5 * X + noise), self.LINE)
 
+    def alternating(self) -> FitBundle:
+        """A straight line through noise that flips sign from each point to the next."""
+        rng = np.random.default_rng(0)
+        noise = np.zeros(40)
+        for i in range(1, 40):
+            noise[i] = -0.8 * noise[i - 1] + rng.normal(0.0, 0.3)
+        return fit(make_xy(X, 0.5 * X + noise), self.LINE)
+
+    @staticmethod
+    def subsampled(bundle: FitBundle) -> FitBundle:
+        """The same bundle, marked as holding only a subsample of its data (compact mode).
+
+        A compact bundle from the workflow has thousands of points, more than the exact
+        Durbin-Watson test is computed for, so the mark is set by hand on a small fit.
+        """
+        return bundle.model_copy(
+            update={"data": bundle.data.model_copy(update={"subsampled": True})}
+        )
+
+    def weights_ignored(self) -> tuple[FitBundle, XY, FitSpec]:
+        """A line that ignored the weights of weighted data, the data as uploaded, its spec."""
+        xy = make_xy(X, 0.5 * X + NOISE, np.linspace(0.5, 2.0, 40))
+        spec = self.LINE.model_copy(update={"use_weights": False})
+        return fit(xy, spec), xy, spec
+
     def large_quadratic(self, points: int = 600) -> FitBundle:
         """A clean quadratic on many points: many then have high leverage but little influence."""
         return fit(self.quadratic_xy(points, seed=0), self.QUADRATIC)
@@ -275,7 +301,7 @@ class Scenarios:
         y = quadratic(x) + np.random.default_rng(0).normal(0.0, 0.1, 45)
         weights = np.ones(45)
         weights[list(self.ZERO_WEIGHT_ROWS)] = 0.0
-        return fit(make_xy(x, y, weights), self.QUADRATIC.model_copy(update={"use_weights": True}))
+        return fit(make_xy(x, y, weights), self.WEIGHTED_QUADRATIC)
 
     def pinned_slope(self) -> FitBundle:
         """A line whose slope cannot go below 0, fitted to data that fall."""
@@ -323,10 +349,16 @@ class Scenarios:
             "six_points": audit_fit(self.six_points()),
             "exact": audit_fit(self.exact()),
             "autocorrelated": audit_fit(self.autocorrelated()),
+            "alternating": audit_fit(self.alternating()),
+            "autocorrelated_with_spec": audit_fit(self.autocorrelated(), spec=self.LINE),
+            "alternating_with_spec": audit_fit(self.alternating(), spec=self.LINE),
+            "clean_with_spec": audit_fit(clean, spec=self.QUADRATIC),
             "large_quadratic": audit_fit(self.large_quadratic()),
+            "large_quadratic_with_spec": audit_fit(self.large_quadratic(), spec=self.QUADRATIC),
             "overfit_with_cv": audit_fit(overfit, cv=overfit_cv),
             "line_with_cv": audit_fit(line, cv=line_cv),
             "zero_weights": audit_fit(zero_weights),
+            "zero_weights_with_spec": audit_fit(zero_weights, spec=self.WEIGHTED_QUADRATIC),
             "missing_weight": audit_fit(self.with_missing_weight(zero_weights)),
             "pinned_slope": audit_fit(pinned, spec=self.PINNED_SPEC),
             "pinned_without_spec": audit_fit(pinned),

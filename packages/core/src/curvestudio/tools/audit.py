@@ -3,7 +3,8 @@
 :func:`audit_fit` reads a :class:`~curvestudio.workflow.FitBundle` and returns a
 :class:`FitAudit`. It fits nothing, reads and writes no file and touches no network. Every
 number comes from the fitting core (``bundle.summary.diagnostics`` and
-``bundle.summary.residuals``); the one new computation is the residual-trend F test.
+``bundle.summary.residuals``); the new computations are the residual-trend F test and the
+exact Durbin-Watson p-values, which need the fit's own Jacobian.
 
 A verdict is a statement of evidence, never of proof. A check never passes on a number it
 does not have: without a p-value, a covariance or a summary it reads ``not_applicable`` and
@@ -17,6 +18,8 @@ the checks share, and the checks sit in :mod:`._checks_fit`, :mod:`._checks_resi
 
 from collections.abc import Mapping, Sequence
 
+from curvestudio.data import XY
+from curvestudio.diagnostics import FitReport
 from curvestudio.discovery import AutoFitResult, RankedFit
 from curvestudio.fitting import FitResult, FitStatus
 from curvestudio.statistics import CrossValidation
@@ -47,6 +50,7 @@ from curvestudio.tools._thresholds import (
     CV_FAIL_RATIO,
     DW_CAUTION_P,
     DW_FAIL_P,
+    DW_MIN_RESIDUAL_DF,
     MIN_POINTS_PER_PARAMETER_CAUTION,
     MIN_POINTS_PER_PARAMETER_FAIL,
     NORMALITY_CAUTION_P,
@@ -72,7 +76,12 @@ from curvestudio.tools._types import (
     Verdict,
 )
 from curvestudio.tools._wording import joined, needs_look, num
-from curvestudio.workflow import FitBundle, FitSpec
+from curvestudio.tools.durbin_watson import (
+    DW_EXACT_MAX_N,
+    DurbinWatsonTest,
+    durbin_watson_test,
+)
+from curvestudio.workflow import FitBundle, FitSpec, WorkflowError, fit_view, fitter_for
 
 __all__ = [
     "AUTOCORRELATION_CAUTION_P",
@@ -85,6 +94,7 @@ __all__ = [
     "CV_FAIL_RATIO",
     "DW_CAUTION_P",
     "DW_FAIL_P",
+    "DW_MIN_RESIDUAL_DF",
     "MIN_POINTS_PER_PARAMETER_CAUTION",
     "MIN_POINTS_PER_PARAMETER_FAIL",
     "NORMALITY_CAUTION_P",
@@ -176,9 +186,9 @@ _CLAUSES: dict[str, dict[Verdict, str]] = {
         Verdict.FAIL: "variance that changes with the fitted value (Breusch-Pagan p = {p})",
     },
     "residual_independence": {
-        Verdict.PASS: "no autocorrelation (Ljung-Box p = {p})",
-        Verdict.CAUTION: "possible autocorrelation (Ljung-Box p = {p})",
-        Verdict.FAIL: "autocorrelation (Ljung-Box p = {p})",
+        Verdict.PASS: "no autocorrelation ({test} p = {p})",
+        Verdict.CAUTION: "possible autocorrelation ({test} p = {p})",
+        Verdict.FAIL: "autocorrelation ({test} p = {p})",
     },
     "residual_normality": {
         Verdict.PASS: "Shapiro-Wilk p = {p}",
@@ -186,24 +196,42 @@ _CLAUSES: dict[str, dict[Verdict, str]] = {
         Verdict.FAIL: "Shapiro-Wilk p = {p}, a departure from normality",
     },
 }
-"""How each residual check reads in a methods sentence, by verdict."""
+"""How each residual check reads in a methods sentence, by verdict. The independence
+clause names the test that decided it: the exact Durbin-Watson test when it ran, else
+Ljung-Box, and Ljung-Box too where its small p raised the exact test's pass to a caution."""
 _TEST_OF = {
-    "residual_normality": "shapiro_wilk",
-    "residual_independence": "ljung_box",
-    "constant_variance": "breusch_pagan",
+    "residual_normality": ("shapiro_wilk", "Shapiro-Wilk"),
+    "residual_independence": ("ljung_box", "Ljung-Box"),
+    "constant_variance": ("breusch_pagan", "Breusch-Pagan"),
 }
 
 
-def _residual_p(inp: Inputs, check_id: str) -> float | None:
-    """The p-value a residual check turned on, read again from where the check read it."""
+def _residual_test(inp: Inputs, check_id: str) -> tuple[str, float] | None:
+    """The test a residual check turned on and its p-value, read again from where the check
+    read them."""
     summary = inp.summary
     if summary is None:
         return None
     if check_id == "residual_trend":
         trend = residual_trend(inp, summary)
-        return trend.p_value if isinstance(trend, Trend) else None
-    test = core_test(summary, _TEST_OF[check_id])
-    return None if test is None else test.p_value
+        return ("F test", trend.p_value) if isinstance(trend, Trend) else None
+    if check_id == "residual_independence" and inp.durbin_watson is not None:
+        exact = inp.durbin_watson
+        smaller = min(exact.positive, exact.negative)
+        if smaller >= DW_CAUTION_P:
+            # The exact test passed, so only a small Ljung-Box p can lie behind the verdict.
+            box = core_test(summary, "ljung_box")
+            if (
+                box is not None
+                and box.p_value is not None
+                and box.p_value < AUTOCORRELATION_CAUTION_P
+            ):
+                return "Ljung-Box", box.p_value
+        return "Durbin-Watson", smaller
+    test = core_test(summary, _TEST_OF[check_id][0])
+    if test is None or test.p_value is None:
+        return None
+    return _TEST_OF[check_id][1], test.p_value
 
 
 def _methods_fragment(inp: Inputs, checks: Mapping[str, AuditCheck]) -> str:
@@ -213,9 +241,9 @@ def _methods_fragment(inp: Inputs, checks: Mapping[str, AuditCheck]) -> str:
     clauses: dict[str, str] = {}
     for check_id, forms in _CLAUSES.items():
         verdict = checks[check_id].verdict
-        p = _residual_p(inp, check_id)
-        if verdict is not Verdict.NOT_APPLICABLE and p is not None:
-            clauses[check_id] = forms[verdict].format(p=num(p))
+        found = _residual_test(inp, check_id)
+        if verdict is not Verdict.NOT_APPLICABLE and found is not None:
+            clauses[check_id] = forms[verdict].format(p=num(found[1]), test=found[0])
     shape = [
         clauses[check_id]
         for check_id in ("residual_trend", "constant_variance", "residual_independence")
@@ -251,22 +279,92 @@ def _simpler_model(row: RankedFit) -> SimplerModel:
     )
 
 
+_WORKFLOW_REASONS = {
+    "DATA_REQUIRED": (
+        "the bundle holds only a subsample of the data and the full data were not given"
+    ),
+    "MODEL_MISMATCH": "the specification does not match the fit",
+    "DATA_MISMATCH": "the data given are not the ones the fit was computed from",
+}
+"""What the workflow's refusals mean for the exact Durbin-Watson test; any other of its
+codes reads as the workflow refusing the request."""
+_TOOL_REASONS = {
+    "RANK_DEFICIENT_DESIGN": "the parameters are not separated at the estimates",
+    "INTEGRATION_NOT_CONVERGED": "its p-value integral did not reach its tolerance",
+    "NO_DEGREES_OF_FREEDOM": "the fit has no residual degrees of freedom",
+}
+"""The same for the refusals of the test itself."""
+
+
+def _exact_durbin_watson(
+    bundle: FitBundle,
+    spec: FitSpec | None,
+    n: int,
+    k: int,
+    summary: FitReport | None,
+    data: XY | None,
+) -> tuple[DurbinWatsonTest | None, str | None]:
+    """The exact Durbin-Watson test of the fit, or ``None`` and why it was not run.
+
+    Both are ``None`` when there is nothing to add: the fit did not converge, or the
+    independence check already says that it has no Durbin-Watson statistic to test.
+    """
+    result = bundle.result
+    if spec is None:
+        return None, "the exact Durbin-Watson test needs the fit's settings"
+    if result.status is not FitStatus.CONVERGED:
+        return None, None
+    if n > DW_EXACT_MAX_N:
+        return None, (
+            f"the exact test is computed for at most {DW_EXACT_MAX_N} points and this fit has {n}"
+        )
+    if result.covariance is None:
+        return None, "the fit has no covariance matrix"
+    if n < k + DW_MIN_RESIDUAL_DF:
+        return None, (
+            f"this fit has {n} active points, fewer than its {k} parameters plus "
+            f"{DW_MIN_RESIDUAL_DF}"
+        )
+    carried = None if summary is None else core_test(summary, "durbin_watson")
+    if carried is None or carried.statistic is None:
+        return None, None
+    try:
+        # The specification's weight choice first: a fit that ignored its weights recorded
+        # the fingerprint of the data without them.
+        fitted = None if data is None else fitter_for(spec, data, result=result)[1]
+        view = fit_view(bundle, spec, data=fitted)
+    except WorkflowError as exc:
+        reason = _WORKFLOW_REASONS.get(exc.code, "the workflow refused the request")
+        return None, f"{reason} ({exc.code}: {exc.message})"
+    try:
+        return durbin_watson_test(carried.statistic, view.weighted_jacobian), None
+    except ToolError as exc:
+        return None, _TOOL_REASONS.get(exc.code, f"the test was refused ({exc.code})")
+
+
 def audit_fit(
     bundle: FitBundle,
     *,
     spec: FitSpec | None = None,
     ranking: AutoFitResult | None = None,
     cv: CrossValidation | None = None,
+    data: XY | None = None,
 ) -> FitAudit:
     """Audit a finished fit, check by check.
 
     Args:
         bundle: the fit with its data snapshot and, when it converged, its summary.
         spec: the specification the fit ran with. Its bounds are the ones checked; without
-            it only a registered model's declared bounds are known.
+            it only a registered model's declared bounds are known. Given, it also lets the
+            exact Durbin-Watson test decide the independence of the residuals.
         ranking: an Auto-fit result for the same dataset, to look for a simpler model.
         cv: a cross-validation of the same model on the same data, to set its held-out error
             against the in-sample one.
+        data: the data the fit was computed from, as they were given to it. The exact
+            Durbin-Watson test needs every point, so a compact bundle, which holds only a
+            subsample, must be given them here. The specification's weight choice is applied
+            before they are compared, so the data as uploaded are right for a fit that
+            ignored its weights too.
 
     Returns:
         The checks in a fixed order with their overall verdict, a summary, a methods
@@ -275,16 +373,20 @@ def audit_fit(
     Raises:
         ToolError: ``NO_DATA`` when the bundle carries no observations at all.
     """
-    data = bundle.data
-    if not data.x:
+    snapshot = bundle.data
+    if not snapshot.x:
         raise ToolError(
             "NO_DATA", "the bundle carries no observations, so there is nothing to audit"
         )
     result = bundle.result
-    excluded, active_rows = split_rows(data)
+    excluded, active_rows = split_rows(snapshot)
     stats = result.stats
     n = stats.n if stats is not None else len(result.fitted) - len(excluded)
     fewest, fewest_reason = simplest(ranking, result.model_id)
+    summary = bundle.summary
+    exact, exact_reason = _exact_durbin_watson(
+        bundle, spec, n, len(result.parameters), summary, data
+    )
     inputs = Inputs(
         bundle=bundle,
         result=result,
@@ -293,10 +395,12 @@ def audit_fit(
         cv=cv,
         n=n,
         k=len(result.parameters),
-        summary=bundle.summary,
+        summary=summary,
         active_rows=active_rows,
         simplest=fewest,
         simplest_reason=fewest_reason,
+        durbin_watson=exact,
+        durbin_watson_reason=exact_reason,
     )
     checks = _run_checks(inputs)
     by_id = {check.id: check for check in checks}

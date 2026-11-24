@@ -17,6 +17,7 @@ from curvestudio.tools._errors import ToolError
 from curvestudio.tools._thresholds import EXACT_FIT_RATIO, OFFSET_FLOOR_RATIO
 from curvestudio.tools._types import AuditCheck, ExcludedRow, Verdict
 from curvestudio.tools._wording import capped
+from curvestudio.tools.durbin_watson import DurbinWatsonTest
 from curvestudio.workflow import DataSnapshot, FitBundle, FitSpec, WorkflowError, check_spec
 
 
@@ -35,6 +36,11 @@ class Inputs:
     active_rows: list[int]
     simplest: RankedFit | None
     simplest_reason: str | None
+    durbin_watson: DurbinWatsonTest | None
+    """The exact Durbin-Watson test for the fitted model, when it could be computed."""
+    durbin_watson_reason: str | None
+    """Why it could not, as a clause after ``because``; ``None`` when the independence
+    check's own text already says why it has no statistic to test."""
 
 
 @dataclass(frozen=True)

@@ -6,6 +6,8 @@ a strict expected failure.
 """
 
 import re
+from dataclasses import replace
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -30,6 +32,8 @@ from curvestudio.tools.audit import (
     COOKS_CHANCE_SHARE,
     expected_cv_ratio,
 )
+from curvestudio.tools.durbin_watson import DW_EXACT_MAX_N
+from curvestudio.workflow import FitBundle, FitSpec, RegisteredRef
 
 CHECK_IDS = (
     "converged",
@@ -402,6 +406,234 @@ def test_the_trend_check_is_calibrated_on_well_behaved_fits(scenarios, n) -> Non
 
     assert verdicts.count(Verdict.PASS) >= 0.90 * len(SEEDS), _rates(verdicts)
     assert verdicts.count(Verdict.FAIL) <= 0.01 * len(SEEDS), _rates(verdicts)
+
+
+# -- residual independence ----------------------------------------------------------------------
+
+
+INDEPENDENCE_NEXT_STEP = (
+    "Plot the residuals against x in data order. If they wander, the model is missing a "
+    "shape; if they alternate, look at how the data were taken."
+)
+NUMBER = r"\d+(?:\.\d+)?(?:e[+-]?\d+)?"
+EXACT_STATISTIC = re.compile(
+    rf"Durbin-Watson d = (?P<statistic>{NUMBER}); p = (?P<positive>{NUMBER}) "
+    rf"\(positive autocorrelation\), (?P<negative>{NUMBER}) \(negative\)"
+)
+DECIDED = "Ljung-Box decided: the exact Durbin-Watson test was not run because "
+LJUNG_BOX_RULE = "p >= 0.05 pass; 0.01 <= p < 0.05 caution; p < 0.01 fail"
+
+
+def _two_p_values(check: AuditCheck) -> tuple[float, float]:
+    """The statistic's two p-values: for positive, then for negative autocorrelation."""
+    found = EXACT_STATISTIC.fullmatch(check.statistic or "")
+    assert found, check.statistic
+    return float(found.group("positive")), float(found.group("negative"))
+
+
+def _exact_statistic(statistic: str, positive: str, negative: str) -> str:
+    """The independence check's statistic as the exact test writes it, numbers as printed."""
+    return (
+        f"Durbin-Watson d = {statistic}; p = {positive} (positive autocorrelation), "
+        f"{negative} (negative)"
+    )
+
+
+def test_with_the_fit_s_settings_the_exact_durbin_watson_test_decides_independence(
+    scenarios,
+) -> None:
+    audits = scenarios.audited()
+
+    for name in ("autocorrelated_with_spec", "alternating_with_spec"):
+        check = _check(audits[name], "residual_independence")
+        assert check.verdict is Verdict.FAIL, check
+        assert check.next_step == INDEPENDENCE_NEXT_STEP
+        assert re.search(rf"Ljung-Box p = {NUMBER}", check.evidence), check.evidence
+    # Errors carried into the next point: a low statistic and a small p on that side.
+    positive, negative = _two_p_values(
+        _check(audits["autocorrelated_with_spec"], "residual_independence")
+    )
+    assert positive < 0.001 < 0.5 < negative
+    # Errors that alternate: a high statistic and a small p on the other side.
+    positive, negative = _two_p_values(
+        _check(audits["alternating_with_spec"], "residual_independence")
+    )
+    assert negative < 0.001 < 0.5 < positive
+
+    # Clean fits: one on many points, one with weights and zero-weight rows.
+    clean = _check(audits["large_quadratic_with_spec"], "residual_independence")
+    assert clean.verdict is Verdict.PASS
+    assert clean.title == "Residuals show no autocorrelation in x order"
+    assert clean.statistic == _exact_statistic("2.04", "0.676", "0.324")
+    assert clean.evidence == (
+        "Exact Durbin-Watson p-values for the fitted model, from its Jacobian at the "
+        "estimates over 600 points (597 residual degrees of freedom). Ljung-Box p = 0.697, "
+        "residuals taken in ascending x."
+    )
+    assert clean.threshold == f"smaller Durbin-Watson p: {LJUNG_BOX_RULE}"
+    assert clean.next_step is None
+    assert (
+        "no autocorrelation (Durbin-Watson p = 0.324)"
+        in audits["large_quadratic_with_spec"].methods_fragment
+    )
+
+    weighted = _check(audits["zero_weights_with_spec"], "residual_independence")
+    assert weighted.verdict is Verdict.PASS
+    assert weighted.statistic == _exact_statistic("2.04", "0.409", "0.591")
+    assert "over 40 points (37 residual degrees of freedom)" in weighted.evidence
+
+    # The first draw of seed 0 on 40 points lands in the caution band, as one clean fit in
+    # ten does. By Ljung-Box alone, which is all the audit has without the settings, it
+    # passes.
+    drawn = _check(audits["clean_with_spec"], "residual_independence")
+    assert drawn.verdict is Verdict.CAUTION
+    assert drawn.title == "Residuals may be autocorrelated in x order"
+    assert drawn.statistic == _exact_statistic("1.58", "0.0435", "0.957")
+    assert drawn.next_step == INDEPENDENCE_NEXT_STEP
+    assert _check(audits["clean"], "residual_independence").verdict is Verdict.PASS
+    assert (
+        "possible autocorrelation (Durbin-Watson p = 0.0435)"
+        in audits["clean_with_spec"].methods_fragment
+    )
+    assert "no autocorrelation (Ljung-Box p = 0.143)" in audits["clean"].methods_fragment
+
+
+def test_a_small_ljung_box_p_raises_the_exact_test_s_pass_to_caution(scenarios) -> None:
+    bundle = scenarios.large_quadratic()
+    passed = _check(audit_fit(bundle, spec=scenarios.QUADRATIC), "residual_independence")
+    assert passed.verdict is Verdict.PASS
+
+    # The same fit with Ljung-Box's p made small: the core's number, replaced.
+    assert bundle.summary is not None
+    tests = tuple(
+        test.model_copy(update={"p_value": 0.03}) if test.name == "ljung_box" else test
+        for test in bundle.summary.diagnostics.tests
+    )
+    diagnostics = bundle.summary.diagnostics.model_copy(update={"tests": tests})
+    summary = bundle.summary.model_copy(update={"diagnostics": diagnostics})
+    doubting = bundle.model_copy(update={"summary": summary})
+
+    raised = audit_fit(doubting, spec=scenarios.QUADRATIC)
+    check = _check(raised, "residual_independence")
+
+    assert check.verdict is Verdict.CAUTION
+    assert check.statistic == passed.statistic
+    assert check.evidence.endswith(
+        "Ljung-Box p = 0.03, residuals taken in ascending x. Ljung-Box p is below 0.05, so "
+        "the verdict is caution."
+    )
+    assert check.next_step == INDEPENDENCE_NEXT_STEP
+    # The methods sentence names the test behind the verdict.
+    assert "possible autocorrelation (Ljung-Box p = 0.03)" in raised.methods_fragment
+
+
+def test_without_the_fit_s_settings_ljung_box_decides_and_the_evidence_says_why(
+    scenarios,
+) -> None:
+    audits = scenarios.audited()
+
+    for name in ("autocorrelated", "alternating", "clean"):
+        check = _check(audits[name], "residual_independence")
+        assert check.statistic.startswith("Q"), check.statistic
+        assert check.threshold == LJUNG_BOX_RULE
+        assert DECIDED + "the exact Durbin-Watson test needs the fit's settings." in check.evidence
+        assert re.search(r"Durbin-Watson statistic [\d.]+", check.evidence), check.evidence
+    assert _check(audits["autocorrelated"], "residual_independence").verdict is Verdict.FAIL
+    assert _check(audits["clean"], "residual_independence").verdict is Verdict.PASS
+
+
+def test_the_evidence_says_why_the_exact_durbin_watson_test_did_not_decide(
+    scenarios, monkeypatch
+) -> None:
+    clean = scenarios.clean()
+    quadratic = scenarios.QUADRATIC
+
+    def evidence(bundle: FitBundle, spec: FitSpec | None = quadratic, **given: object) -> str:
+        return _check(audit_fit(bundle, spec=spec, **given), "residual_independence").evidence
+
+    too_many = scenarios.quadratic_fit(DW_EXACT_MAX_N + 1, seed=0)
+    assert DECIDED + (
+        f"the exact test is computed for at most {DW_EXACT_MAX_N} points and this fit has "
+        f"{DW_EXACT_MAX_N + 1}."
+    ) in evidence(too_many)
+    without = scenarios.without_covariance(clean)
+    assert DECIDED + "the fit has no covariance matrix." in evidence(without)
+    assert DECIDED + "this fit has 5 active points, fewer than its 3 parameters plus 3." in (
+        evidence(scenarios.quadratic_fit(5, seed=0))
+    )
+
+    compact = scenarios.subsampled(clean)
+    assert DECIDED + (
+        "the bundle holds only a subsample of the data and the full data were not given"
+    ) in evidence(compact)
+    whole = audit_fit(compact, spec=quadratic, data=scenarios.clean_xy())
+    assert EXACT_STATISTIC.fullmatch(_check(whole, "residual_independence").statistic or "")
+
+    other = FitSpec(model=RegisteredRef(id="exp_growth"))
+    assert DECIDED + "the specification does not match the fit" in evidence(clean, spec=other)
+    foreign = replace(scenarios.line_xy(40, seed=0), fingerprint="fp-another")
+    assert DECIDED + "the data given are not the ones the fit was computed from" in evidence(
+        clean, data=foreign
+    )
+
+    # A Jacobian with a column that is another: the test itself refuses the design.
+    x = np.asarray(clean.data.x)
+
+    def dependent_view(*_args: object, **_kwargs: object) -> SimpleNamespace:
+        return SimpleNamespace(weighted_jacobian=np.column_stack([np.ones(40), x, x]))
+
+    monkeypatch.setattr("curvestudio.tools.audit.fit_view", dependent_view)
+    assert DECIDED + "the parameters are not separated at the estimates." in evidence(clean)
+
+
+def test_the_data_as_uploaded_serve_a_fit_that_ignored_its_weights(scenarios) -> None:
+    bundle, uploaded, spec = scenarios.weights_ignored()
+    assert bundle.result.provenance.dataset_fingerprint != uploaded.fingerprint
+    compact = scenarios.subsampled(bundle)
+
+    alone = _check(audit_fit(compact, spec=spec), "residual_independence")
+    assert "subsample" in alone.evidence
+    assert alone.statistic.startswith("Q")
+
+    given = _check(audit_fit(compact, spec=spec, data=uploaded), "residual_independence")
+    assert EXACT_STATISTIC.fullmatch(given.statistic)
+    # A bundle that holds every point needs no data, and the same data change nothing.
+    whole = audit_fit(bundle, spec=spec)
+    assert whole == audit_fit(bundle, spec=spec, data=uploaded)
+    assert _check(whole, "residual_independence").statistic == given.statistic
+
+
+BELOW_THE_BAR = pytest.mark.xfail(strict=True, reason="under the 90 % pass bar on these seeds")
+
+
+@pytest.mark.parametrize(
+    "n",
+    [
+        pytest.param(20, marks=BELOW_THE_BAR),
+        40,
+        pytest.param(400, marks=BELOW_THE_BAR),
+    ],
+)
+def test_the_independence_check_is_calibrated_on_well_behaved_fits(scenarios, n) -> None:
+    # Both rules: the exact Durbin-Watson test when the fit's settings are given, Ljung-Box
+    # alone when they are not.
+    #
+    # The exact rule is a two-sided test at 10 % (either p-value below 0.05) with Ljung-Box's
+    # own 5 % laid over it, so a clean fit passes about 85 times in 100: under the 90 % bar
+    # by construction. At 20 and 400 points these forty seeds read under it; the bar stays,
+    # as a strict expected failure.
+    exact: list[Verdict] = []
+    ljung_box: list[Verdict] = []
+    for seed in SEEDS:
+        bundle = scenarios.quadratic_fit(n, seed)
+        exact.append(
+            _check(audit_fit(bundle, spec=scenarios.QUADRATIC), "residual_independence").verdict
+        )
+        ljung_box.append(_check(audit_fit(bundle), "residual_independence").verdict)
+
+    for verdicts in (exact, ljung_box):
+        assert verdicts.count(Verdict.PASS) >= 0.90 * len(SEEDS), _rates(verdicts)
+        assert verdicts.count(Verdict.FAIL) <= 0.01 * len(SEEDS), _rates(verdicts)
 
 
 # -- cross-validation ----------------------------------------------------------------------------
