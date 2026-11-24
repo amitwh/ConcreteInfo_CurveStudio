@@ -1,7 +1,7 @@
 """The ``audit`` job's code, which runs inside a job process (top-level and picklable: ``spawn``
 start).
 
-:func:`run_cross_validation_job` cross-validates one stored fit on the table it was fitted to.
+:func:`run_cross_validation_job` cross-validates one stored fit on the data it was computed from.
 """
 
 from typing import Any
@@ -21,21 +21,25 @@ def run_cross_validation_job(
     bundle: dict[str, Any],
     fit_spec: dict[str, Any],
 ) -> dict[str, Any]:
-    """Cross-validate one stored fit on its dataset's table.
+    """Cross-validate one stored fit on the data it was computed from.
 
     ``spec`` is the job's own (the fit's id and the fold count), ``bundle`` the fit's stored
-    bundle and ``fit_spec`` the specification it ran with. The data are decoded as the fit job
-    decodes them, so a compact bundle is cross-validated on the whole table it was fitted to.
-    Returns ``{"ok": True, "cv": <CrossValidation JSON>}`` or, for an input the tool refuses,
-    ``{"ok": False, "code": ..., "message": ...}``.
+    bundle and ``fit_spec`` the specification it ran with. Returns ``{"ok": True, "cv":
+    <CrossValidation JSON>}`` or, for an input the tool refuses, ``{"ok": False, "code": ...,
+    "message": ...}``.
     """
-    xy = decode_payload(payload, x_name=x_name, y_name=y_name, fingerprint=fingerprint)
+    stored = FitBundle.model_validate(bundle)
+    table = None
+    if stored.data.subsampled:
+        # A compact bundle holds only a subsample of the data it was fitted to: the fit is
+        # cross-validated on the dataset's whole table, which is that data. Any other bundle
+        # holds all of its data, and that is the fit's own even when it is itself a subsample of
+        # the dataset (a row of an Auto-fit run on a very large dataset, opened): the tools
+        # refuse any other data, so the table is not handed to them for it.
+        table = decode_payload(payload, x_name=x_name, y_name=y_name, fingerprint=fingerprint)
     try:
         cv = cross_validate(
-            FitBundle.model_validate(bundle),
-            FitSpec.model_validate(fit_spec),
-            data=xy,
-            folds=spec["folds"],
+            stored, FitSpec.model_validate(fit_spec), data=table, folds=spec["folds"]
         )
     except ToolError as exc:
         return {"ok": False, "code": exc.code, "message": exc.message}

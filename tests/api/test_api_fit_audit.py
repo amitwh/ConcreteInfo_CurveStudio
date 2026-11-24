@@ -15,9 +15,11 @@ from sqlalchemy import Engine, inspect, select
 from sqlalchemy.orm import Session
 
 from conftest import linear_csv, make_settings, signup, upload
-from curvestudio.discovery import AutoFitResult
+from curvestudio.discovery import AutoFitResult, subsample
+from curvestudio.discovery.engine import SUBSAMPLE_N
 from curvestudio.tools import ToolError, all_methods_texts, audit_fit, cross_validate
-from curvestudio.workflow import FitBundle, FitSpec
+from curvestudio.workflow import FitBundle, FitSpec, fit_dataset
+from curvestudio.workflow.bundle import COMPACT_MAX_POINTS
 from curvestudio_api.app import create_app
 from curvestudio_api.export_openapi import generate
 from curvestudio_api.migrations import _config, current_revision, upgrade_to_head
@@ -301,6 +303,71 @@ def test_the_cross_validation_job_uses_no_quota(fitted: dict[str, Any]) -> None:
     job = wait_for_job(client, headers, start_cross_validation(client, headers, second_fit))
     assert job["status"] == "succeeded", job
     assert fits_stored() == before
+
+
+@pytest.fixture(scope="module")
+def large(fitted: dict[str, Any]) -> dict[str, Any]:
+    """A dataset past the compact limit, so that a stored fit holds only a subsample of it.
+
+    ``whole`` is an ordinary fit of the whole table. ``on_subsample`` is what opening a row of
+    an Auto-fit run on so large a dataset stores when the run fitted that row on the dataset's
+    subsample: a fit whose own data is that subsample, carried whole.
+    """
+    client, headers = fitted["client"], fitted["headers"]
+    dataset = upload(client, headers, linear_csv(COMPACT_MAX_POINTS + 500)).json()
+    whole = fit_through_api(client, headers, dataset["id"], POLY1)
+    stored = stored_fit(client, whole["result_ref"])
+    assert stored["bundle"].data.subsampled
+    spec = FitSpec.model_validate(POLY1)
+    bundle = fit_dataset(subsample(stored["xy"]), spec, compact=True)
+    user_id = uuid.UUID(client.get(f"{API}/me", headers=headers).json()["id"])
+    row = Fit(
+        user_id=user_id,
+        dataset_id=uuid.UUID(dataset["id"]),
+        spec=spec.model_dump(mode="json"),
+        bundle=bundle.model_dump(mode="json"),
+        status=bundle.result.status.value,
+    )
+    with client.app.state.ctx.session_factory() as db:  # type: ignore[attr-defined]
+        db.add(row)
+        db.commit()
+        on_subsample = str(row.id)
+    return {"whole": whole["result_ref"], "on_subsample": on_subsample}
+
+
+def test_a_compact_bundle_is_cross_validated_on_the_whole_table(
+    fitted: dict[str, Any], large: dict[str, Any]
+) -> None:
+    client, headers = fitted["client"], fitted["headers"]
+    fit_id = large["whole"]
+    stored = stored_fit(client, fit_id)
+    assert len(stored["bundle"].data.x) == COMPACT_MAX_POINTS < len(stored["xy"].x)
+    with pytest.raises(ToolError) as refused:  # what the bundle carries is only a subsample of it
+        cross_validate(stored["bundle"], stored["spec"], folds=5)
+    assert refused.value.code == "DATA_REQUIRED"
+
+    job = wait_for_job(client, headers, start_cross_validation(client, headers, fit_id))
+    assert job["status"] == "succeeded", job
+    expected = cross_validate(stored["bundle"], stored["spec"], data=stored["xy"], folds=5)
+    assert stored_fit(client, fit_id)["cv"] == expected.model_dump(mode="json")
+
+
+def test_a_fit_made_on_a_subsample_is_cross_validated_on_that_subsample(
+    fitted: dict[str, Any], large: dict[str, Any]
+) -> None:
+    client, headers = fitted["client"], fitted["headers"]
+    fit_id = large["on_subsample"]
+    stored = stored_fit(client, fit_id)
+    assert not stored["bundle"].data.subsampled
+    assert stored["bundle"].data.n_total == SUBSAMPLE_N < len(stored["xy"].x)
+    with pytest.raises(ToolError) as refused:  # the whole table is not what it was computed from
+        cross_validate(stored["bundle"], stored["spec"], data=stored["xy"], folds=5)
+    assert refused.value.code == "DATA_MISMATCH"
+
+    job = wait_for_job(client, headers, start_cross_validation(client, headers, fit_id))
+    assert job["status"] == "succeeded", job
+    expected = cross_validate(stored["bundle"], stored["spec"], folds=5)
+    assert stored_fit(client, fit_id)["cv"] == expected.model_dump(mode="json")
 
 
 def test_an_impossible_fold_count_is_refused_before_a_job_is_queued(
