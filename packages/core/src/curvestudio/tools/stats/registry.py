@@ -14,7 +14,6 @@ column in a form it cannot read is refused when the tool is registered.
 
 import types
 import typing
-import warnings
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from importlib import import_module
@@ -70,29 +69,22 @@ FieldKind = Literal["column", "group", "columns", "option"]
 columns by name, or an option passed on to the model to check."""
 
 
-with warnings.catch_warnings():
-    # The field is ``schema`` by the contract. Pydantic warns that it shadows a method it has
-    # deprecated since its version 2.0, and that nothing here calls.
-    warnings.filterwarnings(
-        "ignore", message=r'Field name "schema" in "RequestField" shadows', category=UserWarning
-    )
+class RequestField(BaseModel):
+    """One field of a request, as a surface shows it to a person.
 
-    class RequestField(BaseModel):
-        """One field of a request, as a surface shows it to a person.
+    ``required`` is what the model says. ``option_schema`` is an option's JSON schema, built
+    from the field's own type and ``Field`` (the whole model has none to give, since a column
+    has none); ``None`` for the three column kinds, which are chosen by name.
+    """
 
-        ``required`` is what the model says. ``schema`` is an option's JSON schema, built from
-        the field's own type and ``Field`` (the whole model has none to give, since a column
-        has none); ``None`` for the three column kinds, which are chosen by name.
-        """
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
-        model_config = ConfigDict(frozen=True, extra="forbid")
-
-        name: str
-        label: str
-        kind: FieldKind
-        required: bool
-        description: str | None
-        schema: dict[str, Any] | None  # type: ignore[assignment]  # shadows that method
+    name: str
+    label: str
+    kind: FieldKind
+    required: bool
+    description: str | None
+    option_schema: dict[str, Any] | None
 
 
 class ToolInfo(BaseModel):
@@ -200,7 +192,7 @@ class _Field:
     name: str
     info: FieldInfo
     kind: FieldKind
-    schema: dict[str, Any] | None
+    option_schema: dict[str, Any] | None
     """An option's JSON schema; ``None`` for the three column kinds."""
 
     @classmethod
@@ -265,7 +257,7 @@ class _Field:
             kind=self.kind,
             required=self.info.is_required(),
             description=self.info.description,
-            schema=self.schema,
+            option_schema=self.option_schema,
         )
 
 

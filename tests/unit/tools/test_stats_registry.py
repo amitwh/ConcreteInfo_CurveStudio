@@ -324,7 +324,13 @@ def test_info_lists_every_field_with_its_kind_label_and_requirement() -> None:
         ("level", "option", "Level", False),
         ("method", "option", "Method", False),
     ]
-    assert [field.schema is None for field in info.fields] == [True, True, True, False, False]
+    assert [field.option_schema is None for field in info.fields] == [
+        True,
+        True,
+        True,
+        False,
+        False,
+    ]
     assert info.fields[3].description == "The confidence level."
     assert info.fields[4].description is None
 
@@ -333,13 +339,13 @@ def test_an_option_carries_the_schema_its_field_would_publish() -> None:
     registry, _ = _registry()
     level, method = registry.info("toy").fields[3:]
 
-    assert level.schema is not None
-    assert level.schema["type"] == "number"
-    assert level.schema["description"] == "The confidence level."
-    assert level.schema["default"] == 0.95
-    assert method.schema is not None
-    assert method.schema["type"] == "string"
-    assert method.schema["enum"] == ["a", "b"]
+    assert level.option_schema is not None
+    assert level.option_schema["type"] == "number"
+    assert level.option_schema["description"] == "The confidence level."
+    assert level.option_schema["default"] == 0.95
+    assert method.option_schema is not None
+    assert method.option_schema["type"] == "string"
+    assert method.option_schema["enum"] == ["a", "b"]
 
 
 def test_a_constrained_option_and_an_enum_option_publish_their_rules() -> None:
@@ -353,17 +359,23 @@ def test_a_constrained_option_and_an_enum_option_publish_their_rules() -> None:
     info = registry.info("strict")
     assert info.needs_data is False
     rows, alternative, ratio = info.fields
-    assert rows.schema is not None
-    assert (rows.schema["type"], rows.schema["minimum"], rows.schema["maximum"]) == (
+    assert rows.option_schema is not None
+    assert (
+        rows.option_schema["type"],
+        rows.option_schema["minimum"],
+        rows.option_schema["maximum"],
+    ) == (
         "integer",
         2,
         50,
     )
-    assert rows.schema["description"] == "Rows per group."
-    assert alternative.schema is not None
-    assert alternative.schema["enum"] == ["two-sided", "greater"]
-    assert ratio.schema is not None
-    assert {"type": "number"} in ratio.schema["anyOf"] and {"type": "null"} in ratio.schema["anyOf"]
+    assert rows.option_schema["description"] == "Rows per group."
+    assert alternative.option_schema is not None
+    assert alternative.option_schema["enum"] == ["two-sided", "greater"]
+    assert ratio.option_schema is not None
+    assert {"type": "number"} in ratio.option_schema["anyOf"] and {
+        "type": "null"
+    } in ratio.option_schema["anyOf"]
 
 
 def test_a_label_comes_from_the_field_then_the_known_names_then_its_own_name() -> None:

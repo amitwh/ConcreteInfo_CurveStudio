@@ -7,7 +7,7 @@ import numpy as np
 from pydantic import BaseModel, ConfigDict
 from scipy import stats as scipy_stats
 
-from curvestudio.tools.stats._base import Estimate, Test, check_level
+from curvestudio.tools.stats._base import Estimate, HypothesisTest, check_level
 from curvestudio.tools.stats._display import Cell, ColumnKind, FloatArray, Table, TableColumn
 
 GROUP_COLUMNS: tuple[tuple[str, str, ColumnKind], ...] = (
@@ -144,12 +144,12 @@ def group_table(summaries: Sequence[GroupSummary], *, level: float) -> Table:
     )
 
 
-def holm(tests: Sequence[Test]) -> tuple[Test, ...]:
+def holm(tests: Sequence[HypothesisTest]) -> tuple[HypothesisTest, ...]:
     """``tests`` with Holm's step-down adjusted p-values, in the order given.
 
-    Each test that carries a p-value comes back as a new :class:`Test` whose ``adjusted_p`` is
-    set and whose ``adjustment`` reads ``Holm``. A test with no p-value is left as it is, and
-    counts for nothing in the family.
+    Each test that carries a p-value comes back as a new :class:`HypothesisTest` whose
+    ``adjusted_p`` is set and whose ``adjustment`` reads ``Holm``. A test with no p-value is
+    left as it is, and counts for nothing in the family.
     """
     carrying: list[tuple[float, int]] = []
     for index, test in enumerate(tests):
@@ -163,7 +163,7 @@ def holm(tests: Sequence[Test]) -> tuple[Test, ...]:
         running = max(running, (family - step + 1) * p_value)
         adjusted[index] = min(1.0, running)
     return tuple(
-        Test(**{**test.model_dump(), "adjusted_p": adjusted[index], "adjustment": "Holm"})
+        HypothesisTest(**{**test.model_dump(), "adjusted_p": adjusted[index], "adjustment": "Holm"})
         if index in adjusted
         else test
         for index, test in enumerate(tests)

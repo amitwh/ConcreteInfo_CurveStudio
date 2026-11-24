@@ -25,6 +25,7 @@ from curvestudio.tools.stats import (
     Counts,
     Estimate,
     HistogramPlot,
+    HypothesisTest,
     MultiLinePlot,
     QQPlot,
     ScatterPlot,
@@ -41,10 +42,6 @@ from curvestudio.tools.stats import (
     stride,
     table,
 )
-
-# The model is called Test by its contract. Under that name pytest would take it for a class
-# of tests, so it is imported here under another.
-from curvestudio.tools.stats import Test as StatsTest
 from curvestudio.tools.stats._display import (
     MAX_PLOT_POINTS,
     Band,
@@ -87,8 +84,8 @@ def _result(**blocks: object) -> ToolResult:
     return ToolResult(**{**base, **blocks})  # type: ignore[arg-type]
 
 
-def _test(p: float | None) -> StatsTest:
-    return StatsTest(
+def _test(p: float | None) -> HypothesisTest:
+    return HypothesisTest(
         name="Toy",
         method="A toy test, two-sided",
         null_hypothesis="the two means are equal",
@@ -112,7 +109,7 @@ def test_a_nan_or_infinite_number_is_refused_wherever_it_sits() -> None:
     with pytest.raises(ValueError, match="statistic"):
         _result(
             tests=(
-                StatsTest(
+                HypothesisTest(
                     name="t",
                     method="m",
                     null_hypothesis="h",
@@ -180,6 +177,9 @@ def test_a_zero_p_value_reads_as_below_one_e_minus_300() -> None:
     assert test.p_value_text == "p < 1e-300"
 
 
+# One list, in ascending order of p, that pins the whole rule: the web app keeps the same
+# list against its TypeScript copy of it (apps/web/src/... : pText), so a change here is a
+# change there. ``None`` first, since it is not a number.
 @pytest.mark.parametrize(
     ("p", "text"),
     [
@@ -187,14 +187,19 @@ def test_a_zero_p_value_reads_as_below_one_e_minus_300() -> None:
         (0.0, "p < 1e-300"),
         (3.2e-300, "p < 0.0001"),
         (0.00009, "p < 0.0001"),
-        (0.00012, "p = 0.00012"),
-        (0.0324, "p = 0.0324"),
-        (0.3171, "p = 0.317"),
-        (1.0, "p = 1.000"),
         # The two cut-offs themselves fall on the side that still shows the number.
         (0.0001, "p = 0.0001"),
+        (0.00012, "p = 0.00012"),
+        (0.0324, "p = 0.0324"),
+        # Below 0.1 three significant digits are kept, and their trailing zeros dropped.
+        (0.05, "p = 0.05"),
+        (0.09999, "p = 0.1"),
+        # From 0.1 three decimals are shown, trailing zeros and all.
         (0.1, "p = 0.100"),
+        (0.3171, "p = 0.317"),
+        (0.5, "p = 0.500"),
         (0.9996, "p = 1.000"),
+        (1.0, "p = 1.000"),
     ],
 )
 def test_p_text(p: float | None, text: str) -> None:
@@ -686,7 +691,7 @@ def toy_tool() -> ToolResult:
         level=0.95,
         estimates=(Estimate(label="Mean of y", value=2.0, se=0.5, lower=0.9, upper=3.1),),
         tests=(
-            StatsTest(
+            HypothesisTest(
                 name="Welch",
                 method="Welch's t test, two-sided",
                 null_hypothesis="the two groups have the same mean",

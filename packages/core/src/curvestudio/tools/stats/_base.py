@@ -20,7 +20,9 @@ The :class:`~curvestudio.tools.ToolError` codes the statistical tools raise:
   tool's own, or a key that is not one of its fields.
 - ``TOO_MANY_ROWS``: more rows than the tool is built for (``ToolSpec.max_rows``).
 - ``CONSTANT_COLUMN``: a column that does not vary, so a statistic is undefined.
-- ``LEVELS_REQUIRED``: a grouping the tool cannot run without was not given.
+- ``LEVELS_REQUIRED``: the levels a tool needs are not there — a group column without
+  exactly the levels the tool needs (two, for a comparison of two groups), or a named level
+  (the control of a Dunnett test) that the column does not hold.
 - ``UNKNOWN_TOOL``: a name the registry does not hold.
 - ``UNKNOWN_COLUMN``: a column name that is not in the dataset (the data layer's code, raised
   again).
@@ -63,7 +65,7 @@ class Estimate(BaseModel):
     upper: float | None = None
 
 
-class Test(BaseModel):
+class HypothesisTest(BaseModel):
     """One hypothesis test as every surface shows it.
 
     ``name`` is short, for a table; ``method`` is exact, for the methods text. A test that
@@ -155,7 +157,7 @@ class ToolResult(BaseModel):
     title: str
     level: float
     estimates: tuple[Estimate, ...] = ()
-    tests: tuple[Test, ...] = ()
+    tests: tuple[HypothesisTest, ...] = ()
     assumptions: tuple[AuditCheck, ...] = ()
     warnings: tuple[str, ...] = ()
     interpretation: str

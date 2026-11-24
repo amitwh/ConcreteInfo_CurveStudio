@@ -12,11 +12,8 @@ from scipy import stats
 from statsmodels.stats.multitest import multipletests
 
 from curvestudio.tools import ToolError
-
-# The model is called Test by its contract. Under that name pytest would take it for a class
-# of tests, so it is imported here under another.
-from curvestudio.tools.stats import Test as StatsTest
 from curvestudio.tools.stats import (
+    HypothesisTest,
     box_plot,
     confidence_interval,
     group_summary,
@@ -32,8 +29,8 @@ from curvestudio.tools.stats._display import MAX_PLOT_POINTS
 from curvestudio.tools.stats._tables import GroupSummary
 
 
-def _test(p: float | None) -> StatsTest:
-    return StatsTest(
+def _test(p: float | None) -> HypothesisTest:
+    return HypothesisTest(
         name=f"p = {p}",
         method="A toy test, two-sided",
         null_hypothesis="no difference",
