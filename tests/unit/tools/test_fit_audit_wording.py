@@ -1,6 +1,5 @@
 """The words the audit produces: evidence never proof, advice where needed, a reason where not."""
 
-import re
 from collections.abc import Iterator
 
 import pytest
@@ -8,18 +7,7 @@ import pytest
 from curvestudio.discovery import AutoFitConfig, AutoFitResult, CandidateMetrics, RankedFit
 from curvestudio.statistics import CrossValidation
 from curvestudio.tools import FitAudit, Verdict, audit_fit
-
-FORBIDDEN = re.compile(
-    r"\b(prove[ns]?|proofs?|confirm\w*|validate[ds]?|guarantee\w*|certif\w*)", re.IGNORECASE
-)
-"""Words that claim proof rather than state evidence, in any casing (``improve`` is not one)."""
-CROSS_VALIDATION = re.compile(r"cross-validat(ed|ion)", re.IGNORECASE)
-"""Removed before the search: the phrase names a method and claims nothing about the fit."""
-
-
-def _claims_proof(text: str) -> bool:
-    """Whether ``text`` contains a forbidden word outside the phrase ``cross-validation``."""
-    return FORBIDDEN.search(CROSS_VALIDATION.sub("", text)) is not None
+from curvestudio.tools._wording import claims_proof
 
 
 def _words(audit: FitAudit) -> Iterator[tuple[str, str]]:
@@ -81,9 +69,9 @@ def audits(scenarios, bounded_line) -> dict[str, FitAudit]:
 
 
 def test_no_check_claims_proof(audits) -> None:
-    assert _claims_proof("This proves the fit") and _claims_proof("Does not Confirm")
-    assert _claims_proof("Cross-validation validates the model")
-    assert not _claims_proof(
+    assert claims_proof("This proves the fit") and claims_proof("Does not Confirm")
+    assert claims_proof("Cross-validation validates the model")
+    assert not claims_proof(
         "Do not delete data to improve a fit. Cross-validation was not run; the "
         "cross-validated error is 0.4."
     )
@@ -92,7 +80,7 @@ def test_no_check_claims_proof(audits) -> None:
         (name, where, text)
         for name, audit in audits.items()
         for where, text in _words(audit)
-        if _claims_proof(text)
+        if claims_proof(text)
     ]
     assert claims == []
     for audit in audits.values():

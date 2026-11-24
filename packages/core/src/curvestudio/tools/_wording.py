@@ -1,5 +1,6 @@
 """The fixed advice of the checks and the small text helpers they share."""
 
+import re
 from collections.abc import Sequence
 
 from curvestudio.tools._thresholds import LISTED_MAX
@@ -48,6 +49,18 @@ DEGREE_NAMES = {
     6: "sextic",
 }
 """Legendre degrees as a sentence names them; a higher one is ``degree 7`` and so on."""
+
+FORBIDDEN_WORDS = re.compile(
+    r"\b(prove[ns]?|proofs?|confirm\w*|validate[ds]?|guarantee\w*|certif\w*)", re.IGNORECASE
+)
+"""Words that claim proof rather than state evidence, in any casing (``improve`` is not one)."""
+CROSS_VALIDATION_PHRASE = re.compile(r"cross-validat(ed|ion)", re.IGNORECASE)
+"""Removed before the search: the phrase names a method and claims nothing about the fit."""
+
+
+def claims_proof(text: str) -> bool:
+    """Whether ``text`` contains a forbidden word outside the phrase ``cross-validation``."""
+    return FORBIDDEN_WORDS.search(CROSS_VALIDATION_PHRASE.sub("", text)) is not None
 
 
 def num(value: float) -> str:
