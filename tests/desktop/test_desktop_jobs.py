@@ -129,6 +129,57 @@ def test_cancel_drops_the_callbacks_of_a_finished_job(qtbot) -> None:
     assert results == [] and errors == []  # cancelled: nothing delivered
 
 
+@pytest.mark.parametrize("sync", [True, False])
+def test_on_settled_follows_the_outcome_once_the_runner_is_idle(sync: bool, qtbot) -> None:
+    """``on_settled`` comes after the result or the error, and after the runner is not busy."""
+    events: list[str] = []
+
+    def settled() -> None:
+        events.append("settled")
+
+    runner = JobRunner(sync=sync)
+    runner.busy_changed.connect(lambda busy: events.append(f"busy {busy}"))
+    runner.submit(
+        str.upper,
+        "ab",
+        on_result=lambda result: events.append(f"result {result}"),
+        on_error=lambda _error: None,
+        on_settled=settled,
+    )
+    if not sync:
+        qtbot.waitUntil(lambda: "settled" in events, timeout=5000)
+    assert events == ["busy True", "result AB", "busy False", "settled"]
+
+    events.clear()
+    runner.submit(
+        lambda: 1 / 0,
+        on_result=lambda _result: None,
+        on_error=lambda error: events.append(type(error).__name__),
+        on_settled=settled,
+    )
+    if not sync:
+        qtbot.waitUntil(lambda: "settled" in events, timeout=5000)
+    assert events == ["busy True", "ZeroDivisionError", "busy False", "settled"]
+
+
+def test_a_cancelled_job_still_tells_its_owner_it_has_settled(qtbot) -> None:
+    """Cancel drops the result and the error; ``on_settled`` alone still arrives."""
+    release = threading.Event()
+    events: list[str] = []
+    runner = JobRunner()
+    handle = runner.submit(
+        lambda: release.wait(timeout=5),
+        on_result=lambda _result: events.append("result"),
+        on_error=lambda _error: events.append("error"),
+        on_settled=lambda: events.append("settled"),
+    )
+    handle.cancel()
+    release.set()
+    qtbot.waitUntil(lambda: bool(events), timeout=5000)
+    assert events == ["settled"]
+    assert not runner.is_busy()
+
+
 def test_busy_signal_flips_true_then_false(qtbot) -> None:
     runner = JobRunner()
     states: list[bool] = []

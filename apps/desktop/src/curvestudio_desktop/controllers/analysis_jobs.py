@@ -1,15 +1,16 @@
-"""Off-thread job bodies for the analysis controller: Auto-fit, fits, validation.
+"""Off-thread job bodies for the analysis controller: Auto-fit, fits, validation, cross-validation.
 
 Every function here runs on a worker thread (the :class:`~curvestudio_desktop.jobs.JobRunner`)
 or, for Auto-fit, on that thread while the engine itself uses its process pool. They import
-QtCore-free code only — workflow, discovery, reporting — so they are importable and testable
-without a display. Nothing here touches project or UI state; results are delivered through
-the runner's callbacks.
+QtCore-free code only — workflow, tools, discovery, reporting — so they are importable and
+testable without a display. Nothing here touches project or UI state; results are delivered
+through the runner's callbacks.
 """
 
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Literal
 
 import numpy as np
 
@@ -26,6 +27,7 @@ from curvestudio.discovery import (
     partial_ranking,
     plan_run,
 )
+from curvestudio.tools import CrossValidation, cross_validate
 from curvestudio.workflow import FitBundle, FitSpec, bundle_for_candidate, fit_dataset
 
 LIVE_RANK_INTERVAL_SECONDS = 0.25
@@ -127,6 +129,17 @@ def open_candidate_job(xy: XY, result: AutoFitResult, candidate_id: str) -> FitB
     return bundle_for_candidate(xy, result, candidate_id)
 
 
+def cross_validate_job(
+    bundle: FitBundle, spec: FitSpec, folds: int | Literal["loo"]
+) -> CrossValidation:
+    """Cross-validate one fit for its audit: a refit per fold, so never on the GUI thread.
+
+    ``cross_validate`` raises ``ToolError`` for what it cannot use (a fit that did not
+    converge, a fold count the data cannot carry); it reaches the caller as that exception.
+    """
+    return cross_validate(bundle, spec, folds=folds)
+
+
 def check_spec_job(spec: FitSpec, weighted: bool) -> None:
     """Dry-run ``spec`` on a small synthetic data set to surface configuration mistakes.
 
@@ -157,6 +170,7 @@ __all__ = [
     "AutoFitLive",
     "LiveSink",
     "check_spec_job",
+    "cross_validate_job",
     "fit_job",
     "open_candidate_job",
     "run_autofit",

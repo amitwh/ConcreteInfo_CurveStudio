@@ -49,7 +49,7 @@ from curvestudio.workflow import (
     format_equation,
 )
 from curvestudio_desktop.theme import mono_font
-from curvestudio_desktop.views.fit_audit_view import FitAuditView
+from curvestudio_desktop.views.fit_audit_view import CrossValidateCaller, FitAuditView
 from curvestudio_reporting.csv_report import statistics_rows
 
 EMPTY_TEXT = "No fit yet"
@@ -180,9 +180,11 @@ class ResultsTabs(QWidget):
         parent: QWidget | None = None,
         *,
         predict_fn: PredictCaller | None = None,
+        cross_validate_fn: CrossValidateCaller | None = None,
     ) -> None:
         super().__init__(parent)
         self._predict_fn = predict_fn
+        self._cross_validate_fn = cross_validate_fn
         self._bundle: FitBundle | None = None
         self._spec: FitSpec | None = None
         self._ranking: AutoFitResult | None = None
@@ -258,7 +260,7 @@ class ResultsTabs(QWidget):
         self._tabs_of.append(self._diagnostics_tab)
 
     def _build_audit(self) -> None:
-        self._audit = FitAuditView()
+        self._audit = FitAuditView(cross_validate_fn=self._cross_validate_fn)
         self._audit_tab = _Tab(self._audit)
         self._tabs_of.append(self._audit_tab)
 

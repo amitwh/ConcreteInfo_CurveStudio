@@ -13,7 +13,9 @@ lives on the runner's thread). A job function may declare a ``progress`` paramet
 given. Cancellation is cooperative: ``cancel()`` marks the handle and the runner
 drops the job's callbacks; a job already running is never interrupted mid-flight
 (these jobs are side-effect-free reads — parsing, serialising — so dropping the
-result is always safe).
+result is always safe). ``on_settled`` is the one callback a cancelled job still
+gets: it says the job has ended, so an owner that lent the job a state (a disabled
+button, for one) can take it back.
 
 ``JobRunner(sync=True)`` runs everything on the calling thread and invokes the
 callbacks inline — the deterministic mode tests and the selftest use.
@@ -73,6 +75,7 @@ class _JobSpec:
     on_result: Callable[[Any], None]
     on_error: Callable[[BaseException], None]
     on_progress: ProgressCallback | None
+    on_settled: Callable[[], None] | None
 
 
 class _Runnable(QRunnable):
@@ -163,14 +166,20 @@ class JobRunner(QObject):
         on_result: Callable[[Any], None],
         on_error: Callable[[BaseException], None],
         on_progress: ProgressCallback | None = None,
+        on_settled: Callable[[], None] | None = None,
     ) -> JobHandle:
-        """Run ``fn(*args)`` off-thread; deliver its outcome on the GUI thread."""
+        """Run ``fn(*args)`` off-thread; deliver its outcome on the GUI thread.
+
+        ``on_settled`` is delivered once the job has ended, however it ended: after the
+        result or the error, and on its own after a cancel, whose result and error are
+        dropped.
+        """
         handle = JobHandle()
         signals = _JobSignals()
         kwargs: dict[str, Any] = {}
         if on_progress is not None and _declares_progress(fn):
             kwargs["progress"] = lambda done, total: signals.progressed.emit(handle, done, total)
-        self._jobs[handle] = _JobSpec(handle, on_result, on_error, on_progress)
+        self._jobs[handle] = _JobSpec(handle, on_result, on_error, on_progress, on_settled)
         # slots of `self` (a QObject on the GUI thread): worker emissions queue
         signals.succeeded.connect(self._on_succeeded)
         signals.failed.connect(self._on_failed)
@@ -202,9 +211,12 @@ class JobRunner(QObject):
             spec.on_progress(done, total)
 
     def _on_settled(self, handle: object) -> None:
-        self._jobs.pop(_as_handle(handle), None)
+        spec = self._jobs.pop(_as_handle(handle), None)
+        # the runner's own bookkeeping first: a callback that raises cannot leave it busy
         if not self._jobs:
             self.busy_changed.emit(False)
+        if spec is not None and spec.on_settled is not None:
+            spec.on_settled()
 
     # -- helpers -----------------------------------------------------------------------------
 

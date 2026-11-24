@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
 from curvestudio.discovery import AutoFitResult
 from curvestudio.workflow import FitBundle, FitSpec, format_equation
 from curvestudio_desktop.theme import mono_font
+from curvestudio_desktop.views.fit_audit_view import CrossValidateCaller
 from curvestudio_desktop.views.fit_summary import apply_status_badge
 from curvestudio_desktop.views.ranking_table import format_metric, format_precise
 from curvestudio_desktop.views.results_tabs import PredictCaller, ResultsTabs
@@ -49,6 +50,7 @@ class DetailsDialog(QDialog):
         *,
         settings: QSettings | None = None,
         predict_fn: PredictCaller | None = None,
+        cross_validate_fn: CrossValidateCaller | None = None,
     ) -> None:
         super().__init__(parent, Qt.WindowType.Window)
         self._settings = settings if settings is not None else QSettings()
@@ -59,7 +61,7 @@ class DetailsDialog(QDialog):
         self.setMinimumSize(*MINIMUM_SIZE)
         self.setSizeGripEnabled(True)
         self.setModal(False)
-        self.results = ResultsTabs(predict_fn=predict_fn)
+        self.results = ResultsTabs(predict_fn=predict_fn, cross_validate_fn=cross_validate_fn)
         self._build()
         self._restore_geometry()
         self.clear()

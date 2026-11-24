@@ -10,19 +10,39 @@ check that had no number to read (``not_applicable``) is quiet: its title, the e
 that says why, and a next step when the tool set one. A verdict is a statement of evidence,
 never of proof — the tools' wording obeys this, and none of it is reworded here.
 
-The content is a scroll area: eleven blocks outrun the details window. Nothing here reaches
-up to a window; whatever the tab needs from outside is injected into it.
+The content is a scroll area: eleven blocks outrun the details window.
+
+Cross-validation is the one check that is not a reading: it refits the model once per
+fold, so it runs in a background job. The tab cannot reach a window, so its owner injects
+the callable that runs the job (as the Predict tab is given ``predict_fn``); the tab calls
+it with the bundle, the spec and the chosen folds, and audits again with the result when it
+returns. While the job runs the button says so and cannot start another. A refusal is
+shown in the tool's words and the tab is left as it was; so is a cancelled job, which
+reports nothing but its ending. A result stays with the fit it was run for: it is not
+saved with the project, and showing another fit drops it, together with the tab's
+interest in any job still running for the fit that was.
 """
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from typing import Literal, Protocol
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QScrollArea, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QComboBox,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QScrollArea,
+    QVBoxLayout,
+    QWidget,
+)
 
 from curvestudio.discovery import AutoFitResult
 from curvestudio.tools import (
     AuditCheck,
+    CrossValidation,
     ExcludedRow,
     FitAudit,
     SimplerModel,
@@ -37,6 +57,36 @@ EXCLUDED_LISTED_MAX = 8
 """How many excluded rows the line names; the rest are counted."""
 NEXT_STEP_INDENT = 12
 """Pixels the next step sits in from the evidence above it."""
+CROSS_VALIDATION = "cross_validation"
+"""The id of the one check the tab can decide by running something."""
+FOLD_CHOICES: tuple[tuple[str, int | Literal["loo"]], ...] = (
+    ("5 folds", 5),
+    ("10 folds", 10),
+    ("Leave one out", "loo"),
+)
+RUN_TEXT = "Run cross-validation check"
+RUN_AGAIN_TEXT = "Run again"
+RUNNING_TEXT = "Running cross-validation…"
+
+
+class CrossValidateCaller(Protocol):
+    """How the tab reaches a cancellable background job for one cross-validation.
+
+    The owner runs ``cross_validate(bundle, spec, folds)`` off the GUI thread and, on the
+    GUI thread, calls ``on_result`` or ``on_error`` — never both — and then ``on_settled``:
+    always, and on its own after a cancel, whose result and error are dropped.
+    """
+
+    def __call__(
+        self,
+        bundle: FitBundle,
+        spec: FitSpec,
+        folds: int | Literal["loo"],
+        *,
+        on_result: Callable[[CrossValidation], None],
+        on_error: Callable[[BaseException], None],
+        on_settled: Callable[[], None],
+    ) -> None: ...
 
 
 def en_in_digits(count: int) -> str:
@@ -197,13 +247,24 @@ def _build_block(check: AuditCheck) -> _Block:
 class FitAuditView(QWidget):
     """The Fit audit tab's content: an audit laid out as the tools give it."""
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(
+        self, parent: QWidget | None = None, *, cross_validate_fn: CrossValidateCaller | None = None
+    ) -> None:
         super().__init__(parent)
+        self._cross_validate_fn = cross_validate_fn
+        self._bundle: FitBundle | None = None
+        self._spec: FitSpec | None = None
+        self._ranking: AutoFitResult | None = None
         self._audit: FitAudit | None = None
         self._blocks: list[_Block] = []
+        self._cv: CrossValidation | None = None
+        self._cv_serial = 0
+        """Counts runs and shown fits: a callback carries the number it was started under."""
+        self._cv_running = False
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.addWidget(self._build_scroll())
+        self._sync_cross_validation_button()
 
     # -- construction ------------------------------------------------------------------------
 
@@ -231,29 +292,65 @@ class FitAuditView(QWidget):
         self._column.addLayout(self._checks)
         self.simpler_label = _line("auditSimplerModel")
         self._column.addWidget(self.simpler_label)
+        self._column.addLayout(self._build_cross_validation_control())
+        self.error_label = QLabel("")
+        self.error_label.setObjectName("bannerError")
+        self.error_label.setWordWrap(True)
+        self.error_label.hide()
+        self._column.addWidget(self.error_label)
         self._column.addStretch(1)
         scroll.setWidget(body)
         return scroll
+
+    def _build_cross_validation_control(self) -> QHBoxLayout:
+        control = QHBoxLayout()
+        self.cross_validate_combo = QComboBox()
+        self.cross_validate_combo.setObjectName("auditFolds")
+        for label, folds in FOLD_CHOICES:
+            self.cross_validate_combo.addItem(label, folds)
+        self.cross_validate_button = QPushButton(RUN_TEXT)
+        self.cross_validate_button.setObjectName("auditCrossValidateButton")
+        self.cross_validate_button.clicked.connect(self._run_cross_validation)
+        control.addWidget(self.cross_validate_combo)
+        control.addWidget(self.cross_validate_button)
+        control.addStretch(1)
+        return control
 
     # -- filling -----------------------------------------------------------------------------
 
     def show_audit(
         self, bundle: FitBundle, spec: FitSpec | None, ranking: AutoFitResult | None
     ) -> None:
-        """Audit ``bundle`` in place: with the spec it ran with and, when there is one, its run."""
+        """Audit ``bundle`` in place: with the spec it ran with and, when there is one, its run.
+
+        A cross-validation result belongs to the fit it was run for: showing another fit
+        drops it, and ends the tab's interest in a job still running for the fit that was.
+        """
+        self._bundle, self._spec, self._ranking = bundle, spec, ranking
+        self._reset_cross_validation()
+        self._audit_and_lay_out()
+        self._sync_cross_validation_button()
+
+    def clear(self) -> None:
+        """No fit is shown: nothing of the fit that was stays on the tab."""
+        self._bundle = self._spec = self._ranking = None
+        self._reset_cross_validation()
+        self._lay_out(None)
+        self._sync_cross_validation_button()
+
+    def _audit_and_lay_out(self) -> None:
+        """Audit the shown fit with whatever cross-validation it has, then lay the audit out."""
+        bundle = self._bundle
+        if bundle is None:
+            return
         try:
-            audit = audit_fit(bundle, spec=spec, ranking=ranking)
+            audit = audit_fit(bundle, spec=self._spec, ranking=self._ranking, cv=self._cv)
         except ToolError as exc:  # a bundle with no observations: the tool's own words say so
             self._lay_out(None)
             apply_status_badge(self.overall_badge, "Not applicable", state="not_applicable")
             self.summary_label.setText(str(exc))
             return
-        self._audit = audit
         self._lay_out(audit)
-
-    def clear(self) -> None:
-        """No fit is shown: nothing of the fit that was stays on the tab."""
-        self._lay_out(None)
 
     def _lay_out(self, audit: FitAudit | None) -> None:
         self._audit = audit
@@ -289,6 +386,90 @@ class FitAuditView(QWidget):
         label.setText(text)
         label.setVisible(bool(text))
 
+    # -- the cross-validation check ----------------------------------------------------------
+
+    def _run_cross_validation(self) -> None:
+        """Run the check for the shown fit with the chosen folds, in a job the owner provides."""
+        bundle, spec, caller = self._bundle, self._spec, self._cross_validate_fn
+        if bundle is None or spec is None or caller is None or self._cv_running:
+            return
+        folds = self.cross_validate_combo.currentData()
+        self._cv_serial += 1
+        serial = self._cv_serial
+        self._cv_running = True
+        self._show(self.error_label, "")
+        self._sync_cross_validation_button()
+        # In the runner's synchronous mode the callbacks run inside this very call, so
+        # nothing below it may touch the button again.
+        caller(
+            bundle,
+            spec,
+            folds,
+            on_result=lambda result: self._on_cross_validated(serial, result),
+            on_error=lambda error: self._on_cross_validation_failed(serial, error),
+            on_settled=lambda: self._on_cross_validation_settled(serial),
+        )
+
+    def _reset_cross_validation(self) -> None:
+        """Forget the result and the running job of the fit that was; the error line with them."""
+        self._cv = None
+        self._cv_running = False
+        self._cv_serial += 1
+        self._show(self.error_label, "")
+
+    def _on_cross_validated(self, serial: int, result: CrossValidation) -> None:
+        if serial != self._cv_serial:
+            return  # a run for the fit that was shown before: not this fit's number
+        self._cv = result
+        self._audit_and_lay_out()
+
+    def _on_cross_validation_failed(self, serial: int, error: BaseException) -> None:
+        if serial != self._cv_serial:
+            return
+        self._show(self.error_label, str(error))  # a ToolError reads "CODE: message"
+
+    def _on_cross_validation_settled(self, serial: int) -> None:
+        if serial != self._cv_serial:
+            return
+        self._cv_running = False
+        self._sync_cross_validation_button()
+
+    def _cross_validation_decided(self) -> bool:
+        """Whether the check has a verdict; it reads not applicable until a run completes."""
+        audit = self._audit
+        if audit is None:
+            return False
+        check = next((check for check in audit.checks if check.id == CROSS_VALIDATION), None)
+        return check is not None and check.verdict is not Verdict.NOT_APPLICABLE
+
+    def _cross_validation_availability(self) -> tuple[bool, str]:
+        """Whether the check can be run for the shown fit, and, when not, why (its tool tip)."""
+        bundle = self._bundle
+        if bundle is None or self._cross_validate_fn is None:
+            return False, ""
+        if str(bundle.result.status) != "converged":
+            reason = bundle.result.termination_reason
+            head = f"The fit did not converge ({reason})" if reason else "The fit did not converge"
+            return False, f"{head}, so there is no model to cross-validate"
+        if self._audit is None:
+            return False, "There is nothing in this fit to cross-validate"
+        if self._spec is None:
+            return False, "The fit has no specification, so it cannot be cross-validated"
+        return True, ""
+
+    def _sync_cross_validation_button(self) -> None:
+        """The button's text, state and tool tip, from what is shown and what is running."""
+        if self._cv_running:
+            self.cross_validate_button.setText(RUNNING_TEXT)
+            self.cross_validate_button.setEnabled(False)
+            self.cross_validate_button.setToolTip("")
+            return
+        decided = self._cross_validation_decided()
+        self.cross_validate_button.setText(RUN_AGAIN_TEXT if decided else RUN_TEXT)
+        available, reason = self._cross_validation_availability()
+        self.cross_validate_button.setEnabled(available)
+        self.cross_validate_button.setToolTip("" if available else reason)
+
     # -- reading -----------------------------------------------------------------------------
 
     def audit(self) -> FitAudit | None:
@@ -299,5 +480,9 @@ class FitAuditView(QWidget):
         """What each check's block shows, in the audit's order."""
         return [block.view() for block in self._blocks]
 
+    def cross_validation(self) -> CrossValidation | None:
+        """The cross-validation run for the shown fit (``None`` until one completes)."""
+        return self._cv
 
-__all__ = ["AuditBlockView", "FitAuditView", "en_in_digits"]
+
+__all__ = ["AuditBlockView", "CrossValidateCaller", "FitAuditView", "en_in_digits"]

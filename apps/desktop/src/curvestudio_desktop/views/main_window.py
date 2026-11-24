@@ -8,7 +8,7 @@ axes, reset, export) delegate to PlotView. Nothing here computes anything.
 from collections.abc import Callable, Sequence
 from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from PySide6.QtCore import QByteArray, QPoint, QSettings, QSize, Qt, Signal
 from PySide6.QtGui import QAction, QActionGroup, QCloseEvent, QKeySequence
@@ -29,9 +29,10 @@ from PySide6.QtWidgets import (
 )
 
 from curvestudio.discovery import AutoFitResult, RankedFit, RowCurve
+from curvestudio.tools import CrossValidation
 from curvestudio.workflow import FitBundle, FitSpec, ImportOutcome
 from curvestudio_desktop import APP_NAME, NO_NETWORK_NOTE
-from curvestudio_desktop.controllers import exports
+from curvestudio_desktop.controllers import analysis_jobs, exports
 from curvestudio_desktop.controllers.analysis import MODE_AUTOFIT, AnalysisController
 from curvestudio_desktop.controllers.analysis_jobs import AutoFitLive
 from curvestudio_desktop.controllers.project import ProjectController
@@ -133,7 +134,10 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(self.plot_view)
         # one reusable, non-modal details window per main window (never a stack of them)
         self.details_dialog = DetailsDialog(
-            self, settings=self._settings, predict_fn=self.analysis.predict
+            self,
+            settings=self._settings,
+            predict_fn=self.analysis.predict,
+            cross_validate_fn=self._cross_validate,
         )
         # one reusable, non-modal help window per main window
         self.help_dialog: HelpDialog | None = None
@@ -546,12 +550,14 @@ class MainWindow(QMainWindow):
         on_error: Callable[[BaseException], None] | None = None,
         on_progress: Callable[[int, int], None] | None = None,
         cancellable: bool = False,
+        on_settled: Callable[[], None] | None = None,
     ) -> JobHandle:
         """Run ``fn`` off the GUI thread with a busy cursor and a status message.
 
         A cancellable job (open, import: side-effect-free reads) also gets the
         status-bar Cancel button; save does not — cancel after the write started
-        would not un-write the file.
+        would not un-write the file. ``on_settled`` is delivered when the job has
+        ended, a cancelled one included, whose result and error are dropped.
         """
         suffix = " (Cancel to stop)" if cancellable else ""
         self.statusBar().showMessage(f"{label}…{suffix}")
@@ -570,6 +576,7 @@ class MainWindow(QMainWindow):
             on_result=on_result,
             on_error=on_error or self._job_failed,
             on_progress=progress if on_progress is not None else None,
+            on_settled=on_settled,
         )
         self._running_job = handle if cancellable else None
         return handle
@@ -875,6 +882,44 @@ class MainWindow(QMainWindow):
         if not isinstance(dataset_id, str):
             return None
         return self.analysis.autofit_for_display(dataset_id)
+
+    def _cross_validate(
+        self,
+        bundle: FitBundle,
+        spec: FitSpec,
+        folds: int | Literal["loo"],
+        *,
+        on_result: Callable[[CrossValidation], None],
+        on_error: Callable[[BaseException], None],
+        on_settled: Callable[[], None],
+    ) -> None:
+        """The fit audit's cross-validation, run as a job the status bar can cancel.
+
+        The audit tab cannot reach the window, so the window hands it this callable when it
+        builds the details dialog; it is how the tab reaches the job machinery, as the
+        opening of an Auto-fit row reaches it. A refusal is the tab's to show, inline.
+        """
+        status = self.statusBar()
+
+        def finished(result: CrossValidation) -> None:
+            on_result(result)
+            status.showMessage("Cross-validation finished")
+
+        def refused(error: BaseException) -> None:
+            on_error(error)
+            status.showMessage(f"Cross-validation could not run: {error}")
+
+        self._run_job(
+            "Cross-validating",
+            analysis_jobs.cross_validate_job,
+            bundle,
+            spec,
+            folds,
+            on_result=finished,
+            on_error=refused,
+            on_settled=on_settled,
+            cancellable=True,
+        )
 
     def _plot_candidate(self, candidate_id: str) -> None:
         """A ranking row was selected: draw its stored curve and mirror it in the summary.

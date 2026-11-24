@@ -1,23 +1,33 @@
-"""The Fit audit tab in the details window.
+"""The Fit audit tab and its cross-validation check in the details window.
 
 Every fit here is real: the bundles come from ``fit_dataset`` and every expected verdict is
 ``audit_fit`` on that bundle, so the tests say what the tab shows of the tools' own words.
+The cross-validation job is driven at two levels: at the tab, through a caller that keeps
+its callbacks until the test delivers an outcome; and through a real window, where the job
+runs on the thread pool, is cancelled from the status bar and settles back into the tab.
 """
+
+import threading
+from collections.abc import Callable
+from typing import Literal
 
 import numpy as np
 import pytest
-from PySide6.QtWidgets import QLabel
+from PySide6.QtWidgets import QApplication, QLabel
 from test_desktop_autofit_run import NOISY_QUADRATIC, TINY, wait_stored
 
 from curvestudio.data import XY
 from curvestudio.discovery import AutoFitConfig, AutoFitResult, CandidateMetrics, RankedFit
 from curvestudio.tools import (
+    CrossValidation,
     ToolError,
     Verdict,
     audit_fit,
+    cross_validate,
 )
 from curvestudio.workflow import CustomRef, FitBundle, FitSpec, PolynomialRef, fit_dataset
 from curvestudio_desktop.theme import LIGHT_TOKENS
+from curvestudio_desktop.views import main_window as main_window_module
 from curvestudio_desktop.views.fit_audit_view import AuditBlockView, en_in_digits
 from curvestudio_desktop.views.fit_summary import apply_status_badge
 from curvestudio_desktop.views.results_tabs import ResultsTabs
@@ -31,6 +41,12 @@ UNIDENTIFIABLE = FitSpec(
     model=CustomRef(equation="a*x + b*x", parameters=["a", "b"]), initial={"a": 1.0, "b": 2.0}
 )
 """Two parameters along one direction (``a*x + b*x``): the fit can never converge."""
+STATE = {
+    "pass": "ok",
+    "caution": "caution",
+    "fail": "failed",
+    "not_applicable": "not_applicable",
+}
 
 
 def quadratic(x: np.ndarray) -> np.ndarray:
@@ -111,6 +127,29 @@ def _row(model_id: str, name: str, parameters: int, delta: float, rank: int) -> 
         delta_aicc=delta,
         redundant_with=None,
     )
+
+
+class PendingCrossValidation:
+    """Stands in for the window's job: keeps the callbacks until the test delivers an outcome."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[FitBundle, FitSpec, int | Literal["loo"]]] = []
+        self.deliver: Callable[[CrossValidation], None] | None = None
+        self.refuse: Callable[[BaseException], None] | None = None
+        self.settle: Callable[[], None] | None = None
+
+    def __call__(
+        self,
+        bundle: FitBundle,
+        spec: FitSpec,
+        folds: int | Literal["loo"],
+        *,
+        on_result: Callable[[CrossValidation], None],
+        on_error: Callable[[BaseException], None],
+        on_settled: Callable[[], None],
+    ) -> None:
+        self.calls.append((bundle, spec, folds))
+        self.deliver, self.refuse, self.settle = on_result, on_error, on_settled
 
 
 def fit_quadratic(window, qtbot, write_file) -> None:
@@ -413,6 +452,139 @@ def test_an_audit_the_tool_refuses_shows_its_message(qtbot) -> None:
 # -- the cross-validation check --------------------------------------------------------------
 
 
+def test_cross_validation_stays_disabled_when_the_audit_itself_was_refused(qtbot) -> None:
+    """The bundle with no observations: there is nothing to cross-validate either."""
+    spec = FitSpec(model=PolynomialRef(degree=1))
+    tabs = make_tabs(qtbot, cross_validate_fn=PendingCrossValidation())
+    tabs.show_bundle(fit([], [], spec), spec, None)
+    assert tabs._audit.audit() is None
+    assert not tabs._audit.cross_validate_button.isEnabled()
+
+
+@pytest.mark.parametrize(("index", "folds"), [(0, 5), (1, 10), (2, "loo")])
+def test_the_button_runs_the_injected_caller_with_the_chosen_folds(
+    qtbot, clean, index, folds
+) -> None:
+    caller = PendingCrossValidation()
+    tabs = make_tabs(qtbot, cross_validate_fn=caller)
+    tabs.show_bundle(clean, QUADRATIC, None)
+    view = tabs._audit
+    assert block(view, "cross_validation").state == "not_applicable"
+    assert view.cross_validate_button.text() == "Run cross-validation check"
+
+    view.cross_validate_combo.setCurrentIndex(index)
+    view.cross_validate_button.click()
+    assert caller.calls == [(clean, QUADRATIC, folds)]
+    # while it runs: the button says so and cannot start a second job
+    assert not view.cross_validate_button.isEnabled()
+    assert view.cross_validate_button.text() == "Running cross-validation…"
+    view.cross_validate_button.click()
+    assert len(caller.calls) == 1
+    assert block(view, "cross_validation").state == "not_applicable"
+
+    cv = cross_validate(clean, QUADRATIC, folds=folds)
+    caller.deliver(cv)
+    caller.settle()
+    expected = check_of(audit_fit(clean, spec=QUADRATIC, cv=cv), "cross_validation")
+    shown = block(view, "cross_validation")
+    assert shown.state != "not_applicable"
+    assert shown.state == STATE[expected.verdict.value]
+    assert (shown.title, shown.evidence, shown.explanation) == (
+        expected.title,
+        expected.evidence,
+        expected.explanation,
+    )
+    assert view.audit() == audit_fit(clean, spec=QUADRATIC, cv=cv)
+    assert view.summary_label.text() == view.audit().summary
+    assert view.cross_validation() is cv
+    # decided now: the same choice can be run again, and nothing is reported as wrong
+    assert view.cross_validate_button.isEnabled()
+    assert view.cross_validate_button.text() == "Run again"
+    assert view.error_label.isHidden()
+
+
+def test_a_refused_cross_validation_shows_its_message_and_leaves_every_block_as_it_was(
+    qtbot, clean
+) -> None:
+    caller = PendingCrossValidation()
+    tabs = make_tabs(qtbot, cross_validate_fn=caller)
+    tabs.show_bundle(clean, QUADRATIC, None)
+    view = tabs._audit
+    before = view.blocks()
+    summary = view.summary_label.text()
+
+    view.cross_validate_button.click()
+    caller.refuse(ToolError("INVALID_FOLDS", "folds must lie between 2 and the number of points"))
+    caller.settle()
+
+    assert view.error_label.text() == (
+        "INVALID_FOLDS: folds must lie between 2 and the number of points"
+    )
+    assert not view.error_label.isHidden()
+    assert view.blocks() == before
+    assert view.summary_label.text() == summary
+    assert view.cross_validation() is None
+    # still undecided, so it is a first run again, not "Run again"
+    assert view.cross_validate_button.isEnabled()
+    assert view.cross_validate_button.text() == "Run cross-validation check"
+
+
+def test_a_cancelled_cross_validation_leaves_the_tab_as_it_was(qtbot, clean) -> None:
+    caller = PendingCrossValidation()
+    tabs = make_tabs(qtbot, cross_validate_fn=caller)
+    tabs.show_bundle(clean, QUADRATIC, None)
+    view = tabs._audit
+    before = view.blocks()
+
+    view.cross_validate_button.click()
+    caller.settle()  # cancelled: the job ends and nothing is delivered
+
+    assert view.blocks() == before
+    assert view.cross_validation() is None
+    assert view.error_label.isHidden()
+    assert view.error_label.text() == ""
+    assert view.cross_validate_button.isEnabled()
+    assert view.cross_validate_button.text() == "Run cross-validation check"
+
+
+def test_a_result_that_arrives_after_another_fit_was_shown_is_ignored(
+    qtbot, clean, unconverged
+) -> None:
+    caller = PendingCrossValidation()
+    tabs = make_tabs(qtbot, cross_validate_fn=caller)
+    tabs.show_bundle(clean, QUADRATIC, None)
+    view = tabs._audit
+    view.cross_validate_button.click()
+    first = block(view, "cross_validation")
+
+    tabs.show_bundle(unconverged, UNIDENTIFIABLE, None)  # another fit while the job runs
+    second = block(view, "cross_validation")
+    assert first.state != second.state or first.evidence != second.evidence
+
+    caller.deliver(cross_validate(clean, QUADRATIC, folds=5))
+    caller.refuse(ToolError("INVALID_FOLDS", "late"))
+    caller.settle()
+    assert block(view, "cross_validation") == second  # the old job's result is not this fit's
+    assert view.error_label.isHidden()
+    assert not view.cross_validate_button.isEnabled()  # this fit's own state stands
+
+
+def test_cross_validation_is_disabled_for_a_fit_that_did_not_converge(qtbot, unconverged) -> None:
+    caller = PendingCrossValidation()
+    tabs = make_tabs(qtbot, cross_validate_fn=caller)
+    tabs.show_bundle(unconverged, UNIDENTIFIABLE, None)
+    view = tabs._audit
+    button = view.cross_validate_button
+    assert not button.isEnabled()
+    assert button.toolTip() == (
+        "The fit did not converge "
+        f"({unconverged.result.termination_reason}), so there is no model to cross-validate"
+    )
+    button.click()
+    assert caller.calls == []
+    assert block(view, "cross_validation").state == "not_applicable"
+
+
 # -- the methods text ------------------------------------------------------------------------
 
 
@@ -448,6 +620,77 @@ def test_a_fit_restored_from_a_saved_project_shows_its_audit(
     assert view.summary_label.text() == view.audit().summary
     assert block(view, "cross_validation").state == "not_applicable"  # a result is never stored
     assert window.analysis.run_count == 0  # nothing re-ran anywhere in this test
+
+
+def test_the_window_runs_the_cross_validation_as_a_background_job(
+    make_window, qtbot, write_file
+) -> None:
+    window = make_window()
+    qtbot.addWidget(window)
+    window.show()
+    fit_quadratic(window, qtbot, write_file)
+    dialog = window.details_dialog
+    bundle, spec = dialog.bundle(), dialog.spec()
+    assert bundle is not None and spec is not None
+    view = dialog.results._audit
+    dialog.results._tabs.setCurrentIndex(dialog.results.TAB_TITLES.index("Fit audit"))
+    QApplication.processEvents()
+    assert view.isVisible()
+
+    view.cross_validate_combo.setCurrentIndex(1)  # 10 folds
+    before = view.blocks()
+    view.cross_validate_button.click()
+    assert window.statusBar().currentMessage() == "Cross-validating… (Cancel to stop)"
+    assert not view.cross_validate_button.isEnabled()
+    assert not window._cancel_button.isHidden()
+
+    qtbot.waitUntil(lambda: view.cross_validation() is not None, timeout=30000)
+    cv = view.cross_validation()
+    assert cv is not None and cv.folds == 10 and cv.status == "ok"
+    expected = check_of(audit_fit(bundle, spec=spec, cv=cv), "cross_validation")
+    shown = block(view, "cross_validation")
+    assert shown.state == STATE[expected.verdict.value]
+    assert (shown.title, shown.evidence) == (expected.title, expected.evidence)
+    assert [item.check_id for item in before] == [item.check_id for item in view.blocks()]
+    assert view.cross_validate_button.text() == "Run again"
+    assert view.cross_validate_button.isEnabled()
+    assert window.statusBar().currentMessage() == "Cross-validation finished"
+    qtbot.waitUntil(lambda: window._cancel_button.isHidden(), timeout=10000)
+
+
+def test_a_cross_validation_cancelled_from_the_status_bar_leaves_the_tab_as_it_was(
+    make_window, qtbot, write_file, monkeypatch
+) -> None:
+    window = make_window()
+    qtbot.addWidget(window)
+    window.show()
+    fit_quadratic(window, qtbot, write_file)
+    view = window.details_dialog.results._audit
+    started, release = threading.Event(), threading.Event()
+
+    def slow(bundle: FitBundle, spec: FitSpec, folds: int | Literal["loo"]) -> CrossValidation:
+        started.set()
+        release.wait(timeout=10)
+        return cross_validate(bundle, spec, folds=folds)
+
+    monkeypatch.setattr(main_window_module.analysis_jobs, "cross_validate_job", slow)
+    before = view.blocks()
+    view.cross_validate_button.click()
+    qtbot.waitUntil(started.is_set, timeout=10000)
+    assert not view.cross_validate_button.isEnabled()
+    cancel = window._cancel_button
+    assert not cancel.isHidden() and cancel.isEnabled()
+
+    cancel.click()
+    assert not cancel.isEnabled()
+    assert window.statusBar().currentMessage() == "Cancelling…"
+    release.set()
+    qtbot.waitUntil(lambda: view.cross_validate_button.isEnabled(), timeout=10000)
+    assert view.blocks() == before
+    assert view.cross_validation() is None
+    assert view.error_label.isHidden()
+    assert view.cross_validate_button.text() == "Run cross-validation check"
+    qtbot.waitUntil(lambda: cancel.isHidden(), timeout=10000)
 
 
 def test_an_autofit_rows_audit_is_given_the_run_and_a_manual_fits_is_not(
