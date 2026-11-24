@@ -11,6 +11,9 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, defer
 
 from curvestudio.data import XY
+from curvestudio.discovery import AutoFitResult
+from curvestudio.tools import ToolError, all_methods_texts, audit_fit
+from curvestudio.tools.cross_validation import CrossValidation
 from curvestudio.workflow import FitBundle, FitSpec, Prediction, WorkflowError, predict
 from curvestudio_api import audit, quotas
 from curvestudio_api.deps import Context, Ctx, CurrentUser, Db, own_dataset, own_fit, own_job
@@ -18,11 +21,18 @@ from curvestudio_api.errors import ApiError
 from curvestudio_api.export import XLSX_MEDIA_TYPE, csv_chunks, xlsx_bytes
 from curvestudio_api.jobs import ACTIVE, Task
 from curvestudio_api.logging_setup import request_id_var
-from curvestudio_api.orm import Dataset, Fit, Job, User
-from curvestudio_api.schemas import FitSummaryOut, JobCreatedOut, JobOut, PredictIn
+from curvestudio_api.orm import Autofit, Dataset, Fit, Job, User
+from curvestudio_api.schemas import (
+    FitAuditOut,
+    FitMethodsOut,
+    FitSummaryOut,
+    JobCreatedOut,
+    JobOut,
+    PredictIn,
+)
 from curvestudio_api.specs import check_spec
 from curvestudio_api.storage import decode_payload
-from curvestudio_api.workflow_errors import api_error
+from curvestudio_api.workflow_errors import api_error, tool_api_error
 
 router = APIRouter(tags=["fits"])
 
@@ -228,3 +238,60 @@ def export_fit(
     dataset = own_dataset(db, user, fit.dataset_id)
     chunks = csv_chunks(bundle, _stored_xy(dataset))
     return StreamingResponse(chunks, media_type="text/csv; charset=utf-8", headers=disposition)
+
+
+# -- audit -----------------------------------------------------------------------------------------
+
+
+def _stored_fit(fit: Fit) -> tuple[FitBundle, FitSpec]:
+    """The fit's stored bundle and the specification it ran with, as the core's types."""
+    return FitBundle.model_validate(fit.bundle), FitSpec.model_validate(fit.spec)
+
+
+def _ranking_of(db: Session, fit: Fit) -> AutoFitResult | None:
+    """The Auto-fit result a fit opened from a row was ranked in: ``None`` for an ordinary fit,
+    and once the fit's run has been deleted."""
+    if fit.autofit_id is None:
+        return None
+    stored = db.scalar(select(Autofit.result).where(Autofit.id == fit.autofit_id))
+    return None if stored is None else AutoFitResult.model_validate(stored)
+
+
+def _stored_cv(fit: Fit) -> CrossValidation | None:
+    """The cross-validation stored on the fit; ``None`` until one has been run.
+
+    ``CrossValidation`` is the statistics layer's, which the API may not import directly: it
+    is taken from the tools module that produces it.
+    """
+    return None if fit.cv is None else CrossValidation.model_validate(fit.cv)
+
+
+@router.get("/fits/{fit_id}/audit", response_model=FitAuditOut)
+def get_fit_audit(fit_id: uuid.UUID, user: CurrentUser, db: Db) -> FitAuditOut:
+    """What a stored fit's evidence shows, check by check: convergence, the residual tests,
+    the parameters, the held-out error once the fit has been cross-validated, and a simpler
+    model once the fit was ranked by an Auto-fit run. Read from the stored fit; nothing is
+    refitted. A bundle with no observations is a 422 whose ``detail.code`` is ``NO_DATA``."""
+    fit = own_fit(db, user, fit_id)
+    bundle, spec = _stored_fit(fit)
+    try:
+        found = audit_fit(bundle, spec=spec, ranking=_ranking_of(db, fit), cv=_stored_cv(fit))
+    except ToolError as exc:
+        raise tool_api_error(exc) from exc
+    return FitAuditOut.model_validate(found.model_dump(mode="json"))
+
+
+@router.get("/fits/{fit_id}/methods", response_model=FitMethodsOut)
+def get_fit_methods(fit_id: uuid.UUID, user: CurrentUser, db: Db) -> FitMethodsOut:
+    """The methods text of a converged fit in three styles: the paragraph, the equation and
+    the table, the citations, what the author must complete and what is missing. A fit that
+    did not converge is a 422 whose ``detail.code`` is ``FIT_NOT_CONVERGED_INPUT``."""
+    fit = own_fit(db, user, fit_id)
+    bundle, spec = _stored_fit(fit)
+    try:
+        texts = all_methods_texts(bundle, spec=spec)
+    except ToolError as exc:
+        raise tool_api_error(exc) from exc
+    return FitMethodsOut.model_validate(
+        {style: text.model_dump(mode="json") for style, text in texts.items()}
+    )

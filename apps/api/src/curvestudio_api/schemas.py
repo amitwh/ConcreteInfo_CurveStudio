@@ -313,6 +313,84 @@ class PredictIn(_Body):
     band: Literal["confidence", "prediction"] | None = None
 
 
+Verdict = Literal["pass", "caution", "fail", "not_applicable"]
+"""What a check's evidence says. ``not_applicable``: the check had no number to read."""
+
+
+class AuditCheckOut(BaseModel):
+    """One check of a fit's audit. ``title`` states what was found; ``statistic`` is the number
+    the verdict turned on and ``threshold`` the rule that turned it, both as text;
+    ``next_step`` is set for a check that needs a look."""
+
+    id: str
+    title: str
+    verdict: Verdict
+    statistic: str | None
+    threshold: str | None
+    evidence: str
+    explanation: str
+    next_step: str | None
+
+
+class SimplerModelOut(BaseModel):
+    """A ranked model that fits as well with fewer parameters. ``delta_aicc`` is its distance
+    from the best model's AICc."""
+
+    model_id: str
+    name: str
+    n_parameters: int
+    delta_aicc: float | None
+    cv_rmse: float | None
+
+
+class ExcludedRowOut(BaseModel):
+    """A row of the fit's data that takes part in no check, and why (``index`` is 0-based)."""
+
+    index: int
+    reason: str
+
+
+class FitAuditOut(BaseModel):
+    """The audit of one stored fit. ``checks`` come in a fixed order and ``overall`` is the
+    worst of their verdicts; ``summary`` is a sentence or two for a banner and
+    ``methods_fragment`` what a methods paragraph can carry as it stands. ``simpler_model`` is
+    set only when that check reads ``caution``; ``n_observations`` counts the rows that took
+    part and ``excluded`` lists the rest."""
+
+    checks: list[AuditCheckOut]
+    overall: Verdict
+    summary: str
+    methods_fragment: str
+    simpler_model: SimplerModelOut | None
+    n_observations: int
+    n_parameters: int
+    excluded: list[ExcludedRowOut]
+
+
+class MethodsTextOut(BaseModel):
+    """The methods text of one fit in one style. ``citation_curvestudio`` cites the software and
+    ``citation_model`` the model's sources, one per string. ``to_complete`` lists what only the
+    author can write and ``missing`` what the text needed and did not get: each entry is a
+    code, a colon and a sentence."""
+
+    paragraph: str
+    equation: str
+    table: str
+    citation_curvestudio: str
+    citation_model: list[str]
+    to_complete: list[str]
+    missing: list[str]
+
+
+class FitMethodsOut(BaseModel):
+    """The methods text of one fit in three styles: the paragraph is the same in each (escaped
+    for LaTeX in that one); the equation and the table are laid out for each."""
+
+    text: MethodsTextOut
+    markdown: MethodsTextOut
+    latex: MethodsTextOut
+
+
 class AutoFitRequest(_Body):
     """Settings of one Auto-fit run. The server sets the time limits and the worker count."""
 
