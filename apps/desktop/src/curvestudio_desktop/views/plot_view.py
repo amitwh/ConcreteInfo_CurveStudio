@@ -12,7 +12,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from html import escape
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import numpy as np
 import pyqtgraph as pg
@@ -20,8 +20,10 @@ from PySide6.QtCore import QEvent, QObject, QPointF, Qt
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QLabel, QStackedLayout, QVBoxLayout, QWidget
 
+from curvestudio.tools.stats import Plot
 from curvestudio.workflow import format_equation
 from curvestudio_desktop.theme import current_scheme, mono_font
+from curvestudio_desktop.views.stats_plots import draw_stats_plot
 from curvestudio_plotting import WATERMARK_ALPHA, WATERMARK_TEXT
 from curvestudio_plotting.palette import band_fill, curve_style, data_color
 
@@ -109,6 +111,10 @@ class PlotView(QWidget):
         self._band_x: Sequence[float] | None = None
         self._band_confidence: tuple[Sequence[float], Sequence[float]] | None = None
         self._band_prediction: tuple[Sequence[float], Sequence[float]] | None = None
+        # the statistical plot's items, and the view state they displaced while shown
+        self._stats_items: list[Any] = []
+        self._stats_saved_log: tuple[bool, bool] | None = None
+        self._stats_equation_was_visible = False
         self._empty_label = QLabel("Import data to see it plotted")
         self._empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         # a non-modal inline notice over the plot (a ranking row with no sampled curve)
@@ -613,11 +619,83 @@ class PlotView(QWidget):
     def crosshair_text(self) -> str:
         return self._readout.text()
 
+    # -- statistical plots -------------------------------------------------------------------
+
+    def show_stats_plot(self, plot: Plot) -> None:
+        """Show one statistical plot model in place of the dataset and the fitted curve.
+
+        The scatter, every curve and its bands, the equation caption and the inline hint
+        are hidden — never removed — and the log axes are switched off, because a
+        statistical plot brings its own axes. :meth:`clear_stats_plot` puts them back.
+        """
+        self.clear_stats_plot()
+        self._stats_saved_log = (self._log_x, self._log_y)
+        self._stats_equation_was_visible = not self._equation.isHidden()
+        self._set_log(x=False, y=False)
+        for item in self._data_items():
+            item.hide()
+        self._hint.hide()
+        if self._stats_equation_was_visible:
+            self._equation.hide()
+        self._legend_names = []
+        self._stack.setCurrentWidget(self._plot)
+        self._stats_items = draw_stats_plot(self._plot.getPlotItem(), plot)
+        self._plot.autoRange()
+
+    def clear_stats_plot(self) -> None:
+        """Remove the statistical plot's items and show the dataset and the curve again."""
+        plot_item = self._plot.getPlotItem()
+        for item in self._stats_items:
+            if item in plot_item.items:
+                plot_item.removeItem(item)
+            else:
+                # a note is parented to the plot item rather than added to its items
+                item.setParentItem(None)
+                item.deleteLater()
+        self._stats_items = []
+        for item in self._data_items():
+            item.show()
+        if self._stats_equation_was_visible:
+            self._equation.show()
+        self._stats_equation_was_visible = False
+        if self._stats_saved_log is not None:
+            log_x, log_y = self._stats_saved_log
+            self._set_log(x=log_x, y=log_y)
+            self._stats_saved_log = None
+        legend = plot_item.legend
+        if legend is not None:
+            legend.clear()
+            legend.setVisible(False)
+        self._rebuild_legend()
+        if self._scatter is None:
+            self._stack.setCurrentWidget(self._empty_label)
+        else:
+            self.reset_view()
+
+    def stats_items(self) -> list[Any]:
+        """The items the statistical plot drew (empty when none is shown)."""
+        return list(self._stats_items)
+
+    def has_stats_plot(self) -> bool:
+        """Whether a statistical plot is shown in place of the data."""
+        return bool(self._stats_items)
+
+    def _data_items(self) -> list[Any]:
+        """The dataset, the fitted curves and their bands: what a stats plot hides."""
+        items: list[Any] = []
+        if self._scatter is not None:
+            items.append(self._scatter)
+        items.extend(self._curves)
+        for band in (self._confidence, self._prediction):
+            if band is not None:
+                items.append(band)
+        return items
+
     # -- export ------------------------------------------------------------------------------
 
     def export_png(self, target: Path) -> bool:
         """Export the plot as PNG via ``pyqtgraph.exporters.ImageExporter``."""
-        if self._scatter is None:
+        if self._scatter is None and not self._stats_items:
             return False
         from pyqtgraph.exporters import ImageExporter
 
@@ -639,7 +717,7 @@ class PlotView(QWidget):
         content (its path parser cannot handle comma-less SVG path tokens), so the
         vector export renders the scene through Qt's generator instead.
         """
-        if self._scatter is None:
+        if self._scatter is None and not self._stats_items:
             return False
         from PySide6.QtCore import QRectF, QSize
         from PySide6.QtGui import QPainter
