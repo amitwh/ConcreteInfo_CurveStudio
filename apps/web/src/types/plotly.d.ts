@@ -27,6 +27,13 @@ declare module "plotly.js-dist-min" {
     opacity?: number;
     hoverinfo?: string;
     showlegend?: boolean;
+    /** Precomputed box statistics: a box drawn without the raw values. */
+    boxpoints?: string | false;
+    q1?: number;
+    median?: number;
+    q3?: number;
+    lowerfence?: number;
+    upperfence?: number;
     [key: string]: unknown;
   }
 
@@ -57,6 +64,9 @@ declare module "plotly.js-dist-min" {
       type?: "linear" | "log" | "date" | "category";
       zeroline?: boolean;
       gridcolor?: string;
+      /** Tick positions, and the text shown at them (a category axis's labels). */
+      tickvals?: ReadonlyArray<number | string>;
+      ticktext?: ReadonlyArray<string>;
       [key: string]: unknown;
     };
     yaxis?: {

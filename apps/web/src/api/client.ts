@@ -56,6 +56,29 @@ export type ProgressOut = Schemas["ProgressOut"];
 export type RowCurve = Schemas["RowCurve"];
 export type OpenRowOut = Schemas["OpenRowOut"];
 
+/* ---- Statistics: the blocks of one statistical result ---- */
+/** What one statistical tool returns: the only thing a result renderer is shown. */
+export type ToolResult = Schemas["ToolResult"];
+/** One estimated number, with its standard error and interval where the tool has them. */
+export type Estimate = Schemas["Estimate"];
+/** One hypothesis test as every surface shows it. */
+export type HypothesisTest = Schemas["HypothesisTest"];
+/** One assumption check of a statistical result (the generated `AuditCheck`, not a fit's
+ *  `AuditCheckOut`). */
+export type StatCheck = Schemas["AuditCheck"];
+/** A table a result shows, and one of its columns. */
+export type StatTable = Schemas["Table"];
+export type StatTableColumn = Schemas["TableColumn"];
+/** One cell of a table, already restricted to the plain values a table holds. */
+export type TableCell = StatTable["rows"][number][number];
+/** The five plots a result can carry, and the union a renderer switches on. */
+export type ScatterPlot = Schemas["ScatterPlot"];
+export type HistogramPlot = Schemas["HistogramPlot"];
+export type QQPlot = Schemas["QQPlot"];
+export type BoxPlot = Schemas["BoxPlot"];
+export type MultiLinePlot = Schemas["MultiLinePlot"];
+export type StatPlot = ToolResult["plots"][number];
+
 export class ApiError extends Error {
   /** HTTP status; 0 means the server could not be reached at all. */
   readonly status: number;
