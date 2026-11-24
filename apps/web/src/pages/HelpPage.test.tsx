@@ -15,19 +15,31 @@ const SECTION_TITLES = [
   "Exports",
   "Keyboard shortcuts (desktop)",
   "Troubleshooting",
+  "Fit audit and methods text",
   "About, licence, projects and policy",
 ];
 
-function renderHelp() {
+function renderHelp(entry = "/help") {
   return render(
-    <MemoryRouter initialEntries={["/help"]}>
+    <MemoryRouter initialEntries={[entry]}>
       <HelpPage />
     </MemoryRouter>,
   );
 }
 
+/** Run `body` with the browser at `address`: a memory router leaves the real address alone. */
+function atAddress(address: string, body: () => void): void {
+  const before = window.location.href;
+  window.history.replaceState(null, "", address);
+  try {
+    body();
+  } finally {
+    window.history.replaceState(null, "", before);
+  }
+}
+
 describe("HelpPage", () => {
-  it("renders all eleven section headings in order", () => {
+  it("renders all twelve section headings in order", () => {
     renderHelp();
     const headings = screen.getAllByRole("heading", { level: 2 });
     expect(headings.map((heading) => heading.textContent)).toEqual(SECTION_TITLES);
@@ -39,12 +51,49 @@ describe("HelpPage", () => {
       "getting-started",
       "auto-fit",
       "keyboard-shortcuts",
+      "fit-audit-and-methods-text",
       "about-licence-credits",
     ]) {
       const section = document.getElementById(id);
       expect(section).not.toBeNull();
       expect(section?.tagName).toBe("SECTION");
     }
+  });
+
+  it("lists the fit audit section with the anchor /help#fit-audit-and-methods-text", () => {
+    atAddress("/help", () => {
+      renderHelp();
+      const link = screen.getByRole("link", { name: /Fit audit and methods text/ });
+      const target = new URL(link.getAttribute("href") ?? "", window.location.href);
+      expect(target.pathname + target.hash).toBe("/help#fit-audit-and-methods-text");
+      // the index numbers it from its place: after Troubleshooting, before About
+      expect(link.textContent).toMatch(/11\s*Fit audit and methods text/);
+
+      const section = document.getElementById("fit-audit-and-methods-text");
+      expect(section?.querySelector("h2")?.textContent).toBe("Fit audit and methods text");
+      // and its content is the section's: the table of the eleven checks
+      const table = section?.querySelector("table");
+      expect(table?.querySelectorAll("th")).toHaveLength(2);
+      expect(table?.querySelectorAll("tbody tr")).toHaveLength(11);
+      expect(section?.textContent).toContain("A verdict is evidence, not proof");
+      expect(section?.textContent).toContain("curvestudio methods --style markdown");
+    });
+  });
+
+  it("scrolls to the fit audit section when the page opens at /help#fit-audit-and-methods-text", () => {
+    // jsdom cannot scroll: the stand-in records the element the page asked to bring into view.
+    const scrolled: Element[] = [];
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+      configurable: true,
+      writable: true,
+      value(this: Element) {
+        scrolled.push(this);
+      },
+    });
+    atAddress("/help#fit-audit-and-methods-text", () => {
+      renderHelp("/help#fit-audit-and-methods-text");
+      expect(scrolled.map((element) => element.id)).toEqual(["fit-audit-and-methods-text"]);
+    });
   });
 
   it("filters the section index to a match and jumps to it, case-insensitively", async () => {

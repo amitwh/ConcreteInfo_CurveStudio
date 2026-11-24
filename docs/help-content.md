@@ -183,7 +183,79 @@ closed. *View → Reset layout* restores the default arrangement.
   waits for a later launch, and Edit → Preferences → Privacy turns it off.
 - **Web:** fitting needs a connection to the server. The desktop app is the offline story.
 
-## 11. About, licence, projects and policy
+## 11. Fit audit and methods text
+
+After a fit, the **fit audit** checks the evidence for it, check by check, and says what to do
+next. On the desktop it is the **Fit audit** tab of a fit's results, after Diagnostics; on the
+web it is the **Fit audit** tab; from the command line, `curvestudio audit` fits a curve and
+prints the same checks.
+
+At the top sit the overall verdict (**Pass**, **Caution**, **Fail** or **Not applicable**), a
+summary in one to three sentences, the counts (`40 observations, 3 parameters`) and any rows
+that took no part, with the reason. Then comes one block per check: its verdict, its evidence,
+its statistic and the threshold it was judged by, what the check is about, and the next step
+when there is one. A fit that did not converge fails the first check, and every other check
+reads Not applicable.
+
+| Check | If it is flagged |
+|---|---|
+| The fit converged | Check the starting values and the bounds, or try a model with fewer parameters. |
+| The model does not pass through every point | There is no scatter to estimate uncertainty from, so report no intervals or p-values for this fit. |
+| Residuals are consistent with a normal distribution (Shapiro–Wilk) | If a few points cause it, try a robust loss (Huber or soft-L1). Otherwise say in your write-up that the intervals rely on an approximation. |
+| Residuals show no autocorrelation in x order (Durbin–Watson) | Plot the residuals against x in data order. If they wander, the model is missing a shape; if they alternate, look at how the data were taken. |
+| Residual variance is consistent with being constant (Breusch–Pagan) | If the spread grows with the signal, use weights from replicates or a robust loss, and say so. |
+| No single point has a large influence on the fit (Cook's distance) | Refit without the point and compare the estimates. If the conclusions differ, report both fits or justify leaving the point out. Do not delete data to improve a fit. |
+| Residuals show no trend in x | The residuals show a curved trend, so the model is missing a shape the data contain. Try a model with one more parameter. |
+| No parameter sits at a bound or is poorly determined | A parameter at a bound or with a wide interval is not pinned down by these data. Fix the bound if it is wrong, take more points where the model is sensitive, or use a model with fewer parameters. |
+| There are at least 10 points per parameter | Take more points, or use a simpler model. |
+| Held-out error is close to what a correct model shows (cross-validation) | The fit describes noise as well as signal. A simpler model, or one with fewer parameters, will predict better. |
+| No simpler model fits as well (from an Auto-fit ranking) | Report the simpler model unless the extra parameter answers a question of your own. |
+
+The first column is how a check reads when it passes; the second is the audit's own next step.
+Three of the checks are read by more than a p-value. The autocorrelation check is decided by
+Durbin–Watson p-values that are exact for the fitted model and computed for at most 1,000
+points: Ljung–Box is reported beside them and does not change the verdict, and where they are
+not computed it decides alone; with repeated x values the test is approximate. Cook's distance
+is set against the fit's own confidence region — a caution when one point's removal would move
+the estimates outside the 90 % region, a failure when outside the 99 % — and more points than
+chance crossing the 4/n line flag it too. A simpler model is one within 2 AICc of the best
+that is neither degenerate nor redundant.
+
+**Reading a verdict.** A verdict is evidence, not proof. **Pass**: nothing in the data
+contradicts the assumption at the conventional level. **Caution**: for the statistical tests,
+evidence that would turn up by chance in 1 fit in 20 or fewer if the assumption held. **Fail**:
+for them, evidence that would turn up in 1 fit in 1,000 or fewer. For the rule-based checks — a
+parameter at a bound, fewer than 5 points per parameter, a point whose removal leaves the 99 %
+confidence region, a held-out error far above what a correct model shows — a failure means the
+rule was met outright. **Not applicable**: the check could not be made, and the block says why.
+The four residual tests work at the 5 % level, so on data that meet every assumption about one
+fit in twenty still shows a caution on a given test; a single caution is a prompt to look, not
+a verdict on the analysis.
+
+**Cross-validation.** A stored fit does not carry its held-out error, so that check reads Not
+applicable until you run it. A control at the end of the tab runs 5, 10 or leave-one-out folds
+as a job you can cancel: a background job on the desktop, where the result is not saved with
+the project; on the web a job that uses none of your quota, whose result is kept with the fit.
+Leave-one-out refits once per point, so it runs on at most 2,000 points. A fit that did not
+converge cannot be cross-validated, and the control says so. On the command line,
+`curvestudio audit --cv 5` (or `--cv loo`) adds it, and `--ranking` lets the simpler-model
+check run.
+
+**The methods text.** It writes the fit up for a paper. Its paragraph names the model, the
+estimator, the observations used and those left out, and any bounds, and cites the software
+with its version and address; the equation gives each estimate with its standard error; the
+table adds 95 % confidence intervals. **Copy methods text** (desktop: the details window's
+footer and the Equation tab) and **Copy methods** (web) put the three on the clipboard as plain
+text, Markdown or LaTeX; the LaTeX table needs the `booktabs` package and the equation
+`amsmath`. `curvestudio methods --style markdown` (or `text` or `latex`) prints them with the
+model's references, the three things only the author can write — the instrument and
+measurement method, how the sample size was chosen, how the data were cleaned — and whatever
+the fit did not record. Nothing is guessed, and there is no DOI to cite yet.
+
+The audit is a screen for the common ways a fit misleads; it does not replace looking at the
+residuals and knowing the measurement.
+
+## 12. About, licence, projects and policy
 
 CurveStudio is built by **ConcreteInfo** — <https://www.concreteinfo.in> · amit@concreteinfo.in.
 The About window and the About page list the other tools we build and maintain, in two groups —

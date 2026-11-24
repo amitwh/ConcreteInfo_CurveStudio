@@ -2,7 +2,7 @@
 
 The canonical help text lives in ``docs/help-content.md``; it is copied verbatim into
 the desktop package so the frozen application can render it. These tests pin that copy
-to the source, the eleven sections in order, the Markdown rendering (tables, lists,
+to the source, the twelve sections in order, the Markdown rendering (tables, lists,
 bold, inline code), search, the menu/shortcut wiring, the About contract (logo, links,
 runtime versions, credits), the shared list of other ConcreteInfo projects and
 the Lucide icon mapping.
@@ -119,17 +119,18 @@ def test_help_content_ships_the_canonical_document_verbatim() -> None:
     assert help_markdown() == CANONICAL_HELP.read_text(encoding="utf-8")
 
 
-def test_help_dialog_lists_the_eleven_canonical_sections_in_order(qtbot, settings) -> None:
+def test_help_dialog_lists_the_twelve_canonical_sections_in_order(qtbot, settings) -> None:
     from curvestudio_desktop.views.help_dialog import HelpDialog
 
     dialog = HelpDialog(settings=settings)
     qtbot.addWidget(dialog)
     titles = dialog.sections()
-    assert len(titles) == 11
+    assert len(titles) == 12
     assert titles == canonical_section_titles()
-    assert [dialog.section_list.item(i).text() for i in range(11)] == list(titles)
+    assert [dialog.section_list.item(i).text() for i in range(12)] == list(titles)
     assert titles[0] == "1. Getting started"
-    assert titles[-1] == "11. About, licence, projects and policy"
+    assert titles[10] == "11. Fit audit and methods text"
+    assert titles[-1] == "12. About, licence, projects and policy"
 
 
 def test_markdown_renders_tables_lists_bold_links_and_inline_code() -> None:
@@ -154,9 +155,37 @@ def test_markdown_renders_tables_lists_bold_links_and_inline_code() -> None:
     steps = markdown_to_html(sections["1. Getting started"].body)
     assert "<ol>" in steps and steps.count("<li>") >= 5
 
-    about = markdown_to_html(sections["11. About, licence, projects and policy"].body)
+    about = markdown_to_html(sections["12. About, licence, projects and policy"].body)
     assert '<a href="https://www.concreteinfo.in">' in about
     assert "<em>" in about or "<strong>" in about
+
+
+def test_markdown_renders_the_fit_audit_section_table_bold_and_inline_code() -> None:
+    from curvestudio_desktop.views.help_dialog import (
+        help_markdown,
+        markdown_to_html,
+        parse_sections,
+    )
+
+    sections = {section.title: section for section in parse_sections(help_markdown())}
+    rendered = markdown_to_html(sections["11. Fit audit and methods text"].body)
+
+    # the table of checks: its two headers, then one row for each of the eleven checks
+    assert rendered.count("<table>") == 1
+    assert "<th>Check</th><th>If it is flagged</th>" in rendered
+    assert rendered.count("<tr>") == 12
+    assert "<td>The fit converged</td>" in rendered
+    assert "<td>There are at least 10 points per parameter</td>" in rendered
+    assert "<td>No simpler model fits as well (from an Auto-fit ranking)</td>" in rendered
+
+    assert "<strong>fit audit</strong>" in rendered
+    assert "<strong>Reading a verdict.</strong>" in rendered
+    assert "<strong>Not applicable</strong>" in rendered
+    assert "<code>curvestudio audit</code>" in rendered
+    assert "<code>curvestudio methods --style markdown</code>" in rendered
+    assert "<code>booktabs</code>" in rendered
+    # nothing of the section leaked out as raw Markdown
+    assert "**" not in rendered and "`" not in rendered
 
 
 def test_selecting_a_section_renders_its_text_in_the_browser(qtbot, settings) -> None:
@@ -194,7 +223,7 @@ def test_search_filters_the_section_list_and_jumps_to_the_first_body_match(qtbot
     assert all(
         not dialog.section_list.item(i).isHidden() for i in range(dialog.section_list.count())
     )
-    assert len(dialog.sections()) == 11
+    assert len(dialog.sections()) == 12
 
 
 def test_an_empty_search_result_says_so(qtbot, settings) -> None:
@@ -457,9 +486,9 @@ def test_about_carries_the_disclaimer_and_the_policy(qtbot) -> None:
 # -- example datasets --------------------------------------------------------------------------
 
 
-def test_help_section_11_names_all_three_example_datasets() -> None:
+def test_help_section_12_names_all_three_example_datasets() -> None:
     body = CANONICAL_HELP.read_text(encoding="utf-8").split(
-        "## 11. About, licence, projects and policy", 1
+        "## 12. About, licence, projects and policy", 1
     )[1]
     for filename in ("example.csv", "example-decay.csv", "example-kinetics.csv"):
         assert f"`{filename}`" in body, filename
