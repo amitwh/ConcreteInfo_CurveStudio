@@ -437,6 +437,7 @@ class Registry(Mapping[str, ToolSpec]):
 TOOL_MODULES: tuple[str, ...] = (
     "curvestudio.tools.stats.anova",
     "curvestudio.tools.stats.anova_more",
+    "curvestudio.tools.stats.comparison",
     "curvestudio.tools.stats.correlation",
     "curvestudio.tools.stats.descriptives",
     "curvestudio.tools.stats.distribution",
