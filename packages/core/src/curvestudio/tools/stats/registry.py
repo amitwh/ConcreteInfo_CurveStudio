@@ -434,7 +434,10 @@ class Registry(Mapping[str, ToolSpec]):
         return tuple(self.info(name) for name in self)
 
 
-TOOL_MODULES: tuple[str, ...] = ("curvestudio.tools.stats.distribution",)
+TOOL_MODULES: tuple[str, ...] = (
+    "curvestudio.tools.stats.descriptives",
+    "curvestudio.tools.stats.distribution",
+)
 """A module per tool family, each registering its tool as it is imported."""
 
 TOOLS = Registry(TOOL_MODULES)
