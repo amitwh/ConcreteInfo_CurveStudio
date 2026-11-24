@@ -20,6 +20,15 @@ that need them are decided; ``--json`` prints the :class:`~curvestudio.tools.Fit
 citations, laid out in the ``--style`` asked for; ``--json`` prints the
 :class:`~curvestudio.tools.MethodsText`.
 
+``curvestudio stats TOOL FILE`` runs one of the standard statistical tools
+(:func:`curvestudio.tools.stats.catalogue`) and prints the result it returns: the title, the
+estimates and the tests as tables, the assumptions one per line, the warnings, every table,
+the interpretation and the methods fragment, then the counts and the rows left out. The
+tool's options are generated from the catalogue, so this command, the desktop app and the web
+app take the same ones; ``--list`` names the tools by family, and ``--json`` prints the
+result exactly as the tool returns it (``model_dump(mode="json")``). ``power`` is the one
+tool that takes no file.
+
 This module is the outermost layer of the package: it may import the layers below it (data,
 fitting, models, discovery, workflow and tools), and nothing imports it. A user mistake
 (unreadable file, missing column, unknown model, data that fails validation, an impossible
@@ -43,20 +52,23 @@ Command      Exit codes
              refuses, or a cross-validation or Auto-fit run the tools refuse.
 ``methods``  ``0`` the text was written. ``3`` a usage or input error, or a fit that did
              not converge (the tool refuses it: there are no estimates to report).
+``stats``    ``0`` the tool ran. ``3`` a usage or input error, or a tool that refused its
+             input.
 ===========  =======================================================================
 """
 
 import argparse
 import difflib
+import json
 import math
 import re
 import sys
 import textwrap
 from collections import defaultdict
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal, NoReturn
 
 from curvestudio.data import XY, DataError, Issue, read_dataset, validate
 from curvestudio.discovery import (
@@ -87,6 +99,23 @@ from curvestudio.tools import (
     methods_text,
 )
 from curvestudio.tools.methods import STYLES
+from curvestudio.tools.stats import (
+    FAMILIES,
+    Estimate,
+    HypothesisTest,
+    Table,
+    ToolResult,
+    p_text,
+)
+from curvestudio.tools.stats._display import Cell, ColumnKind
+from curvestudio.tools.stats.registry import (
+    TOOLS,
+    RequestField,
+    ToolInfo,
+    build_request,
+    catalogue,
+    run_tool,
+)
 from curvestudio.workflow import (
     FitBundle,
     FitSpec,
@@ -124,9 +153,9 @@ _AUDIT_EXIT_CODES = {
 }
 """The exit code of ``audit`` for each overall verdict."""
 
-_USAGE_IS_INPUT_ERROR = frozenset({"audit", "methods"})
+_USAGE_IS_INPUT_ERROR = frozenset({"audit", "methods", "stats"})
 """The commands whose usage errors exit ``3``: for ``audit`` argparse's ``2`` is a verdict, and
-``methods`` gives its input errors the same code."""
+``methods`` and ``stats`` give their input errors the same code."""
 
 MAX_STARTS = 1000
 """Upper bound for --starts: multistart cost and memory grow linearly in it."""
@@ -206,7 +235,7 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     commands = parser.add_subparsers(
-        dest="command", required=True, metavar="{fit,autofit,models,audit,methods}"
+        dest="command", required=True, metavar="{fit,autofit,models,audit,methods,stats}"
     )
 
     fit_command = commands.add_parser(
@@ -265,6 +294,7 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_autofit_command(commands)
     _add_audit_command(commands)
     _add_methods_command(commands)
+    _add_stats_command(commands)
 
     commands.add_parser(
         "models",
@@ -408,6 +438,199 @@ def _add_methods_command(commands: argparse._SubParsersAction[argparse.ArgumentP
     )
 
 
+# --- stats arguments ----------------------------------------------------------------------
+
+OptionKind = Literal["boolean", "integer", "number", "string", "string_list", "rows"]
+"""How an option's JSON schema is read into a command-line flag."""
+
+
+def _add_stats_command(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    """The ``stats`` command: one subcommand per tool, generated from the catalogue."""
+    command = commands.add_parser(
+        "stats",
+        help="run one statistical tool on a file and print its result",
+        description=(
+            "Run one of the standard statistical tools on FILE and print its result: the "
+            "estimates and the tests as tables, the assumptions one per line, the warnings, "
+            "every table, the interpretation and the methods fragment, then the counts and "
+            "the rows left out."
+        ),
+        epilog=(
+            "The tools and their options are the ones the desktop and web apps show: they "
+            "are generated from the same catalogue. Run 'curvestudio stats --list' to see "
+            f"them. {_ROW_NOTE} Exit codes: 0 the tool ran, 3 a usage or input error."
+        ),
+    )
+    command.add_argument(
+        "--list",
+        action="store_true",
+        help="list the tools by family and exit",
+    )
+    tools = command.add_subparsers(dest="tool", metavar="TOOL")
+    for info in catalogue():
+        _add_stats_tool(tools, info)
+
+
+def _add_stats_tool(
+    tools: argparse._SubParsersAction[argparse.ArgumentParser], info: ToolInfo
+) -> None:
+    """One tool's subcommand: its file when it needs data, its fields, and ``--json``."""
+    command = tools.add_parser(
+        info.name,
+        help=info.title,
+        description=info.title,
+        epilog="Exit codes: 0 the tool ran, 3 a usage or input error.",
+    )
+    if info.needs_data:
+        command.add_argument("file", help="input file: csv, tsv, txt, json or xlsx")
+    for field in info.fields:
+        _add_tool_field(command, field)
+    command.add_argument(
+        "--json",
+        action="store_true",
+        help="print the result as JSON (model_dump(mode='json')) instead of the report",
+    )
+
+
+def _add_tool_field(command: argparse.ArgumentParser, field: RequestField) -> None:
+    """Add one field of a tool's request as the flag its kind and JSON schema call for."""
+    flag = "--" + field.name.replace("_", "-")
+    # argparse reads a help string as a % template, and a description may hold "95 %".
+    help_text = (field.description or field.label).replace("%", "%%")
+    if field.kind in ("column", "group"):
+        command.add_argument(
+            flag, dest=field.name, metavar="COL", required=field.required, help=help_text
+        )
+        return
+    if field.kind == "columns":
+        command.add_argument(
+            flag,
+            dest=field.name,
+            metavar="COL,COL",
+            type=_name_list,
+            required=field.required,
+            help=help_text,
+        )
+        return
+    schema = field.option_schema or {}
+    kind = _option_kind(schema)
+    if kind == "boolean":
+        action = "store_false" if schema.get("default") is True else "store_true"
+        command.add_argument(
+            flag, dest=field.name, action=action, default=argparse.SUPPRESS, help=help_text
+        )
+        return
+    if kind == "integer":
+        command.add_argument(
+            flag,
+            dest=field.name,
+            metavar="N",
+            type=_parse_int,
+            required=field.required,
+            help=help_text,
+        )
+        return
+    if kind == "number":
+        command.add_argument(
+            flag,
+            dest=field.name,
+            metavar="F",
+            type=_number,
+            required=field.required,
+            help=help_text,
+        )
+        return
+    if kind == "string":
+        choices = schema.get("enum")
+        command.add_argument(
+            flag,
+            dest=field.name,
+            metavar=None if choices else "TEXT",
+            choices=choices,
+            required=field.required,
+            help=help_text,
+        )
+        return
+    if kind == "string_list":
+        command.add_argument(
+            flag,
+            dest=field.name,
+            metavar="A,B",
+            type=_name_list,
+            required=field.required,
+            help=help_text,
+        )
+        return
+    command.add_argument(
+        flag,
+        dest=field.name,
+        metavar="X,Y;X,Y",
+        type=_prediction_rows,
+        required=field.required,
+        help=help_text,
+    )
+
+
+def _option_kind(schema: dict[str, Any]) -> OptionKind:
+    """The flag an option's JSON schema calls for, its nullable unions read through.
+
+    Raises:
+        ValueError: the option's schema is not one this command can build a flag for.
+    """
+    branches: list[dict[str, Any]] = schema.get("anyOf", [schema])
+    types = {branch.get("type") for branch in branches if "type" in branch}
+    if "boolean" in types:
+        return "boolean"
+    if "integer" in types:
+        return "integer"
+    if "number" in types:
+        return "number"
+    if "string" in types:
+        return "string"
+    if "array" in types:
+        items = next(
+            branch.get("items", {}) for branch in branches if branch.get("type") == "array"
+        )
+        return "rows" if items.get("type") == "array" else "string_list"
+    raise ValueError(f"the option schema {schema!r} has no flag this command can build")
+
+
+def _number(text: str) -> float:
+    """An argparse ``type`` for a finite number."""
+    try:
+        value = float(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{text!r} is not a number") from None
+    if not math.isfinite(value):
+        raise argparse.ArgumentTypeError(f"must be a finite number, got {text!r}")
+    return value
+
+
+def _name_list(text: str) -> list[str]:
+    """An argparse ``type`` for names separated by commas."""
+    names = [name.strip() for name in text.split(",")]
+    if any(not name for name in names):
+        raise argparse.ArgumentTypeError(f"{text!r} is not a list of names separated by commas")
+    return names
+
+
+def _prediction_rows(text: str) -> tuple[tuple[float, ...], ...]:
+    """An argparse ``type`` for prediction rows: numbers comma-separated, rows by semicolons."""
+    rows: list[tuple[float, ...]] = []
+    for row in text.split(";"):
+        try:
+            values = tuple(float(cell) for cell in row.split(","))
+        except ValueError:
+            raise argparse.ArgumentTypeError(
+                f"{text!r} is not rows of numbers: each row is comma-separated, and rows "
+                "are separated by semicolons"
+            ) from None
+        if not all(math.isfinite(value) for value in values):
+            raise argparse.ArgumentTypeError(f"must be finite numbers, got {text!r}")
+        rows.append(values)
+    return tuple(rows)
+
+
 # --- entry point ------------------------------------------------------------------------
 
 
@@ -436,6 +659,8 @@ def main(argv: list[str] | None = None) -> int:
         return _run_audit(args)
     if args.command == "methods":
         return _run_methods(args)
+    if args.command == "stats":
+        return _run_stats(args)
     return _run_models()
 
 
@@ -897,6 +1122,208 @@ def _print_methods_text(text: MethodsText) -> None:
         print("Not known:")
         for entry in text.missing:
             print(entry)
+
+
+# --- stats --------------------------------------------------------------------------------
+
+
+def _run_stats(args: argparse.Namespace) -> int:
+    """Run one statistical tool, on a file when it needs data, then print its result."""
+    if args.list:
+        _print_tool_list()
+        return EXIT_OK
+    tool = args.tool
+    if tool is None:
+        return _fail(
+            "no tool given; run 'curvestudio stats --list' to see the tools", EXIT_INPUT_ERROR
+        )
+    try:
+        info = TOOLS.info(tool)
+    except ToolError as exc:
+        return _fail(str(exc), EXIT_INPUT_ERROR)
+
+    dataset = None
+    if info.needs_data:
+        try:
+            dataset = read_dataset(args.file)
+        except DataError as exc:
+            return _fail(_data_error(exc), EXIT_INPUT_ERROR)
+
+    chosen = _chosen_fields(args, info)
+    try:
+        column = dataset.column if dataset is not None else _no_column
+        group = dataset.group if dataset is not None else _no_group
+        request = build_request(tool, chosen, column=column, group=group)
+        result = run_tool(tool, request)
+    except ToolError as exc:
+        return _fail(str(exc), EXIT_INPUT_ERROR)
+
+    if args.json:
+        print(json.dumps(result.model_dump(mode="json")))
+    else:
+        _print_stats_report(result)
+    return EXIT_OK
+
+
+def _chosen_fields(args: argparse.Namespace, info: ToolInfo) -> dict[str, Any]:
+    """The fields a person gave, by field name: a column's name or list, or an option's value."""
+    chosen: dict[str, Any] = {}
+    for field in info.fields:
+        value = getattr(args, field.name, None)
+        if value is not None:
+            chosen[field.name] = value
+    return chosen
+
+
+def _no_column(name: str) -> NoReturn:
+    raise ToolError("UNKNOWN_COLUMN", f"this tool takes no data, so column {name!r} cannot be read")
+
+
+def _no_group(name: str) -> NoReturn:
+    raise ToolError("UNKNOWN_COLUMN", f"this tool takes no data, so group {name!r} cannot be read")
+
+
+def _print_tool_list() -> None:
+    """Every tool, grouped under its family's title."""
+    tools = catalogue()
+    for key, title in FAMILIES:
+        print(title)
+        for info in tools:
+            if info.family == key:
+                print(f"  {info.name:<16} {info.title}")
+        print()
+
+
+def _print_stats_report(result: ToolResult) -> None:
+    """The result as text: every block it carries, in the order a person reads them."""
+    print(result.title)
+    print(f"Tool: {result.tool}, level: {_g(result.level)}")
+    print()
+    if result.estimates:
+        print("Estimates:")
+        _print_stats_rows(
+            ("Label", "Value", "SE", "Lower", "Upper"),
+            [_estimate_row(estimate) for estimate in result.estimates],
+        )
+        print()
+    if result.tests:
+        print("Tests:")
+        _print_stats_rows(
+            ("Test", "Statistic", "df", "p value", "Adjusted p"),
+            [_test_row(test) for test in result.tests],
+        )
+        for test in result.tests:
+            if test.reason is not None:
+                print(f"  {test.name}: {test.reason}")
+        print()
+    if result.assumptions:
+        print("Assumptions:")
+        for check in result.assumptions:
+            print(f"  [{_AUDIT_TAGS[check.verdict]}] {check.title}: {check.evidence}")
+        print()
+    print("Warnings:")
+    if result.warnings:
+        for warning in result.warnings:
+            print(f"  - {warning}")
+    else:
+        print("  none")
+    print()
+    for block in result.tables:
+        _print_stats_table(block)
+        print()
+    print("Interpretation:")
+    print(result.interpretation)
+    print()
+    print("Methods:")
+    print(result.methods_fragment)
+    print()
+    print(
+        f"Rows: {result.counts.n_offered} offered, {result.counts.n_used} used, "
+        f"{result.counts.n_excluded} excluded"
+    )
+    _print_excluded(result)
+
+
+def _estimate_row(estimate: Estimate) -> tuple[str, ...]:
+    return (
+        estimate.label,
+        _g(estimate.value),
+        _opt(estimate.se),
+        _opt(estimate.lower),
+        _opt(estimate.upper),
+    )
+
+
+def _test_row(test: HypothesisTest) -> tuple[str, ...]:
+    if test.df is None:
+        degrees = "n/a"
+    elif test.df_denominator is None:
+        degrees = _g(test.df)
+    else:
+        degrees = f"{_g(test.df)}, {_g(test.df_denominator)}"
+    return (test.name, _opt(test.statistic), degrees, test.p_value_text, _p_cell(test.adjusted_p))
+
+
+def _p_cell(value: float | None) -> str:
+    """A p-value as a table cell: what :func:`p_text` says, without its ``p =`` label."""
+    if value is None:
+        return "n/a"
+    return p_text(value).removeprefix("p = ").removeprefix("p < ")
+
+
+def _print_stats_table(block: Table) -> None:
+    """A result's table: its title, its note, and one line per row."""
+    print(block.title)
+    if block.note:
+        print(f"  note: {block.note}")
+    headers = tuple(column.label for column in block.columns)
+    rows = [
+        tuple(
+            _cell_text(cell, column.kind) for cell, column in zip(row, block.columns, strict=True)
+        )
+        for row in block.rows
+    ]
+    _print_stats_rows(headers, rows)
+
+
+def _cell_text(cell: Cell, kind: ColumnKind) -> str:
+    """One table cell as the report writes it: ``None`` is empty, and each kind reads its own."""
+    if cell is None:
+        return ""
+    if kind == "int":
+        return str(int(cell))
+    if kind == "p_value":
+        return p_text(float(cell))
+    if kind == "number":
+        return _g(float(cell))
+    return str(cell)
+
+
+def _print_stats_rows(headers: Sequence[str], rows: Sequence[Sequence[str]]) -> None:
+    """A header line and the rows under it, columns padded to the widest cell."""
+    widths = [
+        _column_width(header, [row[index] for row in rows]) for index, header in enumerate(headers)
+    ]
+
+    def line(cells: Sequence[str]) -> str:
+        return "  ".join(
+            f"{cell:<{width}}" for cell, width in zip(cells, widths, strict=True)
+        ).rstrip()
+
+    print(line(headers))
+    for row in rows:
+        print(line(row))
+
+
+def _print_excluded(result: ToolResult) -> None:
+    """The rows the tool left out and why, or nothing when its count says it left out none."""
+    if result.counts.n_excluded == 0:
+        return
+    print(f"Excluded rows ({result.counts.n_excluded}):")
+    for row in result.excluded:
+        print(f"  row {row.index + 1}: {row.reason}")
+    if result.excluded_unlisted:
+        print(f"  and {result.excluded_unlisted} more, not listed")
 
 
 def _warn(warnings: list[Issue]) -> None:

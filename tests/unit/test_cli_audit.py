@@ -491,7 +491,7 @@ def test_help_lists_the_commands_and_explains_the_verdicts(
 ) -> None:
     assert main(["--help"]) == 0
     out = capsys.readouterr().out
-    assert "{fit,autofit,models,audit,methods}" in out
+    assert "{fit,autofit,models,audit,methods,stats}" in out
     assert main(["audit", "--help"]) == 0
     audit_help = " ".join(capsys.readouterr().out.split())  # argparse wraps its epilog
     assert "evidence, not proof" in audit_help

@@ -64,6 +64,33 @@ a usage or input error or a fit that did not converge.
 
 Both take `--json` for the result as JSON on standard output.
 
+## Running a statistical tool
+
+`stats` runs one of the standard statistical tools on a file and prints what it returns. The
+tools and their options come from the same catalogue the desktop and web apps read, so the
+command line takes the options those apps take.
+
+```bash
+uv run curvestudio stats --list                       # every tool, grouped by family
+uv run curvestudio stats descriptives examples/decay.csv --values y
+uv run curvestudio stats regression examples/decay.csv --outcome y --predictors x \
+    --predictions "2.0;4.0"
+uv run curvestudio stats power --design independent --effect-size 0.5 --power 0.8
+```
+
+A column is `--<field> COL`, several columns are `--<field> COL,COL`, and an option is a flag
+of its own type: a number, an integer, a switch such as `--equal-variances`, or a choice such
+as `--design`. Prediction rows are numbers comma-separated within a row and rows separated by
+semicolons: `"1.2,3.4;2.0,4.1"`.
+
+Without `--json` the report prints the estimates and the tests as tables, the assumptions
+with their verdicts, the warnings, every table, the interpretation and the methods fragment,
+then the counts and the rows left out. `--json` prints the result exactly as the tool returns
+it, for a script to read. `power` is the one tool that needs no file.
+
+Its exit codes are `0` when the tool ran, and `3` for a usage or input error, with the tool's
+code and message on standard error.
+
 ## Row numbers in messages
 
 Row numbers in validation errors and data warnings are **1-based data rows**: the
