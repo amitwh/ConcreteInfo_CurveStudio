@@ -446,6 +446,14 @@ class StatsView(QWidget):
     def _on_result(self, result: ToolResult) -> None:
         if not self._still_current():
             return  # the dataset moved while the tool ran: the result describes the old one
+        self.show_result(result)
+
+    def show_result(self, result: ToolResult) -> None:
+        """Show a result that is already in hand: a run's, or one restored from a project.
+
+        The caller has established that the result belongs to the dataset on screen; no tool
+        runs and nothing is checked against the selection a second time.
+        """
         self.result_view.show_result(result)
         self._message = None
         self.result_ready.emit(result)

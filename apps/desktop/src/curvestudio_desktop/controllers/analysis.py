@@ -90,6 +90,7 @@ class AnalysisController(QObject):
     """A streaming snapshot (:class:`AutoFitLive`) of the running Auto-fit."""
 
     autofit_finished = Signal(str, object)
+    stat_finished = Signal(str, object)
     """An Auto-fit run ended (complete, cancelled or restored): dataset id and result."""
 
     autofit_failed = Signal(str)
@@ -521,6 +522,16 @@ class AnalysisController(QObject):
         analysis = self._find_analysis(analysis_id)
         if analysis is None:
             return False
+        if analysis.kind == "stat":
+            try:
+                result = analysis_store.stat_from_analysis(analysis)
+            except ValueError as exc:
+                self.status_message.emit(str(exc))
+                return False
+            self.set_mode(MODE_STATS)
+            self.stat_finished.emit(analysis.dataset_id, result)
+            self.status_message.emit("Restored the stored statistics result (nothing was run)")
+            return True
         if analysis.kind == "autofit":
             try:
                 result = analysis_store.autofit_from_analysis(analysis)

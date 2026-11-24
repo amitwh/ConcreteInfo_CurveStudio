@@ -11,7 +11,7 @@ from desktop_data import GOOD_CSV
 
 from curvestudio.project import Analysis
 from curvestudio.tools.stats import Counts, ToolResult
-from curvestudio_desktop.controllers import analysis_store
+from curvestudio_desktop.controllers import MODE_MANUAL, MODE_STATS, analysis_store
 from curvestudio_desktop.views.stats_result_view import StatsResultView
 
 INTERPRETATION = "The mean of y is 4."
@@ -82,6 +82,20 @@ def test_a_stored_result_that_is_not_a_result_model_is_refused() -> None:
     )
     with pytest.raises(ValueError, match="does not hold a statistics result"):
         analysis_store.stat_from_analysis(analysis)
+
+
+def test_opening_a_stored_result_shows_it_in_the_statistics_page(make_window, write_file) -> None:
+    """A click in the tree switches to Statistics mode and shows the stored result; the
+    tool does not run again."""
+    window, dataset_id = _with_stat(make_window, write_file)
+    analysis_id = analysis_store.safe_analysis_id("stat-", dataset_id, "descriptives")
+    window.analysis.set_mode(MODE_MANUAL)
+
+    assert window.analysis.restore_analysis(analysis_id) is True
+
+    assert window.analysis.mode == MODE_STATS
+    assert window.analysis_panel.stats_view.result_view.result() is not None
+    assert INTERPRETATION in window.analysis_panel.stats_view.result_view.texts()
 
 
 def test_tree_labels_a_statistics_result_by_the_tool_title(make_window, write_file) -> None:

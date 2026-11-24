@@ -121,7 +121,12 @@ class AnalysisPanel(QDockWidget):
         self.manual_button.clicked.connect(lambda: analysis.set_mode(MODE_MANUAL))
         self.stats_button.clicked.connect(lambda: analysis.set_mode(MODE_STATS))
         analysis.mode_changed.connect(self.set_mode)
+        analysis.stat_finished.connect(self._on_stat_restored)
         self.set_mode(analysis.mode)
+
+    def _on_stat_restored(self, _dataset_id: str, result: object) -> None:
+        """Show a statistics result opened from the project tree; no tool runs."""
+        self.stats_view.show_result(result)  # type: ignore[arg-type]
 
     # -- splitter persistence -----------------------------------------------------------------
 
