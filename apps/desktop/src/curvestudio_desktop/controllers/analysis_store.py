@@ -6,18 +6,27 @@ no per-point vectors), which :meth:`AutoFitResult.ranked_by` still re-ranks afte
 A manual fit or an opened Auto-fit row is stored as kind ``fit``: the ``FitResult`` itself in
 ``analysis.result`` and everything else the bundle carries (summary, curve, bands, snapshot)
 plus the :class:`~curvestudio.workflow.FitSpec` under ``analysis.config``, so Save/Open
-round-trips a fit and the Predict tab still has its specification.
+round-trips a fit and the Predict tab still has its specification. A statistics run is stored
+as kind ``stat``: the :class:`~curvestudio.tools.stats.ToolResult`'s plain JSON in
+``analysis.result`` (the project layer sits below the tools layer), and the tool's name plus
+the choices that produced it in ``analysis.config``.
 """
 
 import json
 import re
+from collections.abc import Mapping
+from typing import Any
+
+from pydantic import ValidationError
 
 from curvestudio.discovery import AutoFitResult
 from curvestudio.project import Analysis
+from curvestudio.tools.stats import ToolResult
 from curvestudio.workflow import FitBundle, FitSpec
 
 AUTOFIT_PREFIX = "autofit-"
 FIT_PREFIX = "fit-"
+STAT_PREFIX = "stat-"
 _ID_MAX = 200
 _SAFE = re.compile(r"[^A-Za-z0-9_.-]+")
 """Analysis ids are one archive path segment; anything else becomes a hyphen."""
@@ -104,6 +113,49 @@ def autofit_from_analysis(analysis: Analysis) -> AutoFitResult:
     return AutoFitResult.model_validate(analysis.result)
 
 
+def stat_analysis_id(dataset_id: str, tool: str) -> str:
+    """One dataset's stored result for ``tool``: a re-run of the same tool replaces it."""
+    return safe_analysis_id(STAT_PREFIX, dataset_id, tool)
+
+
+def stat_analysis(
+    dataset_id: str,
+    tool: str,
+    choices: Mapping[str, Any],
+    result: ToolResult,
+) -> Analysis:
+    """The stored form of one statistics run: its result and the choices that produced it.
+
+    ``config`` holds the tool's name under ``"tool"`` and the choices beside it, so a
+    surface can show what was run without the result model's help. The result itself is
+    stored as plain JSON; :func:`stat_from_analysis` validates it back into its model.
+    """
+    return Analysis(
+        id=stat_analysis_id(dataset_id, tool),
+        dataset_id=dataset_id,
+        kind="stat",
+        config={"tool": tool, **choices},
+        result=result.model_dump(mode="json"),
+    )
+
+
+def stat_from_analysis(analysis: Analysis) -> ToolResult:
+    """The stored plain-JSON result, validated back into the result model.
+
+    Raises:
+        ValueError: the analysis is not a statistics result, or its stored JSON does not
+            validate (a hand-edited archive); callers treat this as "cannot restore".
+    """
+    if not isinstance(analysis.result, dict):
+        raise ValueError(f"analysis {analysis.id!r} does not hold a statistics result")
+    try:
+        return ToolResult.model_validate(analysis.result)
+    except ValidationError as exc:
+        raise ValueError(
+            f"analysis {analysis.id!r} does not hold a statistics result: {exc}"
+        ) from exc
+
+
 def fit_analysis(
     dataset_id: str,
     spec: FitSpec,
@@ -150,6 +202,7 @@ def bundle_from_analysis(analysis: Analysis) -> tuple[FitBundle, FitSpec]:
 __all__ = [
     "AUTOFIT_PREFIX",
     "FIT_PREFIX",
+    "STAT_PREFIX",
     "autofit_analysis",
     "autofit_analysis_id",
     "autofit_from_analysis",
@@ -159,5 +212,8 @@ __all__ = [
     "partial_autofit_analysis",
     "partial_autofit_analysis_id",
     "safe_analysis_id",
+    "stat_analysis",
+    "stat_analysis_id",
+    "stat_from_analysis",
     "unique_fit_id",
 ]

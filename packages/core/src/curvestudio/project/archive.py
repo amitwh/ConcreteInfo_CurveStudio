@@ -45,7 +45,9 @@ from curvestudio.project.model import (
     ProjectDataset,
 )
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+SUPPORTED_SCHEMA_VERSIONS = frozenset({1, 2})
+"""The versions this build reads; a file of either is read, and saving writes the latest."""
 MANIFEST_NAME = "manifest.json"
 PLOT_SETTINGS_NAME = "plot_settings.json"
 
@@ -444,11 +446,11 @@ def _read_manifest(archive: zipfile.ZipFile, entries: Mapping[str, zipfile.ZipIn
             ProjectErrorCode.CORRUPT,
             f"manifest.json schema_version must be an integer, not {version!r}",
         )
-    if version != SCHEMA_VERSION:
+    if version not in SUPPORTED_SCHEMA_VERSIONS:
         raise ProjectError(
             ProjectErrorCode.UNSUPPORTED_VERSION,
             f"project schema version {version} is not supported; this CurveStudio reads "
-            f"version {SCHEMA_VERSION}",
+            f"versions {', '.join(str(v) for v in sorted(SUPPORTED_SCHEMA_VERSIONS))}",
         )
     try:
         return Manifest.model_validate(document)
@@ -549,6 +551,19 @@ def _reject_constant(path: str) -> Callable[[str], Any]:
     return reject
 
 
+def _require_supported_version(document: Mapping[str, Any], path: str) -> None:
+    """A payload's ``schema_version`` must be an integer this build reads."""
+    version = document.get("schema_version")
+    if not isinstance(version, int) or isinstance(version, bool):
+        raise ProjectError(ProjectErrorCode.CORRUPT, f"{path} has an unexpected schema_version")
+    if version not in SUPPORTED_SCHEMA_VERSIONS:
+        raise ProjectError(
+            ProjectErrorCode.UNSUPPORTED_VERSION,
+            f"{path} has schema version {version}, which is not supported; this CurveStudio "
+            f"reads versions {', '.join(str(v) for v in sorted(SUPPORTED_SCHEMA_VERSIONS))}",
+        )
+
+
 def _build_project(manifest: Manifest, payloads: Mapping[str, bytes]) -> Project:
     dataset_files: dict[str, dict[str, bytes]] = {}
     analyses: list[Analysis] = []
@@ -590,8 +605,7 @@ def _load_dataset(dataset_id: str, files: Mapping[str, bytes]) -> ProjectDataset
             ProjectErrorCode.CORRUPT, f"dataset {dataset_id!r} is missing {missing[0]!r}"
         )
     document = _json_object(files["operations.json"], path)
-    if document.get("schema_version") != SCHEMA_VERSION:
-        raise ProjectError(ProjectErrorCode.CORRUPT, f"{path} has an unexpected schema_version")
+    _require_supported_version(document, path)
     name = _string(document, "name", path)
     dataset_name = _string(document, "dataset_name", path)
     import_notes = _string_list(document, "import_notes", path)
@@ -626,8 +640,7 @@ def _load_dataset(dataset_id: str, files: Mapping[str, bytes]) -> ProjectDataset
 def _load_analysis(file_id: str, data: bytes) -> Analysis:
     path = f"analyses/{file_id}.json"
     document = _json_object(data, path)
-    if document.get("schema_version") != SCHEMA_VERSION:
-        raise ProjectError(ProjectErrorCode.CORRUPT, f"{path} has an unexpected schema_version")
+    _require_supported_version(document, path)
     analysis_id = _string(document, "id", path)
     if analysis_id != file_id:
         raise ProjectError(
@@ -635,7 +648,7 @@ def _load_analysis(file_id: str, data: bytes) -> Analysis:
             f"{path} names analysis {analysis_id!r}, not {file_id!r}",
         )
     kind = document.get("kind")
-    if kind not in ("fit", "autofit"):
+    if kind not in ("fit", "autofit", "stat"):
         raise ProjectError(ProjectErrorCode.CORRUPT, f"{path} has an unknown kind {kind!r}")
     result_document = document.get("result")
     if not isinstance(result_document, dict):
@@ -649,6 +662,7 @@ def _load_analysis(file_id: str, data: bytes) -> Analysis:
                 ProjectErrorCode.CORRUPT, f"{path} has an invalid fit result: {exc}"
             ) from exc
     else:
+        # an "autofit" or "stat" result: plain JSON, checked by the analysis model
         result = result_document
     try:
         return Analysis(

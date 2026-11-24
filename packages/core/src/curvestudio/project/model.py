@@ -24,6 +24,15 @@ Id = Annotated[str, Field(pattern=ID_PATTERN, max_length=200)]
 VERSION_KEYS = ("python", "numpy", "scipy", "sympy", "curvestudio")
 """Dependency versions every manifest records."""
 
+STAT_RESULT_FIELDS = ("tool", "title", "level", "interpretation", "methods_fragment", "counts")
+"""The fields a :class:`~curvestudio.tools.stats.ToolResult` always carries.
+
+The project layer sits below the tools layer (the import contract forbids this package from
+importing ``curvestudio.tools``), so it cannot hold the ``ToolResult`` model itself. It checks
+these required top-level fields on a stored result here; the desktop validates the full model
+when it shows it, so a bare dict never reaches a person.
+"""
+
 
 def _require_plain_json(value: Any, field: str) -> None:
     """Reject values JSON cannot carry exactly (NaN, infinity, tuples, sets, ...)."""
@@ -50,14 +59,16 @@ class Analysis(BaseModel):
 
     ``kind="fit"`` holds a complete :class:`FitResult`; ``kind="autofit"`` holds the
     Auto-fit table as opaque JSON (validated to be plain JSON data) until the Auto-fit
-    result type lands.
+    result type lands. ``kind="stat"`` holds a statistics result as plain JSON (the
+    serialized ``ToolResult``) and, in ``config``, the tool's name under ``"tool"`` and
+    the choices that produced it.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     id: Id
     dataset_id: Id
-    kind: Literal["fit", "autofit"]
+    kind: Literal["fit", "autofit", "stat"]
     config: dict[str, Any]
     result: FitResult | dict[str, Any]
     note: str = ""
@@ -76,7 +87,23 @@ class Analysis(BaseModel):
             if isinstance(self.result, FitResult):
                 raise ValueError('an "autofit" analysis stores opaque JSON, not a FitResult')
             _require_plain_json(self.result, "result")
+        if self.kind == "stat":
+            self._check_stat_result()
         return self
+
+    def _check_stat_result(self) -> None:
+        """A stat result is a tool result's plain JSON, checked by its required fields."""
+        tool = self.config.get("tool")
+        if not isinstance(tool, str) or not tool:
+            raise ValueError('a "stat" analysis needs its tool name in config["tool"]')
+        if not isinstance(self.result, dict):
+            raise ValueError('a "stat" analysis stores its result as plain JSON')
+        missing = [field for field in STAT_RESULT_FIELDS if field not in self.result]
+        if missing:
+            raise ValueError(
+                f'a "stat" result is missing {", ".join(missing)}: it is not a statistics result'
+            )
+        _require_plain_json(self.result, "result")
 
 
 class Project(BaseModel):
@@ -135,7 +162,7 @@ class Manifest(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: Literal[1] = 1
+    schema_version: Literal[1, 2] = 2
     app: str = "curvestudio"
     app_version: str
     versions: dict[str, str]

@@ -5,13 +5,23 @@ its dataset restores that stored result when clicked — an Auto-fit's ranking o
 tabs, without refitting anything.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import cast
 
 from PySide6.QtCore import QPoint, Qt
 from PySide6.QtWidgets import QDockWidget, QTreeWidget, QTreeWidgetItem, QWidget
 
-from curvestudio.project import Project
+from curvestudio.project import Analysis, Project
+from curvestudio.tools.stats import catalogue
+
+STAT_LABEL = "Statistics"
+"""The row label's first word: a stored statistics result names its tool after it."""
+
+
+def _stat_label(analysis: Analysis, titles: Mapping[str, str]) -> str:
+    """A stored statistics result's row: "Statistics — <tool title>"."""
+    tool = analysis.config["tool"]  # the model keeps a "stat" analysis's tool name here
+    return f"{STAT_LABEL} — {titles.get(tool, tool)}"
 
 
 class ProjectTree(QTreeWidget):
@@ -52,6 +62,7 @@ class ProjectTree(QTreeWidget):
         datasets_root = QTreeWidgetItem(["Datasets"])
         self.addTopLevelItem(datasets_root)
         selected: QTreeWidgetItem | None = None
+        titles: dict[str, str] | None = None
         for entry in project.datasets:
             item = QTreeWidgetItem([entry.name])
             item.setData(0, Qt.ItemDataRole.UserRole, entry.id)
@@ -60,7 +71,12 @@ class ProjectTree(QTreeWidget):
             for analysis in project.analyses:
                 if analysis.dataset_id != entry.id:
                     continue
-                label = self._labels(analysis.id) if self._labels else analysis.kind
+                if analysis.kind == "stat":
+                    if titles is None:  # loaded once per rebuild, and only if needed
+                        titles = {info.name: info.title for info in catalogue()}
+                    label = _stat_label(analysis, titles)
+                else:
+                    label = self._labels(analysis.id) if self._labels else analysis.kind
                 child = QTreeWidgetItem([label])
                 child.setData(0, Qt.ItemDataRole.UserRole, analysis.id)
                 child.setData(0, Qt.ItemDataRole.UserRole + 1, "analysis")

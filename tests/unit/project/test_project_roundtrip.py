@@ -123,7 +123,7 @@ def test_archive_layout_and_manifest() -> None:
         "plot_settings.json",
     }
     manifest = json.loads(members["manifest.json"])
-    assert manifest["schema_version"] == 1
+    assert manifest["schema_version"] == 2
     assert manifest["project_name"] == "Demo project"
     assert manifest["created_at"] == CREATED_AT
     assert set(manifest["versions"]) == {"python", "numpy", "scipy", "sympy", "curvestudio"}

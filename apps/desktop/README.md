@@ -2,7 +2,8 @@
 
 PySide6 shell for ConcreteInfo CurveStudio. All engine calls go through
 `curvestudio.workflow` (shared with the web API), `curvestudio.project`
-(`.cstudio` files), `curvestudio.data` types and `curvestudio.discovery`
+(`.cstudio` project files, format version 2: datasets, fits, Auto-fit runs and
+statistics results), `curvestudio.data` types and `curvestudio.discovery`
 (Auto-fit runs, streamed through a worker) — never the maths layers directly;
 exports use `curvestudio_plotting` / `curvestudio_reporting`.
 
