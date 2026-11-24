@@ -288,12 +288,23 @@ def _stored_cv(fit: Fit) -> CrossValidation | None:
 def get_fit_audit(fit_id: uuid.UUID, user: CurrentUser, db: Db) -> FitAuditOut:
     """What a stored fit's evidence shows, check by check: convergence, the residual tests,
     the parameters, the held-out error once the fit has been cross-validated, and a simpler
-    model once the fit was ranked by an Auto-fit run. Read from the stored fit; nothing is
-    refitted. A bundle with no observations is a 422 whose ``detail.code`` is ``NO_DATA``."""
+    model once the fit was ranked by an Auto-fit run. Read from the stored fit, and for a
+    compact one from its dataset's whole table too; nothing is refitted. A bundle with no
+    observations is a 422 whose ``detail.code`` is ``NO_DATA``."""
     fit = own_fit(db, user, fit_id)
     bundle, spec = _stored_fit(fit)
+    table = None
+    if bundle.data.subsampled:
+        # A compact bundle holds only a subsample of the data it was fitted to, and the exact
+        # Durbin-Watson test needs every point: the dataset's whole table is given, as the
+        # cross-validation job gives it. (The test is computed for at most a thousand points
+        # and a compact fit has more than five thousand, so on one it is still Ljung-Box that
+        # decides.)
+        table = _stored_xy(own_dataset(db, user, fit.dataset_id))
     try:
-        found = audit_fit(bundle, spec=spec, ranking=_ranking_of(db, fit), cv=_stored_cv(fit))
+        found = audit_fit(
+            bundle, spec=spec, ranking=_ranking_of(db, fit), cv=_stored_cv(fit), data=table
+        )
     except ToolError as exc:
         raise tool_api_error(exc) from exc
     return FitAuditOut.model_validate(found.model_dump(mode="json"))
