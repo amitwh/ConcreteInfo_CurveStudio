@@ -1509,6 +1509,17 @@
               }
             ]
           },
+          "table_columns": {
+            "items": {
+              "$ref": "#/components/schemas/TableColumnOut"
+            },
+            "title": "Table Columns",
+            "type": "array"
+          },
+          "table_stored": {
+            "title": "Table Stored",
+            "type": "boolean"
+          },
           "weight_column": {
             "anyOf": [
               {
@@ -1539,7 +1550,9 @@
           "weight_column",
           "issues",
           "created_at",
-          "points"
+          "points",
+          "table_stored",
+          "table_columns"
         ],
         "title": "DatasetDetailOut",
         "type": "object"
@@ -5201,6 +5214,34 @@
           "database"
         ],
         "title": "SystemOut",
+        "type": "object"
+      },
+      "TableColumnOut": {
+        "description": "One column of a dataset's table.\n\n``kind`` is ``number`` or ``text``; ``n_missing`` counts the column's blank cells (empty\nor spaces only). The x, y and weight column are always ``number`` with none missing.",
+        "properties": {
+          "kind": {
+            "enum": [
+              "number",
+              "text"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "n_missing": {
+            "title": "N Missing",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "kind",
+          "n_missing"
+        ],
+        "title": "TableColumnOut",
         "type": "object"
       },
       "TokenOut": {

@@ -11,7 +11,7 @@ from multiprocessing import get_context
 from typing import Any
 
 from curvestudio_api.errors import ApiError
-from curvestudio_api.import_worker import ImportWorker, import_process_main
+from curvestudio_api.import_worker import ImportWorker, import_process_main, unpack_payloads
 from curvestudio_api.logging_setup import get_logger
 from curvestudio_api.worker import STARTED
 
@@ -75,10 +75,12 @@ def _check_zip(raw: bytes) -> None:
 
 @dataclass(frozen=True)
 class ImportRun:
-    """What the import process returned: metadata (JSON) and the stored CSV payload."""
+    """What the import process returned: metadata (JSON), the stored CSV of the fit's input
+    and the stored CSV of the table's other columns (empty when the table has none)."""
 
     meta: dict[str, Any]
     payload: bytes
+    table: bytes = b""
 
 
 class ImportRunner:
@@ -97,6 +99,7 @@ class ImportRunner:
         self._timeout_s = timeout_s
         self._memory_mb = memory_mb
         self._max_payload_bytes = max_payload_bytes
+        """The most one result message may hold: the fit's and the table's payload together."""
         self._worker = worker
         self._active: set[uuid.UUID] = set()
         self._lock = threading.Lock()
@@ -192,7 +195,12 @@ class ImportRunner:
                 ) from exc
 
     @staticmethod
-    def _finish(meta: dict[str, Any], payload: bytes) -> ImportRun:
+    def _finish(meta: dict[str, Any], message: bytes) -> ImportRun:
+        """The run a child reported: ``message`` holds both payloads (see ``pack_payloads``).
+
+        A message of another shape raises :class:`ValueError`, which :meth:`_wait` reports as
+        a parser that died: nothing of it is stored.
+        """
         status = meta.get("status")
         if status == "too_much_memory":
             raise _too_large("the file needs more memory to read than is allowed")
@@ -200,4 +208,5 @@ class ImportRunner:
             raise ApiError(
                 422, "VALIDATION_ERROR", "the file could not be read", {"code": "IMPORT_FAILED"}
             )
-        return ImportRun(meta, payload)
+        payload, table = unpack_payloads(message)
+        return ImportRun(meta, payload, table)

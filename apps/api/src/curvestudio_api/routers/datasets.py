@@ -15,7 +15,13 @@ from curvestudio_api.deps import Ctx, CurrentUser, Db, own_dataset
 from curvestudio_api.errors import ApiError
 from curvestudio_api.importer import precheck
 from curvestudio_api.orm import Dataset
-from curvestudio_api.schemas import DatasetDetailOut, DatasetOut, IssueOut, PointsOut
+from curvestudio_api.schemas import (
+    DatasetDetailOut,
+    DatasetOut,
+    IssueOut,
+    PointsOut,
+    TableColumnOut,
+)
 from curvestudio_api.storage import decode_payload
 from curvestudio_api.workflow_errors import api_error
 
@@ -113,7 +119,14 @@ def create_dataset(
                 "issues": issues,
             },
         )
-    quotas.check(db, ctx.settings, user.id, "dataset_bytes", adding_bytes=len(run.payload))
+    # The fit's and the table's payload both count, and are checked before anything is stored.
+    quotas.check(
+        db,
+        ctx.settings,
+        user.id,
+        "dataset_bytes",
+        adding_bytes=len(run.payload) + len(run.table),
+    )
     dataset = Dataset(
         id=uuid.uuid4(),
         user_id=user.id,
@@ -126,6 +139,8 @@ def create_dataset(
         issues=list(meta["issues"]),
         fingerprint=str(meta["fingerprint"]),
         payload=run.payload,
+        table=run.table or None,  # a table of the fit columns alone has no payload
+        table_columns=list(meta["table_columns"]),
     )
     db.add(dataset)
     audit.record(
@@ -153,6 +168,21 @@ def list_datasets(user: CurrentUser, db: Db) -> list[DatasetOut]:
 
 def _sample(values: np.ndarray, keep: np.ndarray) -> list[float]:
     return [float(v) for v in values[keep]]
+
+
+def _table_columns(dataset: Dataset) -> tuple[bool, list[TableColumnOut]]:
+    """Whether the dataset keeps its table, and the columns to list for it.
+
+    A dataset with a stored column list gives that list: every column of the table, the x, y
+    and weight column included. One from before has NULL there: it keeps no table, lists
+    those three alone and says so. Neither way reads the stored table itself.
+    """
+    if dataset.table_columns is not None:
+        return True, [TableColumnOut.model_validate(c) for c in dataset.table_columns]
+    fit = [dataset.x_column, dataset.y_column]
+    if dataset.weight_column is not None:
+        fit.append(dataset.weight_column)
+    return False, [TableColumnOut(name=name, kind="number", n_missing=0) for name in fit]
 
 
 @router.get("/{dataset_id}", response_model=DatasetDetailOut)
@@ -192,7 +222,15 @@ def get_dataset(
             y=_sample(xy.y, keep),
             w=None if xy.weights is None else _sample(xy.weights, keep),
         )
-    return DatasetDetailOut.model_validate({**_fields(dataset), "points": sampled})
+    table_stored, table_columns = _table_columns(dataset)
+    return DatasetDetailOut.model_validate(
+        {
+            **_fields(dataset),
+            "points": sampled,
+            "table_stored": table_stored,
+            "table_columns": table_columns,
+        }
+    )
 
 
 @router.delete("/{dataset_id}", status_code=204)

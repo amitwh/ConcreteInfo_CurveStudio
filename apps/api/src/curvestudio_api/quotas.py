@@ -79,10 +79,14 @@ def effective_limits(db: Session, settings: Settings, override: str | None = Non
 
 
 def usage(db: Session, user_id: uuid.UUID) -> Usage:
+    # A dataset's bytes are its two stored payloads. A dataset from before has no table
+    # payload (NULL), which SUM leaves out; the sum of an account with none at all is NULL
+    # too, so each part is brought to 0 on its own.
+    stored = func.coalesce(func.sum(func.length(Dataset.payload)), 0) + func.coalesce(
+        func.sum(func.length(Dataset.table)), 0
+    )
     datasets, nbytes = db.execute(
-        select(
-            func.count(Dataset.id), func.coalesce(func.sum(func.length(Dataset.payload)), 0)
-        ).where(Dataset.user_id == user_id)
+        select(func.count(Dataset.id), stored).where(Dataset.user_id == user_id)
     ).one()
     fits = db.scalar(select(func.count(Fit.id)).where(Fit.user_id == user_id)) or 0
     return Usage(datasets=int(datasets), dataset_bytes=int(nbytes), fits=int(fits))

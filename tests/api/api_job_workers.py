@@ -80,6 +80,32 @@ def memory_hog_import_worker(connection: Any, memory_mb: int, _arguments: dict[s
     connection.send_bytes(b"")
 
 
+def bulky_import_worker(connection: Any, _memory_mb: int, arguments: dict[str, Any]) -> None:
+    """Answers ``ok`` with a fit payload and a table payload as long as the arguments ask,
+    in the wire format of a real import: the cap on the two together is the runner's to keep."""
+    import json
+
+    from curvestudio_api.import_worker import pack_payloads
+    from curvestudio_api.worker import STARTED
+
+    connection.send_bytes(STARTED)
+    connection.send_bytes(json.dumps({"status": "ok"}).encode())
+    fit, table = b"x" * arguments["fit_bytes"], b"g" * arguments["table_bytes"]
+    connection.send_bytes(pack_payloads(fit, table))
+
+
+def prefixless_import_worker(connection: Any, _memory_mb: int, _arguments: dict[str, Any]) -> None:
+    """Answers ``ok`` with a last message of the shape used before the table was stored: a
+    payload with no length in front of it."""
+    import json
+
+    from curvestudio_api.worker import STARTED
+
+    connection.send_bytes(STARTED)
+    connection.send_bytes(json.dumps({"status": "ok"}).encode())
+    connection.send_bytes(b"x,y\n1.0,2.0\n")
+
+
 # -- Auto-fit workers ------------------------------------------------------------------------------
 
 

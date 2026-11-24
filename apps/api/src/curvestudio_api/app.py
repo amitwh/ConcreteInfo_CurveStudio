@@ -104,7 +104,10 @@ def create_app(
             concurrency=settings.import_concurrency,
             timeout_s=settings.import_timeout_s,
             memory_mb=settings.import_memory_mb,
-            max_payload_bytes=max(64 * 1024 * 1024, settings.max_rows * 100),
+            # One message carries the fit's and the table's payload, so the cap has to cover
+            # the two together: its floor triples to leave room for the table (a spreadsheet
+            # may expand to 100 MiB once read).
+            max_payload_bytes=max(192 * 1024 * 1024, settings.max_rows * 100),
             worker=import_worker,
         ),
         failed_logins=DailyCap(),

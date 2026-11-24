@@ -263,8 +263,25 @@ class PointsOut(BaseModel):
     w: list[float] | None
 
 
+class TableColumnOut(BaseModel):
+    """One column of a dataset's table.
+
+    ``kind`` is ``number`` or ``text``; ``n_missing`` counts the column's blank cells (empty
+    or spaces only). The x, y and weight column are always ``number`` with none missing.
+    """
+
+    name: str
+    kind: Literal["number", "text"]
+    n_missing: int
+
+
 class DatasetDetailOut(DatasetOut):
     points: PointsOut | None
+    # Whether the dataset keeps its table's other columns, and every column of the table with
+    # its kind. A dataset stored before the table was kept says ``false`` and lists its x, y
+    # and weight column alone.
+    table_stored: bool
+    table_columns: list[TableColumnOut]
 
 
 class ProgressOut(BaseModel):

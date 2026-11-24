@@ -162,6 +162,10 @@ class Dataset(_Timestamps, Base):
     issues: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
     fingerprint: Mapped[str] = mapped_column(String(64))
     payload: Mapped[bytes] = mapped_column(LargeBinary, deferred=True)
+    # The table's other columns and the list of every column's kind: NULL on a dataset that
+    # was stored before them, which is what tells the two forms apart.
+    table: Mapped[bytes | None] = mapped_column(LargeBinary, deferred=True, default=None)
+    table_columns: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, default=None)
 
     fits: Mapped[list[Fit]] = relationship(
         back_populates="dataset", cascade="all, delete-orphan", passive_deletes=True
