@@ -919,12 +919,13 @@ def test_the_summary_counts_failures_and_cautions_and_names_the_next_step(scenar
     clean = scenarios.clean()
     rmse = clean.result.stats.rmse if clean.result.stats else 0.1
 
-    # Nothing to flag: what could not run is named.
+    # Nothing to flag: what could not run is named, by its plain title and not by its id.
     assert audit_fit(clean).summary == (
-        "Every check that could run passed. 2 could not be run: cross_validation, simpler_model."
+        "Every check that could run passed. 2 could not be run (Predictive error was not "
+        "assessed; Simpler models were not compared)."
     )
     assert audit_fit(clean, cv=_cv(rmse)).summary == (
-        "Every check that could run passed. 1 could not be run: simpler_model."
+        "Every check that could run passed. 1 could not be run (Simpler models were not compared)."
     )
 
     # Cautions only.

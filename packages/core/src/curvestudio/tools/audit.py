@@ -172,7 +172,9 @@ def _summary(checks: Sequence[AuditCheck], result: FitResult) -> str:
     text = "Every check that could run passed."
     if missing:
         count = "1 could not be run" if len(missing) == 1 else f"{len(missing)} could not be run"
-        text += f" {count}: {', '.join(check.id for check in missing)}."
+        # By the plain title each check carries when it could not run, never by its id.
+        names = "; ".join(check.title for check in missing)
+        text += f" {count} ({names})."
     return text
 
 
