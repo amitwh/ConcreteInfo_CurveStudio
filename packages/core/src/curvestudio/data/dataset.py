@@ -1,18 +1,22 @@
 """Immutable dataset with a reversible log of operations."""
 
 import hashlib
+import numbers
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Self
 
 import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 from curvestudio.data.errors import DataError
 from curvestudio.data.operations import ExcludeRows, Operation, RenameColumn, TransformColumn
 
 FloatArray = NDArray[np.float64]
 BoolArray = NDArray[np.bool_]
+IntArray = NDArray[np.intp]
+StrArray = NDArray[np.str_]
 
 
 @dataclass(frozen=True, eq=False)
@@ -66,6 +70,90 @@ class XY:
             object.__setattr__(self, name, _frozen(column))
 
 
+class Column(BaseModel):
+    """One numeric column of a dataset over the rows that take part, as plain arrays.
+
+    :meth:`Dataset.column` builds it for the statistical tools, which take NumPy
+    arrays and never pandas. ``values`` holds one float per entry of ``rows`` (0-based
+    positions in :meth:`Dataset.table`); a blank cell or one that is not a number is
+    NaN, never an error, while an infinite cell stays infinite. Every array is a
+    detached read-only copy, also when the model is built directly.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid", arbitrary_types_allowed=True)
+
+    name: str
+    values: FloatArray
+    rows: IntArray
+
+    @field_validator("values", mode="before")
+    @classmethod
+    def _detached_values(cls, value: object) -> FloatArray:
+        return _one_dimensional(np.asarray(value, dtype=np.float64), "values")
+
+    @field_validator("rows", mode="before")
+    @classmethod
+    def _detached_rows(cls, value: object) -> IntArray:
+        return _one_dimensional(np.asarray(value, dtype=np.intp), "rows")
+
+    @model_validator(mode="after")
+    def _one_value_per_row(self) -> Self:
+        if self.values.shape != self.rows.shape:
+            raise ValueError(
+                f"values and rows must have equal lengths ({self.values.size} != {self.rows.size})"
+            )
+        return self
+
+    @property
+    def present(self) -> int:
+        """How many values are not NaN."""
+        return int(np.count_nonzero(~np.isnan(self.values)))
+
+    @property
+    def missing(self) -> BoolArray:
+        """``True`` where ``values`` is NaN: a blank cell, or one that is not a number."""
+        return _read_only(np.isnan(self.values))
+
+
+class GroupColumn(BaseModel):
+    """One grouping column of a dataset over the rows that take part, as plain arrays.
+
+    :meth:`Dataset.group` builds it for the statistical tools, which take NumPy
+    arrays and never pandas. ``labels`` holds one string per entry of ``rows`` (0-based
+    positions in :meth:`Dataset.table`); blank cells are left out of both. Every array
+    is a detached read-only copy, also when the model is built directly.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid", arbitrary_types_allowed=True)
+
+    name: str
+    labels: StrArray
+    rows: IntArray
+
+    @field_validator("labels", mode="before")
+    @classmethod
+    def _detached_labels(cls, value: object) -> StrArray:
+        return _one_dimensional(np.asarray(value, dtype=np.str_), "labels")
+
+    @field_validator("rows", mode="before")
+    @classmethod
+    def _detached_rows(cls, value: object) -> IntArray:
+        return _one_dimensional(np.asarray(value, dtype=np.intp), "rows")
+
+    @model_validator(mode="after")
+    def _one_label_per_row(self) -> Self:
+        if self.labels.shape != self.rows.shape:
+            raise ValueError(
+                f"labels and rows must have equal lengths ({self.labels.size} != {self.rows.size})"
+            )
+        return self
+
+    @property
+    def present(self) -> int:
+        """How many rows carry a label."""
+        return int(self.labels.size)
+
+
 @dataclass(frozen=True, eq=False, init=False)
 class Dataset:
     """A table of observations plus the ordered operations applied to it.
@@ -73,7 +161,7 @@ class Dataset:
     The original table is held privately and never modified; :attr:`original`
     returns a fresh copy, so nothing done to it can affect this dataset. Excluded
     rows stay in :meth:`table`; they are only masked out by :meth:`active_mask`
-    and therefore by :meth:`xy`.
+    and therefore by :meth:`xy`, :meth:`column` and :meth:`group`.
     """
 
     name: str
@@ -222,6 +310,52 @@ class Dataset:
             digest.update(w_arr.tobytes())
         return XY(x_arr, y_arr, w_arr, x, y, digest.hexdigest())
 
+    def column(self, name: str) -> Column:
+        """Column ``name`` over the rows that take part, as plain arrays.
+
+        Unlike :meth:`xy` this never raises for a missing value: a blank cell, or
+        one that is not a number, is NaN in ``values``. Only an unknown column
+        (``UNKNOWN_COLUMN``) or one holding dates or durations (``NON_NUMERIC``)
+        raises; the tools refuse a column with too few values themselves.
+        """
+        table, active = self._materialise()
+        if name not in table.columns:
+            raise DataError("UNKNOWN_COLUMN", f"Column {name!r} does not exist")
+        series = table[name]
+        if series.dtype.kind in "Mm":
+            raise DataError("NON_NUMERIC", f"Column {name!r} holds dates or durations, not numbers")
+        values, _unparseable = coerce_numeric(series)
+        rows = np.flatnonzero(active)
+        return Column(name=name, values=values[rows], rows=rows)
+
+    def group(self, name: str) -> GroupColumn:
+        """Column ``name`` as group labels over the rows that take part.
+
+        Blank cells take no label and are left out of ``rows``. Only an unknown
+        column raises (``UNKNOWN_COLUMN``); any other column may group the rows,
+        numbers and dates included.
+        """
+        table, active = self._materialise()
+        if name not in table.columns:
+            raise DataError("UNKNOWN_COLUMN", f"Column {name!r} does not exist")
+        cells = table[name].to_numpy(dtype=object)
+        labels: list[str] = []
+        rows: list[int] = []
+        for position in np.flatnonzero(active):
+            label = _label(cells[position])
+            if label is not None:
+                rows.append(int(position))
+                labels.append(label)
+        return GroupColumn(
+            name=name,
+            labels=np.array(labels, dtype=np.str_),
+            rows=np.array(rows, dtype=np.intp),
+        )
+
+    def excluded_rows(self) -> IntArray:
+        """0-based positions in :meth:`table` of the rows that take no part."""
+        return _read_only(np.flatnonzero(~self._materialise()[1]))
+
     def _materialise(self) -> tuple[pd.DataFrame, BoolArray]:
         frame = self._original  # operations never mutate in place
         active = np.ones(len(frame), dtype=bool)
@@ -241,6 +375,20 @@ def _frozen(values: FloatArray) -> FloatArray:
     out = np.array(values, dtype=np.float64, copy=True)
     out.setflags(write=False)
     return out
+
+
+def _read_only[ScalarT: np.generic](array: NDArray[ScalarT]) -> NDArray[ScalarT]:
+    """A detached copy of ``array`` that cannot be written to."""
+    out = np.array(array, copy=True)
+    out.setflags(write=False)
+    return out
+
+
+def _one_dimensional[ScalarT: np.generic](array: NDArray[ScalarT], name: str) -> NDArray[ScalarT]:
+    """``array`` as a read-only copy; anything but a flat array raises ``ValueError``."""
+    if array.ndim != 1:
+        raise ValueError(f"{name} must be one-dimensional, got shape {array.shape}")
+    return _read_only(array)
 
 
 def _require_finite(name: str, column: FloatArray) -> None:
@@ -283,6 +431,23 @@ def _numeric_column(table: pd.DataFrame, name: str, active: BoolArray) -> FloatA
             tuple(int(i) for i in bad),
         )
     return values
+
+
+def _label(cell: object) -> str | None:
+    """A group label for ``cell``, or ``None`` when the cell is blank.
+
+    A number reads as a person sees it: a whole number without ``.0``, and no
+    rounding noise (15 significant digits). Any other cell is ``str(cell)``
+    without surrounding whitespace.
+    """
+    if cell is None or pd.isna(cell):
+        return None
+    if isinstance(cell, numbers.Integral):
+        return str(cell)
+    if isinstance(cell, numbers.Real):
+        return f"{float(cell):.15g}"
+    text = str(cell).strip()
+    return text or None
 
 
 def _apply(op: Operation, frame: pd.DataFrame, active: BoolArray) -> tuple[pd.DataFrame, BoolArray]:
