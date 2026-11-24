@@ -12,8 +12,7 @@ from sqlalchemy.orm import Session, defer
 
 from curvestudio.data import XY
 from curvestudio.discovery import AutoFitResult
-from curvestudio.tools import ToolError, all_methods_texts, audit_fit
-from curvestudio.tools.cross_validation import CrossValidation
+from curvestudio.tools import CrossValidation, ToolError, all_methods_texts, audit_fit
 from curvestudio.workflow import FitBundle, FitSpec, Prediction, WorkflowError, predict
 from curvestudio_api import audit, quotas
 from curvestudio_api.deps import Context, Ctx, CurrentUser, Db, own_dataset, own_fit, own_job
@@ -275,8 +274,8 @@ def _ranking_of(db: Session, fit: Fit) -> AutoFitResult | None:
 def _stored_cv(fit: Fit) -> CrossValidation | None:
     """The cross-validation stored on the fit; ``None`` until one has been run.
 
-    ``CrossValidation`` is the statistics layer's, which the API may not import directly: it
-    is taken from the tools module that produces it.
+    ``CrossValidation`` is the statistics layer's, which the API may not import directly: the
+    tools package re-exports it.
     """
     return None if fit.cv is None else CrossValidation.model_validate(fit.cv)
 

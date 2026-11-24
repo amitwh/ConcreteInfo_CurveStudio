@@ -1,5 +1,6 @@
 """Tools that read a finished fit and say what its evidence shows. Pure functions, no I/O."""
 
+from curvestudio.statistics import CrossValidation
 from curvestudio.tools._errors import ToolError
 from curvestudio.tools.audit import (
     AuditCheck,
@@ -15,6 +16,7 @@ from curvestudio.tools.methods import MethodsText, Style, all_methods_texts, met
 
 __all__ = [
     "AuditCheck",
+    "CrossValidation",
     "ExcludedRow",
     "FitAudit",
     "MethodsText",
