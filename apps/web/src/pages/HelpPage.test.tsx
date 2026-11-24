@@ -16,6 +16,14 @@ const SECTION_TITLES = [
   "Keyboard shortcuts (desktop)",
   "Troubleshooting",
   "Fit audit and methods text",
+  "Statistics tools",
+  "Summarising columns",
+  "Comparing means",
+  "Rank-based comparisons",
+  "Relationships between columns",
+  "Counts",
+  "Comparing two methods",
+  "Sample size and power",
   "About, licence, projects and policy",
 ];
 
@@ -39,7 +47,7 @@ function atAddress(address: string, body: () => void): void {
 }
 
 describe("HelpPage", () => {
-  it("renders all twelve section headings in order", () => {
+  it("renders all twenty section headings in order", () => {
     renderHelp();
     const headings = screen.getAllByRole("heading", { level: 2 });
     expect(headings.map((heading) => heading.textContent)).toEqual(SECTION_TITLES);
@@ -52,6 +60,14 @@ describe("HelpPage", () => {
       "auto-fit",
       "keyboard-shortcuts",
       "fit-audit-and-methods-text",
+      "statistics-tools",
+      "summarising-columns",
+      "comparing-means",
+      "rank-based-comparisons",
+      "relationships-between-columns",
+      "counts",
+      "comparing-two-methods",
+      "sample-size-and-power",
       "about-licence-credits",
     ]) {
       const section = document.getElementById(id);

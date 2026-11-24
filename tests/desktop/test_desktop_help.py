@@ -2,7 +2,7 @@
 
 The canonical help text lives in ``docs/help-content.md``; it is copied verbatim into
 the desktop package so the frozen application can render it. These tests pin that copy
-to the source, the twelve sections in order, the Markdown rendering (tables, lists,
+to the source, the twenty sections in order, the Markdown rendering (tables, lists,
 bold, inline code), search, the menu/shortcut wiring, the About contract (logo, links,
 runtime versions, credits), the shared list of other ConcreteInfo projects and
 the Lucide icon mapping.
@@ -119,18 +119,19 @@ def test_help_content_ships_the_canonical_document_verbatim() -> None:
     assert help_markdown() == CANONICAL_HELP.read_text(encoding="utf-8")
 
 
-def test_help_dialog_lists_the_twelve_canonical_sections_in_order(qtbot, settings) -> None:
+def test_help_dialog_lists_the_twenty_canonical_sections_in_order(qtbot, settings) -> None:
     from curvestudio_desktop.views.help_dialog import HelpDialog
 
     dialog = HelpDialog(settings=settings)
     qtbot.addWidget(dialog)
     titles = dialog.sections()
-    assert len(titles) == 12
+    assert len(titles) == 20
     assert titles == canonical_section_titles()
-    assert [dialog.section_list.item(i).text() for i in range(12)] == list(titles)
+    assert [dialog.section_list.item(i).text() for i in range(20)] == list(titles)
     assert titles[0] == "1. Getting started"
     assert titles[10] == "11. Fit audit and methods text"
-    assert titles[-1] == "12. About, licence, projects and policy"
+    assert titles[11] == "12. Statistics tools"
+    assert titles[-1] == "20. About, licence, projects and policy"
 
 
 def test_markdown_renders_tables_lists_bold_links_and_inline_code() -> None:
@@ -155,7 +156,7 @@ def test_markdown_renders_tables_lists_bold_links_and_inline_code() -> None:
     steps = markdown_to_html(sections["1. Getting started"].body)
     assert "<ol>" in steps and steps.count("<li>") >= 5
 
-    about = markdown_to_html(sections["12. About, licence, projects and policy"].body)
+    about = markdown_to_html(sections["20. About, licence, projects and policy"].body)
     assert '<a href="https://www.concreteinfo.in">' in about
     assert "<em>" in about or "<strong>" in about
 
@@ -223,7 +224,7 @@ def test_search_filters_the_section_list_and_jumps_to_the_first_body_match(qtbot
     assert all(
         not dialog.section_list.item(i).isHidden() for i in range(dialog.section_list.count())
     )
-    assert len(dialog.sections()) == 12
+    assert len(dialog.sections()) == 20
 
 
 def test_an_empty_search_result_says_so(qtbot, settings) -> None:
@@ -486,9 +487,9 @@ def test_about_carries_the_disclaimer_and_the_policy(qtbot) -> None:
 # -- example datasets --------------------------------------------------------------------------
 
 
-def test_help_section_12_names_all_three_example_datasets() -> None:
+def test_help_section_20_names_all_three_example_datasets() -> None:
     body = CANONICAL_HELP.read_text(encoding="utf-8").split(
-        "## 12. About, licence, projects and policy", 1
+        "## 20. About, licence, projects and policy", 1
     )[1]
     for filename in ("example.csv", "example-decay.csv", "example-kinetics.csv"):
         assert f"`{filename}`" in body, filename

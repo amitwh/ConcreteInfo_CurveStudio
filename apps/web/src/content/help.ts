@@ -711,6 +711,432 @@ export const HELP_SECTIONS: HelpSection[] = [
     ],
   },
   {
+    id: "statistics-tools",
+    title: "Statistics tools",
+    blocks: [
+      {
+        kind: "p",
+        content: [
+          "The ",
+          strong("Statistics page"),
+          " on the desktop and the ",
+          strong("Statistics mode"),
+          " on the web run the same nineteen tools, in seven families, on a dataset's columns. Pick a tool from the catalogue, choose the dataset it reads, fill in its fields and press ",
+          strong("Run"),
+          "; the command line runs the same tools with ",
+          code("curvestudio stats --list"),
+          " and ",
+          code("curvestudio stats <tool> <file> …"),
+          ".",
+        ],
+      },
+      {
+        kind: "p",
+        content: [
+          "Each field is one of four kinds: a ",
+          strong("numeric column"),
+          ", ",
+          strong("several columns"),
+          " (one to twenty, depending on the tool), a ",
+          strong("group column"),
+          " whose levels are the groups compared, or an ",
+          strong("option"),
+          " (a confidence level, a post-hoc test, a number of bins, a flag). The description under each field says what it expects. A required field left empty stops the run with its reason rather than guessing a column.",
+        ],
+      },
+      {
+        kind: "p",
+        content: [
+          strong("What a result holds."),
+          " Every tool returns the same shape of result, and the desktop and web apps show it in the same order:",
+        ],
+      },
+      {
+        kind: "ul",
+        items: [
+          [
+            strong("Estimates"),
+            " — a label, the value, its standard error and the interval the level names.",
+          ],
+          [
+            strong("Tests"),
+            " — the test's name, its statistic, its degrees of freedom, its p-value and, where several comparisons were made, the adjusted p-value.",
+          ],
+          [
+            strong("Assumptions"),
+            " — one card per check the tool could make: what was read, the statistic, the rule it was judged by, and what to do when it is flagged.",
+          ],
+          [
+            strong("Warnings"),
+            " — anything the data forced, such as a column that does not vary.",
+          ],
+          [
+            strong("Tables and plots"),
+            " — the extra tables and pictures the tool draws.",
+          ],
+          [
+            strong("Interpretation"),
+            " — one to three plain sentences on what the result says.",
+          ],
+          [
+            strong("Methods"),
+            " — a paragraph that can be carried into a paper as it stands; copy it with ",
+            strong("Copy methods text"),
+            " on the desktop and on the web.",
+          ],
+          [
+            strong("Counts and excluded rows"),
+            " — how many rows were offered, used and excluded, with each excluded row's position and the reason it was left out (the web lists it under ",
+            strong("Rows"),
+            "). Nothing is dropped without being counted.",
+          ],
+        ],
+      },
+      {
+        kind: "p",
+        content: [
+          strong("Reading a verdict."),
+          " The assumption cards use four words. ",
+          strong("Pass"),
+          ": nothing in the data contradicts the assumption at the usual level. ",
+          strong("Caution"),
+          ": evidence that would turn up by chance in about 1 such check in 20 if the assumption held. ",
+          strong("Fail"),
+          ": evidence that would turn up in about 1 in 1,000. ",
+          strong("Not applicable"),
+          ": the check could not be made, and the card says why. A verdict is evidence, not proof: a caution is a prompt to look, and a pass does not prove the assumption holds. The same reading applies to every p-value: a small one is evidence against the null hypothesis, and a large one is not evidence that the null is true.",
+        ],
+      },
+      {
+        kind: "p",
+        content: [
+          "Points outside ",
+          strong("Tukey's fences"),
+          " are flagged in their own table and kept in every statistic: a summary describes the data it was given and does not decide which points to believe. No tool removes a point for being unusual.",
+        ],
+      },
+    ],
+  },
+  {
+    id: "summarising-columns",
+    title: "Summarising columns",
+    blocks: [
+      {
+        kind: "p",
+        content: [
+          "The ",
+          strong("Summarise"),
+          " family describes one column: where its values sit and how far they spread. Both tools read a single numeric column, and the rows the column cannot use are counted and listed.",
+        ],
+      },
+      { kind: "h3", text: "Descriptive statistics" },
+      {
+        kind: "p",
+        content: [
+          "Reads one column, optionally split by a group column. It reports the mean, the sample standard deviation, the quartiles, the coefficient of variation, the bias-corrected skewness and the excess kurtosis, and a t interval around each mean. A group column summarises each of its levels separately. Points beyond Tukey's fences (1.5 interquartile ranges past the quartiles) appear in their own table and are kept in every number above: the summary describes the data it was given. The methods fragment writes each definition once.",
+        ],
+      },
+      { kind: "h3", text: "Distribution analysis" },
+      {
+        kind: "p",
+        content: [
+          "Reads one column and reports its mean with an interval and its standard deviation, then tests whether the values look normal with the Shapiro–Wilk and Anderson–Darling tests. A histogram with the fitted normal's expected count in each bin and a normal Q-Q plot show the shape the tests are reading; leave ",
+          strong("Bins"),
+          " empty and the Freedman–Diaconis rule picks the number. A small p-value is evidence that the values are not normal; a large one is not evidence that they are.",
+        ],
+      },
+    ],
+  },
+  {
+    id: "comparing-means",
+    title: "Comparing means",
+    blocks: [
+      {
+        kind: "p",
+        content: [
+          "The ",
+          strong("Compare means"),
+          " family asks whether groups share a mean, by the t test and the analysis of variance. Every test reports the difference or the effect size with an interval beside its p-value, and every assumption the data can show is checked.",
+        ],
+      },
+      { kind: "h3", text: "t tests" },
+      {
+        kind: "p",
+        content: [
+          "One tool with three kinds. ",
+          strong("one_sample"),
+          " tests a column's mean against the hypothesised value. ",
+          strong("independent"),
+          " compares two groups' means, given either two columns or one column and a group column with exactly two levels; Welch's test is the default and ",
+          strong("Equal variances"),
+          " switches to Student's test. ",
+          strong("paired"),
+          " compares the difference of two columns, or one column of differences, against the hypothesised difference. Each reports Hedges' g (Cohen's dz for the paired test) with its interval. Shapiro–Wilk checks normality, Levene's median-centred test checks equal variances under Student's test, and the paired test checks that every pair is complete.",
+        ],
+      },
+      { kind: "h3", text: "One-way analysis of variance" },
+      {
+        kind: "p",
+        content: [
+          "Compares the mean of one column across the levels of a group column, and reports eta squared and omega squared for how much of the variation the groups account for. With more than two groups a post-hoc test follows: ",
+          strong("Tukey"),
+          " compares every pair, and ",
+          strong("Dunnett"),
+          " compares every group against the ",
+          strong("Control"),
+          " level; each p-value is already adjusted for the family. Welch's analysis of variance, which does not assume equal variances, is reported beside the ordinary one. Shapiro–Wilk checks each group's normality and Levene's test their equal variances.",
+        ],
+      },
+      { kind: "h3", text: "Two-way analysis of variance" },
+      {
+        kind: "p",
+        content: [
+          "Splits a column's mean by two group columns and their interaction, and reports the main effects, the interaction and partial eta squared. An unbalanced design is read by Type II sums of squares, so the order the factors are given in does not change the table.",
+        ],
+      },
+      { kind: "h3", text: "Repeated-measures analysis of variance" },
+      {
+        kind: "p",
+        content: [
+          "Compares the same subjects measured under two to twenty conditions, given one column per condition in wide form and optional condition ",
+          strong("Names"),
+          ". A row missing in any condition is left out of all of them. The F test assumes sphericity — that the conditions are equally correlated — so Mauchly's test checks it, and the Greenhouse–Geisser and Huynh–Feldt corrections scale the degrees of freedom when it is doubtful. Generalised eta squared is the effect size.",
+        ],
+      },
+    ],
+  },
+  {
+    id: "rank-based-comparisons",
+    title: "Rank-based comparisons",
+    blocks: [
+      {
+        kind: "p",
+        content: [
+          "The ",
+          strong("Rank-based comparisons"),
+          " family reads the order of the values, never their size, so an outlier moves a rank no further than the next value would. None of them assumes the values are normally distributed; each reports an effect size or an interval beside its p-value. It holds the two-sample, paired and several-group comparisons.",
+        ],
+      },
+      { kind: "h3", text: "Mann-Whitney U test" },
+      {
+        kind: "p",
+        content: [
+          "Compares two independent samples, given as two columns or as one column split by a group column with exactly two levels. It reports the Hodges–Lehmann shift with a distribution-free interval and the rank-biserial correlation. It answers whether one sample tends to be larger, not whether the means are equal.",
+        ],
+      },
+      { kind: "h3", text: "Wilcoxon signed-rank test" },
+      {
+        kind: "p",
+        content: [
+          "Compares paired differences against the ",
+          strong("Null value"),
+          ": give two columns, or one column of differences. Zero differences are left out, as Wilcoxon's original rule does. It reports the pseudo-median — the median of the Walsh averages — with its interval and the matched-pairs rank-biserial correlation.",
+        ],
+      },
+      { kind: "h3", text: "Sign test" },
+      {
+        kind: "p",
+        content: [
+          "Counts how many differences fall above and below the ",
+          strong("Null value"),
+          " and tests that count. It asks only that the differences mostly fall on one side, so it is used when their sizes are not trustworthy and only their direction is. It reports the median with the interval the sign test itself gives.",
+        ],
+      },
+      { kind: "h3", text: "Kruskal–Wallis test" },
+      {
+        kind: "p",
+        content: [
+          "Compares the groups' mean ranks across the levels of a group column, gives tied values their average rank, and corrects for the ties. Dunn's test compares the pairs when there are more than two groups, with Holm's method adjusting its p-values. It makes no assumption of normality.",
+        ],
+      },
+      { kind: "h3", text: "Friedman test" },
+      {
+        kind: "p",
+        content: [
+          "The rank-based counterpart of the repeated-measures analysis: it ranks each subject's conditions together and asks whether the mean ranks differ, with Kendall's W as its effect size. Durbin–Conover comparisons follow when there are more than two conditions, with Holm's method adjusting them. It needs at least three conditions.",
+        ],
+      },
+      {
+        kind: "p",
+        content: [
+          "None of these tests whether the groups share a shape; read the box plot for that. A small p-value is evidence that they differ in their typical value, and it does not prove by how much or why.",
+        ],
+      },
+    ],
+  },
+  {
+    id: "relationships-between-columns",
+    title: "Relationships between columns",
+    blocks: [
+      {
+        kind: "p",
+        content: [
+          "The ",
+          strong("Relationships between columns"),
+          " family asks whether one column moves with another: the correlation coefficient for a pair, and a regression line for a model.",
+        ],
+      },
+      { kind: "h3", text: "Correlation" },
+      {
+        kind: "p",
+        content: [
+          "Takes two to twenty numeric columns and reports the coefficient between every pair, on the rows complete in both of that pair. ",
+          strong("Pearson"),
+          " measures a linear association; ",
+          strong("Spearman"),
+          " measures a monotone one and uses the t approximation; ",
+          strong("Kendall"),
+          " reports tau-b with the normal approximation. Each pair gets a test and an interval, and the whole matrix is shown with 1 on its diagonal. A pair with fewer than three complete rows, or with a column that does not vary, has no coefficient: the result says why and warns rather than showing a number. Scatter plots are drawn when there are at most four pairs. A strong curved relationship can read near 0, so a scatter plot is the first thing to read.",
+        ],
+      },
+      { kind: "h3", text: "Linear regression" },
+      {
+        kind: "p",
+        content: [
+          "Explains one ",
+          strong("Outcome"),
+          " column from one to twenty ",
+          strong("Predictors"),
+          " by ordinary least squares. It reports each coefficient with its standard error, t statistic, p-value and interval, the standardised coefficients, each predictor's variance inflation factor, and prediction intervals at predictor values you give (up to 1,000 rows). One predictor is drawn as a scatter plot with the fitted line and the confidence band of the mean response; the residuals against the fitted values and a normal Q-Q plot of the residuals are always drawn. Shapiro–Wilk checks the residuals' normality, the studentized Breusch–Pagan test a constant variance, and the exact Durbin–Watson test independence in the order of the rows. Linearity is not one number: read the residuals against each predictor. A predictor that does not vary, or that is exactly collinear with the others, is refused, and so is a model with fewer than one residual degree of freedom.",
+        ],
+      },
+    ],
+  },
+  {
+    id: "counts",
+    title: "Counts",
+    blocks: [
+      {
+        kind: "p",
+        content: [
+          "The ",
+          strong("Counts"),
+          " family tabulates two label columns and tests whether they are associated.",
+        ],
+      },
+      { kind: "h3", text: "Contingency table" },
+      {
+        kind: "p",
+        content: [
+          "Pairs a ",
+          strong("Rows"),
+          " label with a ",
+          strong("Columns"),
+          " label by row position and counts every combination. It reports the Pearson chi-square test of independence, Cramér's V as the effect size, and for a 2 x 2 table the odds ratio and the risk ratio with their intervals. The exact test replaces the chi-square test for a 2 x 2 table whose smallest expected count is below 5. Four tables show the counts, the row percentages, the column percentages and each cell's share of the total. A row without a label in either column is left out and listed.",
+        ],
+      },
+      { kind: "h3", text: "McNemar's test" },
+      {
+        kind: "p",
+        content: [
+          "Reads the same subjects' two-level labels ",
+          strong("Before"),
+          " and ",
+          strong("After"),
+          " a change, paired by row position, and tests whether the two marginal proportions are equal. It uses the exact binomial distribution when the discordant pairs number at most 25, and the chi-square distribution with a continuity correction otherwise. The effect is the difference in the two marginal proportions, with Newcombe's method 10 interval for paired proportions. A level that the paired rows leave empty is dropped with a warning.",
+        ],
+      },
+      {
+        kind: "p",
+        content: [
+          "A small p-value is evidence of an association (or of a change), not proof of its cause, and a large one is not evidence that the columns are independent.",
+        ],
+      },
+    ],
+  },
+  {
+    id: "comparing-two-methods",
+    title: "Comparing two methods",
+    blocks: [
+      {
+        kind: "p",
+        content: [
+          "The ",
+          strong("Method comparison"),
+          " family asks whether two methods that measure the same quantity agree closely enough to be used interchangeably. All three tools pair ",
+          strong("Method A"),
+          "'s readings with ",
+          strong("Method B"),
+          "'s by row position on the rows complete in both, and count and list every row left out.",
+        ],
+      },
+      { kind: "h3", text: "Bland–Altman agreement" },
+      {
+        kind: "p",
+        content: [
+          "Takes the difference of each pair (method A minus method B) against the pair's mean, and reports the bias, the standard deviation of the differences and the limits of agreement at the bias plus or minus 1.96 standard deviations, each with an interval at the chosen level; the limits themselves stay at 95 %. Points beyond the limits are listed, never removed: they are where the methods disagree most. A slope away from zero in the regression of the difference on the mean is proportional bias — the difference changes with the size of the reading. Shapiro–Wilk checks the differences' normality and the studentized Breusch–Pagan test a constant variance. The difference-against-mean plot carries the bias, both limits and zero; a second plot puts method A against method B with the line of equality.",
+        ],
+      },
+      { kind: "h3", text: "Deming regression" },
+      {
+        kind: "p",
+        content: [
+          "Fits the line relating method B to method A while allowing for measurement error in both, weighted by the ",
+          strong("Error ratio"),
+          " of their error variances. One means both methods carry the same error variance; a larger value means method B is the noisier one. That ratio is an assumption the fit makes, not a quantity these data estimate, and the result says so. The standard errors come from the delete-one jackknife.",
+        ],
+      },
+      { kind: "h3", text: "Passing–Bablok regression" },
+      {
+        kind: "p",
+        content: [
+          "Fits the same line with no assumption about the distribution of the errors: the slope is the shifted median of the slopes between every pair of points, and the intercept the median of the intercepts through that slope. Its intervals are the rank-based intervals of Passing and Bablok. A straight-line relation is still assumed, and the plot against the line of identity is where a departure shows.",
+        ],
+      },
+      {
+        kind: "p",
+        content: [
+          "For all three, a slope away from one or an intercept away from zero is read at a glance against the line of identity. Agreement between two methods is evidence about these samples, not proof that the methods may be used interchangeably in every range.",
+        ],
+      },
+    ],
+  },
+  {
+    id: "sample-size-and-power",
+    title: "Sample size and power",
+    blocks: [
+      {
+        kind: "p",
+        content: [
+          "The ",
+          strong("Sample size and power"),
+          " family needs no data. It answers one of two questions about a design: how many observations per group a target power needs, or what power a given number of observations reaches.",
+        ],
+      },
+      { kind: "h3", text: "Sample size and power" },
+      {
+        kind: "p",
+        content: [
+          "Choose the ",
+          strong("Design"),
+          ": the one-sample, independent or paired t test, the one-way analysis of variance, the Pearson correlation, or the difference of two proportions. Give exactly one of ",
+          strong("Power"),
+          " and ",
+          strong("N per group"),
+          ", and the other is solved, with the sample size the smallest whole number that reaches the target. ",
+          strong("Effect size"),
+          " is Cohen's d for the one-sample and independent t tests, dz for the paired test, Cohen's f for the analysis of variance, and the correlation itself for the correlation test; the proportions design takes ",
+          strong("First proportion"),
+          " and ",
+          strong("Second proportion"),
+          " instead. ",
+          strong("Alpha"),
+          " is the significance level of the two-sided test. ",
+          strong("Group size ratio"),
+          " handles unequal groups, and ",
+          strong("Number of groups"),
+          " sets the groups of the analysis of variance. A table scans the power over sample size, from the first size that reaches 0.05 to the first that reaches 0.99, so you can see how quickly the design becomes useful.",
+        ],
+      },
+      {
+        kind: "p",
+        content: [
+          "Every number is a statement about the design and significance level you stated. It is not a p-value, and it does not prove that the study will find an effect or that the effect is real.",
+        ],
+      },
+    ],
+  },
+  {
     id: "about-licence-credits",
     title: "About, licence, projects and policy",
     blocks: [

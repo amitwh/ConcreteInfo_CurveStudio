@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pytest
 
+from curvestudio.tools.stats import FAMILIES
 from curvestudio_desktop import NO_NETWORK_NOTE
 from curvestudio_desktop.views.dialogs import POLICY_HTML
 
@@ -95,6 +96,21 @@ def test_the_canonical_help_no_longer_carries_the_shorter_wording() -> None:
 
 def test_the_packaged_help_is_the_canonical_help_byte_for_byte() -> None:
     assert PACKAGED_HELP.read_bytes() == CANONICAL_HELP.read_bytes()
+
+
+HELP_SURFACES: dict[str, Path] = {
+    "the canonical help": CANONICAL_HELP,
+    "the packaged help": PACKAGED_HELP,
+    "the web help": SURFACES["web help"],
+}
+
+
+@pytest.mark.parametrize("surface", sorted(HELP_SURFACES))
+def test_every_help_surface_names_statistics_and_each_family(surface: str) -> None:
+    text = squeezed(HELP_SURFACES[surface].read_text(encoding="utf-8"))
+    assert "Statistics" in text, f"{surface} does not name the Statistics tools"
+    for _, title in FAMILIES:
+        assert title in text, f"{surface} does not name the {title!r} family"
 
 
 def test_the_status_bar_note_is_the_new_one() -> None:
