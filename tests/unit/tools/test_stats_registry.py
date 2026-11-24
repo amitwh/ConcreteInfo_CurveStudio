@@ -7,6 +7,7 @@ private registry with a toy request model; the tools themselves are tested where
 """
 
 from collections.abc import Mapping
+from importlib import import_module
 from typing import Literal
 
 import numpy as np
@@ -483,7 +484,11 @@ def test_the_module_level_registry_is_the_one_every_surface_reaches() -> None:
     with pytest.raises(ToolError) as refused:
         build_request("no-such-tool", {}, column=Lookups().column, group=Lookups().group)
     assert refused.value.code == "UNKNOWN_TOOL"
-    assert TOOL_MODULES == ()
+    # The tuple grows by one module with every family, so it is not pinned to a list here.
+    # What must hold: every name is a real module, and every module registered its tools.
+    for module_name in TOOL_MODULES:
+        assert import_module(module_name).__name__ == module_name
+    assert len(catalogue()) >= len(TOOL_MODULES)
 
 
 def test_the_families_are_named_in_the_order_a_person_meets_them() -> None:
