@@ -234,6 +234,8 @@ export function WorkspacePage({
 
   const selectDataset = useCallback(
     async (id: string): Promise<void> => {
+      // The ref still holds the previous selection: React has not re-rendered yet.
+      const reselecting = id === selectedIdRef.current;
       setSelectedId(id);
       onSelectionChange?.(id);
       setDetail(null);
@@ -251,6 +253,9 @@ export function WorkspacePage({
       setStatPlotIndex(0);
       setStatError(null);
       setStatResults([]);
+      // Clicking the dataset already selected changes no dependency of the history effect,
+      // yet the clear above emptied the list; load it again so the results stay on screen.
+      if (modeRef.current === "stats" && reselecting) void loadStatHistory(id);
       poller.reset();
       // Auto-fit leads: ensure a run (or the latest stored one) right after selection —
       // but only in Auto-fit mode, so Statistics and Manual fit spend no run.

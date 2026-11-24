@@ -25,6 +25,7 @@ type RankedFit = components["schemas"]["RankedFit"];
 type JobOut = components["schemas"]["JobOut"];
 type StatsToolsOut = components["schemas"]["StatsToolsOut"];
 type StatResultOut = components["schemas"]["StatResultOut"];
+type StatResultSummaryOut = components["schemas"]["StatResultSummaryOut"];
 
 /** The page under its providers: theme, auth, and the query client the app has at its root. */
 function renderPage(initialMode: "stats" | null = null) {
@@ -232,6 +233,16 @@ const STAT_RESULT: StatResultOut = {
 /** A run refusal the next statistics POST rejects with; null means a normal answer. */
 let statRunFails: ApiError | null = null;
 
+const STAT_SUMMARY: StatResultSummaryOut = {
+  id: "stat-1",
+  tool: "descriptives",
+  title: "Descriptive statistics",
+  dataset_id: "ds-1",
+  created_at: "2026-11-17T10:00:00Z",
+};
+
+let storedStatistics: StatResultSummaryOut[] = [];
+
 /** When true the open-row call answers with an existing fit instead of a polled job. */
 let openAsExistingFit = false;
 
@@ -258,9 +269,8 @@ function route(path: string, options?: RequestInit): Promise<unknown> {
   }
   if (path === "/jobs/job-1") return Promise.resolve(FAILED_JOB);
   if (path === "/stats/tools") return Promise.resolve(STAT_TOOLS);
-  if (path === "/stats/results" || path === "/stats/results?dataset_id=ds-1") {
-    return Promise.resolve([]);
-  }
+  if (path === "/stats/results") return Promise.resolve(storedStatistics);
+  if (path === "/stats/results?dataset_id=ds-1") return Promise.resolve(storedStatistics);
   if (path === "/stats/results/stat-1") return Promise.resolve(STAT_RESULT);
   if (path === "/datasets/ds-1/stats/descriptives" || path === "/stats/power") {
     return statRunFails === null ? Promise.resolve(STAT_RESULT) : Promise.reject(statRunFails);
@@ -273,6 +283,7 @@ let request: MockInstance;
 beforeEach(() => {
   openAsExistingFit = false;
   statRunFails = null;
+  storedStatistics = [];
   request = vi.spyOn(api, "request").mockImplementation(
     (async (path: string, options?: RequestInit) =>
       route(String(path), options)) as unknown as typeof api.request,
@@ -492,6 +503,20 @@ describe("WorkspacePage — statistics mode", () => {
     fireEvent.click(screen.getByRole("button", { name: "Auto-fit" }));
     await flush();
     expect(screen.getByTestId("plot")).not.toBeNull();
+  });
+
+  it("keeps the stored results when the dataset already selected is clicked again", async () => {
+    storedStatistics = [STAT_SUMMARY];
+    await selectDataset();
+    expect(screen.queryByText("Stored results")).not.toBeNull();
+
+    fireEvent.click(screen.getByTitle("growth.csv"));
+    await flush();
+    await flush();
+
+    expect(screen.queryByText("Stored results")).not.toBeNull();
+    const history = screen.getByLabelText("Statistics history");
+    expect(history.textContent).toContain("Descriptive statistics");
   });
 
   it("starts no fit and no Auto-fit when a dataset is selected", async () => {
