@@ -67,7 +67,8 @@ export function loadWorkspaces(userId: string | null): WorkspaceSet {
         id: item.id,
         name: normalizeName(item.name) || "Workspace",
         datasetId: typeof item.datasetId === "string" ? item.datasetId : null,
-        mode: item.mode === "manual" ? "manual" : "auto",
+        mode:
+          item.mode === "manual" || item.mode === "stats" ? item.mode : "auto",
       });
     }
     const activeId =

@@ -78,6 +78,16 @@ export type QQPlot = Schemas["QQPlot"];
 export type BoxPlot = Schemas["BoxPlot"];
 export type MultiLinePlot = Schemas["MultiLinePlot"];
 export type StatPlot = ToolResult["plots"][number];
+/** The statistics catalogue: the families as (key, title) pairs and every tool. */
+export type StatsToolsOut = Schemas["StatsToolsOut"];
+/** One tool as a surface lists it: its family, its request fields and whether it needs data. */
+export type ToolInfo = Schemas["ToolInfo"];
+/** One request field: a column, a group, several columns, or an option with its schema. */
+export type RequestField = Schemas["RequestField"];
+/** One stored statistical result: the choices as sent and the result the core returned. */
+export type StatResultOut = Schemas["StatResultOut"];
+/** One stored result as a listing shows it: no result body. */
+export type StatResultSummaryOut = Schemas["StatResultSummaryOut"];
 
 export class ApiError extends Error {
   /** HTTP status; 0 means the server could not be reached at all. */
@@ -600,6 +610,43 @@ class ApiClient {
    */
   async fitMethods(fitId: string): Promise<FitMethodsOut> {
     return this.request<FitMethodsOut>(`/fits/${fitId}/methods`);
+  }
+
+  /** Every statistical tool, with the families a person meets them in. */
+  async statsTools(): Promise<StatsToolsOut> {
+    return this.request<StatsToolsOut>("/stats/tools");
+  }
+
+  /**
+   * Run a tool on its choices; with a dataset the columns are read from it, without one a
+   * sample-size tool runs from its options alone.
+   */
+  async runStat(
+    tool: string,
+    choices: Record<string, unknown>,
+    datasetId: string | null,
+  ): Promise<StatResultOut> {
+    const path = datasetId === null ? `/stats/${tool}` : `/datasets/${datasetId}/stats/${tool}`;
+    return this.request<StatResultOut>(path, {
+      method: "POST",
+      body: JSON.stringify(choices),
+    });
+  }
+
+  /** The user's stored results, newest first; only one dataset's when an id is given. */
+  async statResults(datasetId: string | null): Promise<StatResultSummaryOut[]> {
+    const query = datasetId === null ? "" : `?dataset_id=${encodeURIComponent(datasetId)}`;
+    return this.request<StatResultSummaryOut[]>(`/stats/results${query}`);
+  }
+
+  /** One stored result, with its full result body. */
+  async statResult(id: string): Promise<StatResultOut> {
+    return this.request<StatResultOut>(`/stats/results/${id}`);
+  }
+
+  /** Delete a stored result. */
+  async deleteStatResult(id: string): Promise<void> {
+    return this.request<void>(`/stats/results/${id}`, { method: "DELETE" });
   }
 }
 

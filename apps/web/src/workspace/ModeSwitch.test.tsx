@@ -36,4 +36,26 @@ describe("ModeSwitch", () => {
   it("falls back to auto with no session (null user id)", () => {
     expect(loadMode(null)).toBe("auto");
   });
+
+  it("restores a stored statistics preference", () => {
+    localStorage.setItem("curvestudio.mode.user-1", "stats");
+    expect(loadMode("user-1")).toBe("stats");
+  });
+
+  it("offers three modes, marks Statistics pressed and describes it", () => {
+    render(<ModeSwitch mode="stats" onModeChange={() => {}} autofitStatus="idle" />);
+    expect(screen.getAllByRole("button")).toHaveLength(3);
+    const stats = screen.getByRole("button", { name: "Statistics" });
+    expect(stats.getAttribute("aria-pressed")).toBe("true");
+    expect(stats.getAttribute("title")).toBe("summarise columns and test differences");
+    expect(screen.getByText("Statistics: idle")).toBeTruthy();
+  });
+
+  it("reports a switch to Statistics", async () => {
+    const onModeChange = vi.fn();
+    render(<ModeSwitch mode="auto" onModeChange={onModeChange} autofitStatus="idle" />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Statistics" }));
+    expect(onModeChange).toHaveBeenCalledWith("stats");
+  });
 });

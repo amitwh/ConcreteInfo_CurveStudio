@@ -23,14 +23,16 @@ type AutofitSummaryOut = components["schemas"]["AutofitSummaryOut"];
 type AutofitOut = components["schemas"]["AutofitOut"];
 type RankedFit = components["schemas"]["RankedFit"];
 type JobOut = components["schemas"]["JobOut"];
+type StatsToolsOut = components["schemas"]["StatsToolsOut"];
+type StatResultOut = components["schemas"]["StatResultOut"];
 
 /** The page under its providers: theme, auth, and the query client the app has at its root. */
-function renderPage() {
+function renderPage(initialMode: "stats" | null = null) {
   return render(
     <QueryClientProvider client={new QueryClient()}>
       <ThemeProvider>
         <AuthProvider>
-          <WorkspacePage />
+          <WorkspacePage initialMode={initialMode} />
         </AuthProvider>
       </ThemeProvider>
     </QueryClientProvider>,
@@ -138,6 +140,98 @@ const FAILED_JOB: JobOut = {
   finished_at: null,
 } as JobOut;
 
+/** The statistics catalogue the page fetches once. */
+const STAT_TOOLS: StatsToolsOut = {
+  families: [
+    ["summarise", "Summarise"],
+    ["power", "Sample size and power"],
+  ],
+  tools: [
+    {
+      name: "descriptives",
+      family: "summarise",
+      title: "Descriptive statistics",
+      needs_data: true,
+      max_rows: null,
+      fields: [
+        {
+          name: "values",
+          label: "Values",
+          kind: "column",
+          required: true,
+          description: "The numeric column to summarise.",
+          option_schema: null,
+        },
+        {
+          name: "groups",
+          label: "Groups",
+          kind: "group",
+          required: false,
+          description: null,
+          option_schema: null,
+        },
+        {
+          name: "level",
+          label: "Level",
+          kind: "option",
+          required: false,
+          description: "The confidence level.",
+          option_schema: { type: "number", default: 0.95 },
+        },
+      ],
+    },
+    {
+      name: "power",
+      family: "power",
+      title: "Sample size and power",
+      needs_data: false,
+      max_rows: null,
+      fields: [],
+    },
+  ],
+};
+
+/** One stored result with a plot, as a run answers. */
+const STAT_RESULT: StatResultOut = {
+  id: "stat-1",
+  tool: "descriptives",
+  title: "Descriptive statistics",
+  dataset_id: "ds-1",
+  request: { values: "x" },
+  created_at: "2026-11-17T10:00:00Z",
+  result: {
+    tool: "descriptives",
+    title: "Descriptive statistics",
+    level: 0.95,
+    estimates: [],
+    tests: [],
+    assumptions: [],
+    warnings: [],
+    tables: [],
+    plots: [
+      {
+        kind: "scatter",
+        title: "Values against row",
+        x_label: "Row",
+        y_label: "Value",
+        x: [1, 2],
+        y: [2, 4],
+        lines: [],
+        band: null,
+        note: null,
+      },
+    ],
+    interpretation: "The column was summarised.",
+    methods_fragment: "Means were summarised.",
+    counts: { n_offered: 2, n_used: 2, n_excluded: 0 },
+    excluded: [],
+    excluded_unlisted: 0,
+  },
+};
+
+/** A run refusal the next statistics POST rejects with; null means a normal answer. */
+let statRunFails: ApiError | null = null;
+
 /** When true the open-row call answers with an existing fit instead of a polled job. */
 let openAsExistingFit = false;
 
@@ -163,6 +257,14 @@ function route(path: string, options?: RequestInit): Promise<unknown> {
     );
   }
   if (path === "/jobs/job-1") return Promise.resolve(FAILED_JOB);
+  if (path === "/stats/tools") return Promise.resolve(STAT_TOOLS);
+  if (path === "/stats/results" || path === "/stats/results?dataset_id=ds-1") {
+    return Promise.resolve([]);
+  }
+  if (path === "/stats/results/stat-1") return Promise.resolve(STAT_RESULT);
+  if (path === "/datasets/ds-1/stats/descriptives" || path === "/stats/power") {
+    return statRunFails === null ? Promise.resolve(STAT_RESULT) : Promise.reject(statRunFails);
+  }
   return Promise.reject(new Error(`unexpected request: ${path}`));
 }
 
@@ -170,6 +272,7 @@ let request: MockInstance;
 
 beforeEach(() => {
   openAsExistingFit = false;
+  statRunFails = null;
   request = vi.spyOn(api, "request").mockImplementation(
     (async (path: string, options?: RequestInit) =>
       route(String(path), options)) as unknown as typeof api.request,
@@ -347,5 +450,95 @@ describe("WorkspacePage — selecting a row after opening it", () => {
     fireEvent.click(rows()[0]?.querySelector(".ranking-row__name") as HTMLElement);
     await flush();
     expect(screen.queryByText("Parameters")).toBeNull();
+  });
+});
+
+describe("WorkspacePage — statistics mode", () => {
+  async function selectDataset(): Promise<void> {
+    renderPage("stats");
+    await flush();
+    await flush();
+    fireEvent.click(screen.getByTitle("growth.csv"));
+    await flush();
+    await flush();
+  }
+
+  async function runDescriptives(): Promise<void> {
+    await selectDataset();
+    fireEvent.change(screen.getByLabelText("Tool"), { target: { value: "descriptives" } });
+    await flush();
+    fireEvent.click(screen.getByRole("button", { name: "Run" }));
+    await flush();
+    await flush();
+  }
+
+  it("shows the three statistics regions instead of the fit chart", async () => {
+    renderPage("stats");
+    await flush();
+    await flush();
+
+    const side = document.querySelector(".workspace__side");
+    const results = document.querySelector(".workspace__results");
+    const main = document.querySelector(".workspace__main");
+    expect(side?.querySelector('[aria-label="Statistics"]')).not.toBeNull();
+    expect(results?.textContent).toContain("Run a tool, or open a stored result");
+    expect(main?.textContent).toContain("A chart appears here once a result has one");
+    expect(screen.queryByTestId("plot")).toBeNull();
+  });
+
+  it("shows the fit chart again after leaving Statistics", async () => {
+    await selectDataset();
+    expect(screen.queryByTestId("plot")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Auto-fit" }));
+    await flush();
+    expect(screen.getByTestId("plot")).not.toBeNull();
+  });
+
+  it("starts no fit and no Auto-fit when a dataset is selected", async () => {
+    await selectDataset();
+    const calls = request.mock.calls.map((call) => [String(call[0]), call[1]] as const);
+    const fitPosts = calls.filter(
+      ([path, options]) => path.endsWith("/fits") && options?.method === "POST",
+    );
+    const autofitCalls = calls.filter(
+      ([path]) => path.endsWith("/autofit") || path.endsWith("/autofits"),
+    );
+    expect(fitPosts).toHaveLength(0);
+    expect(autofitCalls).toHaveLength(0);
+  });
+
+  it("shows a refused run's message with its code and keeps the previous result", async () => {
+    await runDescriptives();
+    expect(
+      screen.queryByRole("heading", { name: "Descriptive statistics" }),
+    ).not.toBeNull();
+
+    statRunFails = new ApiError(422, "VALIDATION_ERROR", "the tool refused this request", {
+      code: "TOO_MANY_ROWS",
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Run" }));
+    await flush();
+    await flush();
+
+    expect(screen.queryByText(/the tool refused this request/)).not.toBeNull();
+    expect(screen.queryByText(/TOO_MANY_ROWS/)).not.toBeNull();
+    expect(
+      screen.queryByRole("heading", { name: "Descriptive statistics" }),
+    ).not.toBeNull();
+  });
+
+  it("shows a 413 TOO_MANY_ROWS refusal's message", async () => {
+    await selectDataset();
+    fireEvent.change(screen.getByLabelText("Tool"), { target: { value: "descriptives" } });
+    await flush();
+
+    statRunFails = new ApiError(413, "TOO_LARGE", "this dataset holds 250,000 rows", {
+      code: "TOO_MANY_ROWS",
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Run" }));
+    await flush();
+    await flush();
+
+    expect(screen.queryByText(/this dataset holds 250,000 rows/)).not.toBeNull();
   });
 });

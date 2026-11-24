@@ -2,10 +2,12 @@
  * The workspace: datasets sidebar | chart | analysis area. The product rule — the curve
  * auto-fit should work, not manual curve fit — makes Auto-fit the default analysis mode:
  * it starts by itself after a dataset is uploaded or selected (the latest stored run is
- * shown when there is one), and Manual fit (the unchanged FitPanel/tabs) appears only
- * when the user selects it; the choice is remembered per user. The workspace owns the
- * cross-panel state: datasets, the model catalogue, the active fit bundle (a manual fit
- * or an opened Auto-fit row), the Auto-fit state machine and the fit-job poller.
+ * shown when there is one), and Manual fit (the unchanged FitPanel/tabs) and Statistics
+ * (the statistical tools and their stored results) appear only when the user selects
+ * them; the choice is remembered per user. The workspace owns the cross-panel state:
+ * datasets, the model catalogue, the active fit bundle (a manual fit or an opened Auto-fit
+ * row), the Auto-fit state machine, the fit-job poller and the statistics tool, result and
+ * history state. Statistics mode starts no fit and no Auto-fit.
  */
 
 import { useCallback, useEffect, useRef, useState, type ReactElement } from "react";
@@ -19,6 +21,8 @@ import {
   type FitSummaryOut,
   type ModelInfo,
   type OpenRowOut,
+  type StatResultOut,
+  type StatResultSummaryOut,
 } from "../api/client";
 import { ErrorBox, Loading, errorText } from "../components/States";
 import { exportPlotPngDataUrl } from "../components/PlotChart";
@@ -34,6 +38,11 @@ import { AutofitOptions } from "../workspace/autofit/AutofitOptions";
 import { AutofitPanel } from "../workspace/autofit/AutofitPanel";
 import { DEFAULT_AUTOFIT_OPTIONS, useAutofit, type AutoFitOptions } from "../workspace/autofit/useAutofit";
 import { rowCurveBundle } from "../workspace/autofit/rowCurve";
+import { StatsHistory } from "../workspace/stats/StatsHistory";
+import { StatsPanel } from "../workspace/stats/StatsPanel";
+import { StatsPlots } from "../workspace/stats/StatsPlots";
+import { StatsResult } from "../workspace/stats/StatsResult";
+import { useStatsTools } from "../workspace/stats/useStatsTools";
 import { loadMode, saveMode, type WorkspaceMode } from "../workspace/mode";
 
 /** The chart requests the full 20 000-point sample the API allows. */
@@ -86,6 +95,9 @@ export function WorkspacePage({
   const [mode, setMode] = useState<WorkspaceMode>(
     () => initialMode ?? loadMode(user?.id ?? null),
   );
+  /** The mode as a callback started now reads it, without re-creating the callback. */
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
   const [autofitOptions, setAutofitOptions] = useState<AutoFitOptions>(DEFAULT_AUTOFIT_OPTIONS);
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
   const [openRowBusy, setOpenRowBusy] = useState<string | null>(null);
@@ -111,6 +123,14 @@ export function WorkspacePage({
 
   const autofit = useAutofit();
   const autoState = autofit.stateFor(selectedId);
+
+  const stats = useStatsTools();
+  const [statResults, setStatResults] = useState<StatResultSummaryOut[]>([]);
+  const [statResultsError, setStatResultsError] = useState<unknown>(null);
+  const [statShown, setStatShown] = useState<StatResultOut | null>(null);
+  const [statBusy, setStatBusy] = useState(false);
+  const [statError, setStatError] = useState<unknown>(null);
+  const [statPlotIndex, setStatPlotIndex] = useState(0);
 
   const loadBundle = useCallback(async (fitId: string, source: BundleSource): Promise<void> => {
     setBundleError(null);
@@ -181,6 +201,22 @@ export function WorkspacePage({
     }
   }, []);
 
+  const loadStatHistory = useCallback(async (datasetId: string | null): Promise<void> => {
+    const requestedFor = datasetId;
+    setStatResultsError(null);
+    try {
+      const results = await api.statResults(datasetId);
+      // A selection that changed while the list was away owns the panel now.
+      if (selectedIdRef.current !== requestedFor) return;
+      setStatResults(results);
+    } catch (error) {
+      if (selectedIdRef.current !== requestedFor) return;
+      // A failed history must not look like an empty one.
+      setStatResults([]);
+      setStatResultsError(error);
+    }
+  }, []);
+
   useEffect(() => {
     void loadDatasets();
     api
@@ -188,6 +224,13 @@ export function WorkspacePage({
       .then(setModels)
       .catch((error: unknown) => setModelsError(error));
   }, [loadDatasets]);
+
+  // Statistics mode lists the selected dataset's stored results; with no dataset it lists
+  // all of them, which is where the no-data tools' results live.
+  useEffect(() => {
+    if (mode !== "stats") return;
+    void loadStatHistory(selectedId);
+  }, [mode, selectedId, loadStatHistory]);
 
   const selectDataset = useCallback(
     async (id: string): Promise<void> => {
@@ -204,10 +247,14 @@ export function WorkspacePage({
       setOpenRowBusy(null);
       setOpenRowError(null);
       setManualPreset(null);
+      setStatShown(null);
+      setStatPlotIndex(0);
+      setStatError(null);
+      setStatResults([]);
       poller.reset();
       // Auto-fit leads: ensure a run (or the latest stored one) right after selection —
-      // in either mode, so switching to Auto-fit later has the result ready.
-      autofit.ensure(id);
+      // but only in Auto-fit mode, so Statistics and Manual fit spend no run.
+      autofit.ensure(id, modeRef.current);
       setDetailLoading(true);
       try {
         setDetail(
@@ -276,6 +323,9 @@ export function WorkspacePage({
         setFits([]);
         setFitsError(null);
         setSelectedRowId(null);
+        setStatShown(null);
+        setStatPlotIndex(0);
+        setStatResults([]);
         poller.reset();
       }
     },
@@ -296,6 +346,60 @@ export function WorkspacePage({
       }
     },
     [activeFitId],
+  );
+
+  const onRunStat = useCallback(
+    async (tool: string, choices: Record<string, unknown>): Promise<void> => {
+      const requestedFor = selectedId;
+      setStatBusy(true);
+      setStatError(null);
+      try {
+        const result = await api.runStat(tool, choices, requestedFor);
+        // The user selected another dataset while the run was away: it belongs elsewhere.
+        if (selectedIdRef.current !== requestedFor) return;
+        setStatShown(result);
+        setStatPlotIndex(0);
+        await loadStatHistory(requestedFor);
+      } catch (error) {
+        if (selectedIdRef.current !== requestedFor) return;
+        // A refused or failed run keeps the previous result on screen.
+        setStatError(error);
+      } finally {
+        setStatBusy(false);
+      }
+    },
+    [loadStatHistory, selectedId],
+  );
+
+  const onSelectStatResult = useCallback(async (id: string): Promise<void> => {
+    const requestedFor = selectedIdRef.current;
+    setStatError(null);
+    try {
+      const result = await api.statResult(id);
+      if (selectedIdRef.current !== requestedFor) return;
+      setStatShown(result);
+      setStatPlotIndex(0);
+    } catch (error) {
+      if (selectedIdRef.current !== requestedFor) return;
+      setStatError(error);
+    }
+  }, []);
+
+  const onDeleteStatResult = useCallback(
+    async (id: string): Promise<void> => {
+      setStatError(null);
+      try {
+        await api.deleteStatResult(id);
+        setStatResults((current) => current.filter((result) => result.id !== id));
+        if (statShown?.id === id) {
+          setStatShown(null);
+          setStatPlotIndex(0);
+        }
+      } catch (error) {
+        setStatError(error);
+      }
+    },
+    [statShown?.id],
   );
 
   const changeMode = useCallback(
@@ -442,52 +546,87 @@ export function WorkspacePage({
       />
 
       <div className="workspace__main">
-        <ModeSwitch mode={mode} onModeChange={changeMode} autofitStatus={autofitStatus} />
-        <JobStatus
-          state={poller.state}
-          onCancel={() => void poller.cancel()}
-          succeededText={
-            // Only speak for the fit this job produced — a fit loaded from history is
-            // not this job's outcome.
-            poller.state.phase === "succeeded" &&
-            poller.state.fitId === activeFitId &&
-            bundle !== null &&
-            bundle.result.status !== "converged"
-              ? "Fit did not converge."
-              : undefined
-          }
+        <ModeSwitch
+          mode={mode}
+          onModeChange={changeMode}
+          autofitStatus={autofitStatus}
+          statsStatus={statBusy ? "running…" : "idle"}
         />
-        {/* Rank colours and the top-3 overlay belong to the Auto-fit ranking; a manual
-            fit is not a ranked row, so it keeps the brand colour (rank 1). */}
-        <ChartPanel
-          dataset={detail}
-          bundle={chartBundle}
-          dark={dark}
-          rankingRows={mode === "auto" ? (autoState.stored?.result.ranked ?? null) : null}
-          storedCurves={mode === "auto" ? (autoState.stored?.result.curves ?? null) : null}
-          selectedRowId={mode === "auto" ? selectedRowId : null}
-          rootRef={chartRootRef}
-        />
+        {mode !== "stats" && (
+          <JobStatus
+            state={poller.state}
+            onCancel={() => void poller.cancel()}
+            succeededText={
+              // Only speak for the fit this job produced — a fit loaded from history is
+              // not this job's outcome.
+              poller.state.phase === "succeeded" &&
+              poller.state.fitId === activeFitId &&
+              bundle !== null &&
+              bundle.result.status !== "converged"
+                ? "Fit did not converge."
+                : undefined
+            }
+          />
+        )}
+        {mode === "stats" ? (
+          statShown !== null && statShown.result.plots.length > 0 ? (
+            <section className="panel" aria-label="Statistical plots">
+              <StatsPlots
+                plots={statShown.result.plots}
+                index={statPlotIndex}
+                onSelect={setStatPlotIndex}
+              />
+            </section>
+          ) : (
+            <p className="state state--empty">A chart appears here once a result has one</p>
+          )
+        ) : (
+          <>
+            {/* Rank colours and the top-3 overlay belong to the Auto-fit ranking; a manual
+                fit is not a ranked row, so it keeps the brand colour (rank 1). */}
+            <ChartPanel
+              dataset={detail}
+              bundle={chartBundle}
+              dark={dark}
+              rankingRows={mode === "auto" ? (autoState.stored?.result.ranked ?? null) : null}
+              storedCurves={mode === "auto" ? (autoState.stored?.result.curves ?? null) : null}
+              selectedRowId={mode === "auto" ? selectedRowId : null}
+              rootRef={chartRootRef}
+            />
+            {detail === null && !detailLoading && detailError === null && (
+              <p className="state state--empty">
+                <Upload className="icon icon--lg" aria-hidden="true" focusable="false" />
+                Upload a dataset and every model is tried and ranked automatically — or switch
+                to Manual fit to choose one yourself.
+              </p>
+            )}
+            {modelsError !== null && (
+              <p className="alert alert--warning">
+                The model catalogue could not be loaded ({errorText(modelsError)}). Fitting
+                stays available for polynomials and custom equations.
+              </p>
+            )}
+            {bundleError !== null && <ErrorBox error={bundleError} />}
+          </>
+        )}
         {detailLoading && <Loading label="Loading dataset…" />}
         {detailError !== null && <ErrorBox error={detailError} />}
-        {detail === null && !detailLoading && detailError === null && (
-          <p className="state state--empty">
-            <Upload className="icon icon--lg" aria-hidden="true" focusable="false" />
-            Upload a dataset and every model is tried and ranked automatically — or switch
-            to Manual fit to choose one yourself.
-          </p>
-        )}
-        {modelsError !== null && (
-          <p className="alert alert--warning">
-            The model catalogue could not be loaded ({errorText(modelsError)}). Fitting
-            stays available for polynomials and custom equations.
-          </p>
-        )}
-        {bundleError !== null && <ErrorBox error={bundleError} />}
       </div>
 
       <div className="workspace__side">
-        {mode === "auto" ? (
+        {mode === "stats" ? (
+          <StatsPanel
+            dataset={detail}
+            tools={
+              stats.loading || stats.error != null
+                ? null
+                : { families: stats.families, tools: stats.tools }
+            }
+            onRun={(tool, choices) => void onRunStat(tool, choices)}
+            busy={statBusy}
+            error={statError ?? stats.error}
+          />
+        ) : mode === "auto" ? (
           <section className="panel" aria-label="Auto-fit options">
             <h2 className="panel-title">Auto-fit options</h2>
             <AutofitOptions
@@ -511,45 +650,67 @@ export function WorkspacePage({
 
       {/* The primary results get the full width: the ranking table needs ~64 rem. */}
       <div className="workspace__results">
-        {mode === "auto" && (
-          <AutofitPanel
-            datasetId={selectedId}
-            datasetName={detail?.name ?? ""}
-            state={autoState}
-            models={models}
-            selectedRowId={selectedRowId}
-            onSelectRow={onSelectRow}
-            onOpenRow={(candidateId) => void onOpenRow(candidateId)}
-            onUseManually={onUseManually}
-            onRun={onRunAutofit}
-            onCancel={() => void autofit.cancel(selectedId ?? "")}
-            onRerank={(rankBy) => {
-              if (selectedId !== null) void autofit.rerank(selectedId, rankBy);
-            }}
-            openRowBusy={openRowBusy}
-            openRowError={openRowError}
-          />
-        )}
+        {mode === "stats" ? (
+          <>
+            <StatsHistory
+              results={statResults}
+              onSelect={(id) => void onSelectStatResult(id)}
+              onDelete={(id) => void onDeleteStatResult(id)}
+            />
+            {statResultsError !== null && <ErrorBox error={statResultsError} />}
+            {statShown !== null ? (
+              <section className="panel" aria-label="Statistical result">
+                <StatsResult result={statShown.result} />
+              </section>
+            ) : (
+              <p className="state state--empty">Run a tool, or open a stored result</p>
+            )}
+          </>
+        ) : (
+          <>
+            {mode === "auto" && (
+              <AutofitPanel
+                datasetId={selectedId}
+                datasetName={detail?.name ?? ""}
+                state={autoState}
+                models={models}
+                selectedRowId={selectedRowId}
+                onSelectRow={onSelectRow}
+                onOpenRow={(candidateId) => void onOpenRow(candidateId)}
+                onUseManually={onUseManually}
+                onRun={onRunAutofit}
+                onCancel={() => void autofit.cancel(selectedId ?? "")}
+                onRerank={(rankBy) => {
+                  if (selectedId !== null) void autofit.rerank(selectedId, rankBy);
+                }}
+                openRowBusy={openRowBusy}
+                openRowError={openRowError}
+              />
+            )}
 
-        {/* In Auto-fit mode (which hosts the opened-row results) the manual FitPanel is
-            not on screen, so surface the fit error (e.g. a failed delete) here instead. */}
-        {fitError !== null && mode === "auto" && (
-          <p className="alert alert--error" role="alert">
-            {fitError}
-          </p>
-        )}
+            {/* In Auto-fit mode (which hosts the opened-row results) the manual FitPanel is
+                not on screen, so surface the fit error (e.g. a failed delete) here instead. */}
+            {fitError !== null && mode === "auto" && (
+              <p className="alert alert--error" role="alert">
+                {fitError}
+              </p>
+            )}
 
-        {bundle !== null && activeFitId !== null && (mode === "manual" || bundleSource === "opened-row") && (
-          <ResultsTabs
-            fitId={activeFitId}
-            bundle={bundle}
-            fits={fits}
-            fitsError={fitsError}
-            onLoadFit={(id) => void loadBundle(id, "manual")}
-            onDeleteFit={(id) => void onDeleteFit(id)}
-            captureChart={captureChart}
-            datasetName={detail?.name ?? null}
-          />
+            {bundle !== null &&
+              activeFitId !== null &&
+              (mode === "manual" || bundleSource === "opened-row") && (
+                <ResultsTabs
+                  fitId={activeFitId}
+                  bundle={bundle}
+                  fits={fits}
+                  fitsError={fitsError}
+                  onLoadFit={(id) => void loadBundle(id, "manual")}
+                  onDeleteFit={(id) => void onDeleteFit(id)}
+                  captureChart={captureChart}
+                  datasetName={detail?.name ?? null}
+                />
+              )}
+          </>
         )}
       </div>
     </div>

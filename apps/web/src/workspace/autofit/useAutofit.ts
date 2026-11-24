@@ -20,6 +20,7 @@ import {
   type RankedFit,
   type RankBy,
 } from "../../api/client";
+import type { WorkspaceMode } from "../mode";
 
 const MIN_DELAY_MS = 300;
 const MAX_DELAY_MS = 1500;
@@ -118,7 +119,7 @@ function failureOf(error: unknown): { message: string; code: string | null } {
 
 export function useAutofit(): {
   stateFor: (datasetId: string | null) => AutofitState;
-  ensure: (datasetId: string) => void;
+  ensure: (datasetId: string, mode?: WorkspaceMode) => void;
   run: (datasetId: string, options?: AutoFitOptions) => void;
   cancel: (datasetId: string) => Promise<void>;
   rerank: (datasetId: string, rankBy: RankBy) => Promise<void>;
@@ -318,10 +319,12 @@ export function useAutofit(): {
   );
 
   // `ensure` is the auto-start entry point: a run when the dataset has none, otherwise
-  // the latest stored one (the workspace calls it after upload and after selection).
+  // the latest stored one (the workspace calls it after upload and after selection). It
+  // starts nothing outside Auto-fit mode: Statistics and Manual fit must not spend a run.
 
   const ensure = useCallback(
-    (datasetId: string): void => {
+    (datasetId: string, mode: WorkspaceMode = "auto"): void => {
+      if (mode !== "auto") return;
       // Something is already in flight for this dataset (re-selection, a double click):
       // leave it alone — starting again would fork a second run.
       const phase = statesRef.current[datasetId]?.phase;

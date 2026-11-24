@@ -1,7 +1,8 @@
 /**
  * The one prominent switch at the top of the analysis area: Auto-fit (default) | Manual
- * fit. Two toggle buttons in a group, so screen readers announce the pressed state; a
- * muted status line says what Auto-fit is doing even while Manual fit is showing.
+ * fit | Statistics. Toggle buttons in a group, so screen readers announce the pressed
+ * state; a muted status line says what Auto-fit is doing even while Manual fit is showing,
+ * and what the statistics run is doing while Statistics is showing.
  */
 
 import type { ReactElement } from "react";
@@ -12,14 +13,22 @@ export interface ModeSwitchProps {
   onModeChange: (mode: WorkspaceMode) => void;
   /** Short, always-current Auto-fit summary (e.g. "running…", "done"). */
   autofitStatus: string;
+  /** Short, always-current statistics summary (e.g. "running…", "idle"). */
+  statsStatus?: string;
 }
 
 const MODES: Array<{ value: WorkspaceMode; label: string; hint: string }> = [
   { value: "auto", label: "Auto-fit", hint: "every model is tried and ranked" },
   { value: "manual", label: "Manual fit", hint: "you pick the model" },
+  { value: "stats", label: "Statistics", hint: "summarise columns and test differences" },
 ];
 
-export function ModeSwitch({ mode, onModeChange, autofitStatus }: ModeSwitchProps): ReactElement {
+export function ModeSwitch({
+  mode,
+  onModeChange,
+  autofitStatus,
+  statsStatus = "idle",
+}: ModeSwitchProps): ReactElement {
   return (
     <div className="mode-switch">
       <div className="mode-switch__group" role="group" aria-label="Analysis mode">
@@ -36,7 +45,9 @@ export function ModeSwitch({ mode, onModeChange, autofitStatus }: ModeSwitchProp
           </button>
         ))}
       </div>
-      <span className="muted mode-switch__status">Auto-fit: {autofitStatus}</span>
+      <span className="muted mode-switch__status">
+        {mode === "stats" ? `Statistics: ${statsStatus}` : `Auto-fit: ${autofitStatus}`}
+      </span>
     </div>
   );
 }
