@@ -34,6 +34,11 @@ export type DatasetDetailOut = Schemas["DatasetDetailOut"];
 export type PointsOut = Schemas["PointsOut"];
 export type IssueOut = Schemas["IssueOut"];
 export type JobOut = Schemas["JobOut"];
+export type JobCreatedOut = Schemas["JobCreatedOut"];
+export type FitAuditOut = Schemas["FitAuditOut"];
+export type AuditCheckOut = Schemas["AuditCheckOut"];
+/** A check's verdict, and the audit's overall verdict: a statement of evidence, never of proof. */
+export type AuditVerdict = FitAuditOut["overall"];
 export type FitBundle = Schemas["FitBundle"];
 export type FitSummaryOut = Schemas["FitSummaryOut"];
 export type Prediction = Schemas["Prediction"];
@@ -542,6 +547,26 @@ class ApiClient {
     const disposition = response.headers.get("content-disposition");
     const match = disposition?.match(/filename="?([^";]+)"?/);
     return { blob: await response.blob(), filename: match?.[1] ?? null };
+  }
+
+  /** The audit of a stored fit: each check with its verdict, evidence and next step. */
+  async fitAudit(fitId: string): Promise<FitAuditOut> {
+    return this.request<FitAuditOut>(`/fits/${fitId}/audit`);
+  }
+
+  /**
+   * Queue the cross-validation check of a stored fit; the job uses no quota and stores its
+   * result on the fit, where `fitAudit` reads it. While one is queued or running, a second
+   * request is a 409 whose `detail.job_id` names the job to follow.
+   */
+  async runFitAuditCrossValidation(
+    fitId: string,
+    folds: number | "loo" = 5,
+  ): Promise<JobCreatedOut> {
+    return this.request<JobCreatedOut>(`/fits/${fitId}/audit/cross-validation`, {
+      method: "POST",
+      body: JSON.stringify({ folds }),
+    });
   }
 }
 

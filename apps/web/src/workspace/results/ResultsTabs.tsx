@@ -10,6 +10,7 @@ import type { FitBundle, FitSummaryOut } from "../../api/client";
 import { exportFitPdf } from "../../lib/report/export";
 import { isConverged } from "../traces";
 import { EquationTab } from "./EquationTab";
+import { FitAuditTab } from "./FitAuditTab";
 import { HistoryTab } from "./HistoryTab";
 import { ParametersTab } from "./ParametersTab";
 import { PredictTab } from "./PredictTab";
@@ -30,8 +31,21 @@ export interface ResultsTabsProps {
   datasetName?: string | null;
 }
 
-const TABS = ["Parameters", "Statistics", "Residuals", "Equation", "Predict", "History"] as const;
+const TABS = [
+  "Parameters",
+  "Statistics",
+  "Fit audit",
+  "Residuals",
+  "Equation",
+  "Predict",
+  "History",
+] as const;
 type TabName = (typeof TABS)[number];
+
+/** A tab's button and panel share an id made from its name: "Fit audit" → "tab-fit-audit". */
+function tabId(name: TabName, part: "tab" | "panel"): string {
+  return `${part}-${name.toLowerCase().replace(/\s+/g, "-")}`;
+}
 
 const FAILURE_HEADING: Record<string, string> = {
   not_converged: "Fit did not converge",
@@ -100,9 +114,9 @@ export function ResultsTabs({
             key={name}
             type="button"
             role="tab"
-            id={`tab-${name.toLowerCase()}`}
+            id={tabId(name, "tab")}
             aria-selected={tab === name}
-            aria-controls={`panel-${name.toLowerCase()}`}
+            aria-controls={tabId(name, "panel")}
             className={tab === name ? "tab tab--active" : "tab"}
             onClick={() => setTab(name)}
           >
@@ -126,11 +140,13 @@ export function ResultsTabs({
       )}
       <div
         role="tabpanel"
-        id={`panel-${tab.toLowerCase()}`}
-        aria-labelledby={`tab-${tab.toLowerCase()}`}
+        id={tabId(tab, "panel")}
+        aria-labelledby={tabId(tab, "tab")}
       >
         {tab === "Parameters" && <ParametersTab bundle={bundle} />}
         {tab === "Statistics" && <StatisticsTab bundle={bundle} />}
+        {/* Keyed on the fit: another fit is another audit, with no job of the last one followed. */}
+        {tab === "Fit audit" && <FitAuditTab key={fitId} fitId={fitId} converged={!failed} />}
         {tab === "Residuals" && <ResidualsTab bundle={bundle} />}
         {tab === "Equation" && <EquationTab bundle={bundle} />}
         {tab === "Predict" && <PredictTab fitId={fitId} bundle={bundle} />}

@@ -27,6 +27,19 @@ afterEach(() => {
   api.resetForTests();
 });
 
+/** The method and parsed JSON body of the one request that reached `path`. */
+function sentTo(path: string): { url: string; method: string; body: unknown; auth: string | null } {
+  const calls = fetchMock.mock.calls.filter(([url]) => String(url) === `${API_BASE}${path}`);
+  expect(calls).toHaveLength(1);
+  const [url, init] = calls[0] as [RequestInfo | URL, RequestInit | undefined];
+  return {
+    url: String(url),
+    method: init?.method ?? "GET",
+    body: typeof init?.body === "string" ? JSON.parse(init.body) : null,
+    auth: bearer(init),
+  };
+}
+
 describe("error envelope parsing", () => {
   it("turns the API envelope into an ApiError", async () => {
     fetchMock.mockResolvedValue(
@@ -360,19 +373,6 @@ describe("the profile endpoints (the /me contract)", () => {
     },
     usage: { datasets: 1, dataset_bytes: 2000, fits: 2, autofits_today: 0 },
   };
-
-  /** The method and parsed JSON body of the one request that reached `path`. */
-  function sentTo(path: string): { url: string; method: string; body: unknown; auth: string | null } {
-    const calls = fetchMock.mock.calls.filter(([url]) => String(url) === `${API_BASE}${path}`);
-    expect(calls).toHaveLength(1);
-    const [url, init] = calls[0] as [RequestInfo | URL, RequestInit | undefined];
-    return {
-      url: String(url),
-      method: init?.method ?? "GET",
-      body: typeof init?.body === "string" ? JSON.parse(init.body) : null,
-      auth: bearer(init),
-    };
-  }
 
   it("me() parses MeOut", async () => {
     fetchMock.mockResolvedValue(jsonResponse(200, ME));
@@ -732,5 +732,85 @@ describe("api.text (a body that is a document, not JSON)", () => {
     await api.text(BUNDLE);
     expect(sentTo(BUNDLE)).toEqual([{ method: "GET", auth: null }]);
     expect(api.refreshToken).toBeNull();
+  });
+});
+
+describe("the fit audit endpoints (the audit, and the cross-validation job)", () => {
+  const CONVERGED_CHECK = {
+    id: "converged",
+    title: "The fit converged",
+    verdict: "pass",
+    statistic: null,
+    threshold: "status converged",
+    evidence: "Status converged: converged: rtol",
+    explanation:
+      "A fit that stopped before it converged has no usable estimates, so nothing else can " +
+      "be judged until it does.",
+    next_step: null,
+  };
+
+  const AUDIT = {
+    checks: [CONVERGED_CHECK],
+    overall: "pass",
+    summary: "Every check that could run passed.",
+    methods_fragment: "No residual test could be run on this fit.",
+    simpler_model: null,
+    n_observations: 12,
+    n_parameters: 2,
+    excluded: [],
+  };
+
+  it("fitAudit GETs /fits/{id}/audit with the bearer token and returns the audit", async () => {
+    api.setTokens("a1", "r1");
+    fetchMock.mockResolvedValue(jsonResponse(200, AUDIT));
+
+    await expect(api.fitAudit("fit-1")).resolves.toEqual(AUDIT);
+
+    const sent = sentTo("/fits/fit-1/audit");
+    expect(sent.method).toBe("GET");
+    expect(sent.body).toBeNull();
+    expect(sent.auth).toBe("Bearer a1");
+  });
+
+  it("a 409 while one is running comes back as the CONFLICT error, with the job to follow", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(409, {
+        error: "CONFLICT",
+        message: "a cross-validation of this fit is already queued or running",
+        detail: { code: "CROSS_VALIDATION_RUNNING", job_id: "job-9" },
+      }),
+    );
+
+    const err = await api.runFitAuditCrossValidation("fit-1").catch((e: unknown) => e);
+
+    expect(err).toMatchObject({
+      status: 409,
+      code: "CONFLICT",
+      detail: { code: "CROSS_VALIDATION_RUNNING", job_id: "job-9" },
+    });
+  });
+
+  it("runFitAuditCrossValidation POSTs {folds: 5} by default and returns the job id", async () => {
+    api.setTokens("a1", "r1");
+    fetchMock.mockResolvedValue(jsonResponse(202, { job_id: "job-1" }));
+
+    await expect(api.runFitAuditCrossValidation("fit-1")).resolves.toEqual({ job_id: "job-1" });
+
+    const sent = sentTo("/fits/fit-1/audit/cross-validation");
+    expect(sent.method).toBe("POST");
+    expect(sent.body).toEqual({ folds: 5 });
+    expect(sent.auth).toBe("Bearer a1");
+  });
+
+  it("runFitAuditCrossValidation sends the fold count asked for, or \"loo\"", async () => {
+    // A body can be read once, so each call gets a Response of its own.
+    fetchMock.mockImplementation(async () => jsonResponse(202, { job_id: "job-2" }));
+
+    await api.runFitAuditCrossValidation("fit-1", 10);
+    expect(sentTo("/fits/fit-1/audit/cross-validation").body).toEqual({ folds: 10 });
+
+    fetchMock.mockClear();
+    await api.runFitAuditCrossValidation("fit-1", "loo");
+    expect(sentTo("/fits/fit-1/audit/cross-validation").body).toEqual({ folds: "loo" });
   });
 });

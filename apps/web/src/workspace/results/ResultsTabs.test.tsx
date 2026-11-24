@@ -1,7 +1,9 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { api, type FitAuditOut } from "../../api/client";
 import type { components } from "../../api/schema";
+import { renderWithQuery } from "../../test/render";
 import { ResultsTabs } from "./ResultsTabs";
 
 const exportMock = vi.hoisted(() => ({ exportFitPdf: vi.fn() }));
@@ -269,5 +271,69 @@ describe("PredictTab inline validation", () => {
     expect((await screen.findByRole("alert")).textContent).toBe(
       "every x value must be a finite number",
     );
+  });
+});
+
+describe("the tab strip", () => {
+  it("lists the tabs in order, with Fit audit after Statistics", () => {
+    render(
+      <ResultsTabs
+        fitId="fit-1"
+        bundle={bundle("converged", "converged: rtol")}
+        fits={[]}
+        onLoadFit={vi.fn()}
+        onDeleteFit={vi.fn()}
+      />,
+    );
+    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
+      "Parameters",
+      "Statistics",
+      "Fit audit",
+      "Residuals",
+      "Equation",
+      "Predict",
+      "History",
+    ]);
+  });
+
+  it("the Fit audit tab renders its heading and the audit's summary", async () => {
+    const audit: FitAuditOut = {
+      checks: [
+        {
+          id: "converged",
+          title: "The fit converged",
+          verdict: "pass",
+          statistic: null,
+          threshold: "status converged",
+          evidence: "Status converged: converged: rtol",
+          explanation: "A fit that stopped before it converged has no usable estimates.",
+          next_step: null,
+        },
+      ],
+      overall: "pass",
+      summary: "Every check that could run passed.",
+      methods_fragment: "",
+      simpler_model: null,
+      n_observations: 2,
+      n_parameters: 1,
+      excluded: [],
+    };
+    vi.spyOn(api, "fitAudit").mockResolvedValue(audit);
+    renderWithQuery(
+      <ResultsTabs
+        fitId="fit-1"
+        bundle={bundle("converged", "converged: rtol")}
+        fits={[]}
+        onLoadFit={vi.fn()}
+        onDeleteFit={vi.fn()}
+      />,
+    );
+
+    await userEvent.setup().click(screen.getByRole("tab", { name: "Fit audit" }));
+
+    const heading = await screen.findByRole("heading", { level: 3, name: "Fit audit" });
+    expect(heading).toBeTruthy();
+    expect(api.fitAudit).toHaveBeenCalledWith("fit-1");
+    expect(screen.getByText("Every check that could run passed.")).toBeTruthy();
   });
 });
