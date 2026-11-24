@@ -8,6 +8,7 @@ from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from curvestudio_api import API_PREFIX, __version__
+from curvestudio_api.audit_worker import run_cross_validation_job
 from curvestudio_api.autofit_worker import run_autofit_job
 from curvestudio_api.db import make_engine, make_session_factory
 from curvestudio_api.deps import (
@@ -51,14 +52,15 @@ def create_app(
     *,
     job_worker: JobWorker = run_fit_job,
     autofit_worker: JobWorker = run_autofit_job,
+    audit_worker: JobWorker = run_cross_validation_job,
     import_worker: ImportWorker = import_process_main,
 ) -> FastAPI:
     """Build the application.
 
     Production settings without JWT keys, or keys that do not parse or do not match, fail
     here, so a misconfigured deployment never starts serving. ``job_worker``,
-    ``autofit_worker`` and ``import_worker`` exist for tests; they must be top-level functions
-    (they run in spawned processes).
+    ``autofit_worker``, ``audit_worker`` and ``import_worker`` exist for tests; they must be
+    top-level functions (they run in spawned processes).
     """
     register_models()
     settings = settings or Settings()
@@ -82,6 +84,7 @@ def create_app(
         queue_max=settings.job_queue_max,
         worker=job_worker,
         autofit_worker=autofit_worker,
+        audit_worker=audit_worker,
         autofit_timeout_s=settings.autofit_timeout_s,
     )
     # What the middleware counts per route; the housekeeper empties it into the day's rows.

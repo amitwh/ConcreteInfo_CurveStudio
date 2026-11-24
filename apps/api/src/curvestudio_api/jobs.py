@@ -15,8 +15,9 @@ touches another job or another tenant:
   ``SERVER_RESTART`` at start-up.
 
 Job kinds: ``fit`` (one fit), ``autofit`` (a search over many models, with progress and its
-own worker pool) and ``open_row`` (refit one Auto-fit row into a stored fit). A job process
-leads its own process group; stopping a job kills the group, so the pool dies with it.
+own worker pool), ``open_row`` (refit one Auto-fit row into a stored fit) and ``audit``
+(cross-validate a stored fit; the result is stored on that fit). A job process leads its own
+process group; stopping a job kills the group, so the pool dies with it.
 
 State lives in one process: run a single API process per database (see the README).
 """
@@ -38,6 +39,7 @@ from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 
 from curvestudio_api import audit
+from curvestudio_api.audit_worker import run_cross_validation_job
 from curvestudio_api.autofit_worker import run_autofit_job, run_open_row_job
 from curvestudio_api.db import SessionFactory
 from curvestudio_api.logging_setup import get_logger, log_fields
@@ -52,6 +54,10 @@ ACTIVE = ("queued", "running")
 STARTUP_LIMIT_S = 120.0
 """How long a job process may take to come up before its job is given up on."""
 REAP_TIMEOUT_S = 5.0
+NAMED = {"autofit": "the Auto-fit run", "audit": "the cross-validation"}
+"""How a job's timeout message names it, by kind. A job of any other kind is "the fit"."""
+FIT_DELETED = "FIT_DELETED"
+"""A cross-validation whose fit was deleted: its result has nowhere to go."""
 
 
 @dataclass
@@ -144,6 +150,7 @@ class JobManager:
         worker: JobWorker = run_fit_job,
         autofit_worker: JobWorker = run_autofit_job,
         open_row_worker: JobWorker = run_open_row_job,
+        audit_worker: JobWorker = run_cross_validation_job,
         autofit_timeout_s: float | None = None,
         poll_s: float = 0.05,
     ) -> None:
@@ -157,6 +164,7 @@ class JobManager:
             "fit": worker,
             "autofit": autofit_worker,
             "open_row": open_row_worker,
+            "audit": audit_worker,
         }
         self._autofit_timeout_s = autofit_timeout_s if autofit_timeout_s is not None else timeout_s
         self._poll_s = poll_s
@@ -334,7 +342,7 @@ class JobManager:
                     overdue = now - flight.running_since > timeout_s + self._grace_s
                 else:
                     overdue = now - flight.dispatched > STARTUP_LIMIT_S + timeout_s
-                what = "the Auto-fit run" if flight.task.kind == "autofit" else "the fit"
+                what = NAMED.get(flight.task.kind, "the fit")
                 if overdue and self._finish(
                     flight.task.job_id,
                     "failed",
@@ -394,6 +402,8 @@ class JobManager:
                         self._store_autofit(task, result)
                     elif task.kind == "open_row":
                         self._store_opened_row(task, result["bundle"])
+                    elif task.kind == "audit":
+                        self._store_cross_validation(task, result["cv"])
                     else:
                         self._store_fit(task, result["bundle"])
                 else:
@@ -461,27 +471,47 @@ class JobManager:
     def _arguments_for(self, task: Task) -> dict[str, Any] | None:
         """The worker's keyword arguments, loaded now so queued jobs hold no dataset bytes.
 
-        A job whose dataset has vanished is failed and ``None`` is returned.
+        A job whose dataset has vanished is failed and ``None`` is returned; so is a
+        cross-validation whose fit has.
         """
+        arguments: dict[str, Any] | None = None
+        fit_gone = False
         with self._sessions() as db:
             job = db.get(Job, task.job_id)
             dataset = db.get(Dataset, task.dataset_id)
             if job is not None and dataset is not None:
-                return {
+                arguments = {
                     "payload": dataset.payload,
                     "x_name": dataset.x_column,
                     "y_name": dataset.y_column,
                     "fingerprint": dataset.fingerprint,
                     "spec": job.spec,
                 }
-        self._finish(
-            task.job_id,
-            "failed",
-            from_=ACTIVE,
-            error_code="DATASET_DELETED",
-            error_message="the dataset was deleted before the job started",
-        )
-        return None
+                if task.kind == "audit":  # it also reads the fit its result is stored on
+                    fit = db.get(Fit, uuid.UUID(job.spec["fit_id"]))
+                    fit_gone = fit is None
+                    if fit is not None:
+                        arguments["bundle"] = fit.bundle
+                        arguments["fit_spec"] = fit.spec
+        if fit_gone:
+            self._finish(
+                task.job_id,
+                "failed",
+                from_=ACTIVE,
+                error_code=FIT_DELETED,
+                error_message="the fit was deleted before its cross-validation started",
+            )
+            return None
+        if arguments is None:
+            self._finish(
+                task.job_id,
+                "failed",
+                from_=ACTIVE,
+                error_code="DATASET_DELETED",
+                error_message="the dataset was deleted before the job started",
+            )
+            return None
+        return arguments
 
     def _store_progress(self, job_id: uuid.UUID, raw: bytes) -> None:
         """Record a progress snapshot of a running job (a cancelled job keeps what it had)."""
@@ -679,6 +709,51 @@ class JobManager:
                 .values(status="succeeded", result_ref=existing, finished_at=utcnow())
             )
             db.commit()
+
+    def _store_cross_validation(self, task: Task, cv: dict[str, Any]) -> None:
+        """Store a cross-validation on the fit it was run for, and finish the job.
+
+        The job then points at the dataset it ran on; what it produced is read from the fit.
+        The fit may have been deleted while the job ran: nothing is stored and the job fails,
+        rather than succeeding with its result thrown away.
+        """
+        fit_gone = False
+        with self._sessions() as db:
+            claimed = db.execute(
+                # Conditional, so a cancel that lands first wins and nothing is stored.
+                update(Job)
+                .where(Job.id == task.job_id, Job.status == "running")
+                .values(status="succeeded", result_ref=task.dataset_id, finished_at=utcnow())
+                .returning(Job.user_id, Job.spec)
+            ).one_or_none()
+            if claimed is None:
+                db.rollback()
+                return
+            user_id, spec = claimed
+            fit_id = uuid.UUID(spec["fit_id"])
+            stored = db.execute(update(Fit).where(Fit.id == fit_id).values(cv=cv))
+            fit_gone = not stored.rowcount  # type: ignore[attr-defined]
+            if not fit_gone:
+                audit.record(
+                    db,
+                    "fit.cross_validate",
+                    "fit",
+                    user_id=user_id,
+                    entity_id=fit_id,
+                    detail={"job_id": str(task.job_id), "folds": spec["folds"]},
+                    request_id=task.request_id,
+                )
+                db.commit()
+            else:
+                db.rollback()
+        if fit_gone:
+            self._finish(
+                task.job_id,
+                "failed",
+                from_=("running",),
+                error_code=FIT_DELETED,
+                error_message="the fit was deleted before its cross-validation finished",
+            )
 
 
 def _kill_group(process: BaseProcess) -> None:

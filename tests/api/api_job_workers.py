@@ -4,6 +4,7 @@ import os
 import time
 from typing import Any
 
+from curvestudio_api.audit_worker import run_cross_validation_job
 from curvestudio_api.worker import run_fit_job
 
 
@@ -98,3 +99,12 @@ def child_spawning_worker(*, pid_file: str, **_arguments: Any) -> dict[str, Any]
         handle.write(str(child.pid))
     time.sleep(600)
     return {"ok": False, "code": "NEVER", "message": "unreachable"}
+
+
+# -- The audit worker ------------------------------------------------------------------------------
+
+
+def slow_audit_worker(*, seconds: float = 1.5, **arguments: Any) -> dict[str, Any]:
+    """The real cross-validation after a wait, so a neighbouring request finds the job in flight."""
+    time.sleep(seconds)
+    return run_cross_validation_job(**arguments)

@@ -1,4 +1,4 @@
-"""Fit jobs, stored fits, prediction and export."""
+"""Fit jobs, stored fits, prediction, export, and the audit of a stored fit."""
 
 import json
 import uuid
@@ -23,6 +23,7 @@ from curvestudio_api.jobs import ACTIVE, Task
 from curvestudio_api.logging_setup import request_id_var
 from curvestudio_api.orm import Autofit, Dataset, Fit, Job, User
 from curvestudio_api.schemas import (
+    CrossValidationIn,
     FitAuditOut,
     FitMethodsOut,
     FitSummaryOut,
@@ -37,6 +38,9 @@ from curvestudio_api.workflow_errors import api_error, tool_api_error
 router = APIRouter(tags=["fits"])
 
 MAX_ACTIVE_JOBS_PER_USER = 20
+MIN_FOLDS = 2
+"""The fewest folds a cross-validation has (the core's own rule). Fewer is refused before a job
+is queued, with the code the tools refuse it by."""
 
 
 def admit_job(db: Session, ctx: Context, user: User, check_quota: Callable[[], None]) -> None:
@@ -63,6 +67,17 @@ def admit_job(db: Session, ctx: Context, user: User, check_quota: Callable[[], N
         )
 
 
+def _result_id(job: Job) -> uuid.UUID | None:
+    """What the job produced, once it has succeeded: the row ``result_ref`` points at. A
+    cross-validation is the exception: its result is stored on the fit, which ``result_ref``
+    does not point at."""
+    if job.status != "succeeded":
+        return None
+    if job.kind == "audit":
+        return uuid.UUID(job.spec["fit_id"])
+    return job.result_ref
+
+
 def job_out(job: Job) -> JobOut:
     return JobOut.model_validate(
         {
@@ -72,7 +87,7 @@ def job_out(job: Job) -> JobOut:
             "dataset_id": job.dataset_id,
             "spec": job.spec,
             "result_ref": job.result_ref,
-            "result_id": job.result_ref if job.status == "succeeded" else None,
+            "result_id": _result_id(job),
             "progress": job.progress,
             "error_code": job.error_code,
             "error_message": job.error_message,
@@ -295,3 +310,60 @@ def get_fit_methods(fit_id: uuid.UUID, user: CurrentUser, db: Db) -> FitMethodsO
     return FitMethodsOut.model_validate(
         {style: text.model_dump(mode="json") for style, text in texts.items()}
     )
+
+
+def _active_cross_validation(db: Session, user: User, fit: Fit) -> Job | None:
+    """The user's queued or running cross-validation of ``fit``, when there is one."""
+    for job in db.scalars(
+        select(Job).where(Job.user_id == user.id, Job.kind == "audit", Job.status.in_(ACTIVE))
+    ):
+        if job.spec["fit_id"] == str(fit.id):
+            return job
+    return None
+
+
+@router.post("/fits/{fit_id}/audit/cross-validation", status_code=202, response_model=JobCreatedOut)
+def cross_validate_fit(
+    fit_id: uuid.UUID, body: CrossValidationIn, user: CurrentUser, ctx: Ctx, db: Db
+) -> JobCreatedOut:
+    """Queue the cross-validation of a stored fit on its dataset's table. The result is stored
+    on the fit, where ``GET /fits/{id}/audit`` reads it: follow the job (``GET /jobs/{id}``),
+    then read the audit again. The job uses no quota. One cross-validation of a fit runs at a
+    time: while one is queued or running, to ask for another is a 409 whose ``detail.job_id``
+    names the job to follow. A fit that did not converge, or more folds than the data hold
+    points, fails the job with the code the tools refuse it by."""
+    fit = own_fit(db, user, fit_id)
+    if body.folds != "loo" and body.folds < MIN_FOLDS:
+        # Refused here, with the tool's own error, so that nothing is queued which cannot run.
+        raise tool_api_error(
+            ToolError("INVALID_FOLDS", f'folds must be at least {MIN_FOLDS}, or "loo"')
+        )
+    active = _active_cross_validation(db, user, fit)
+    if active is not None:
+        raise ApiError(
+            409,
+            "CONFLICT",
+            "a cross-validation of this fit is already queued or running",
+            {"code": "CROSS_VALIDATION_RUNNING", "job_id": str(active.id)},
+        )
+    admit_job(db, ctx, user, check_quota=lambda: None)  # the job uses no quota
+    job = Job(
+        id=uuid.uuid4(),
+        user_id=user.id,
+        dataset_id=fit.dataset_id,
+        kind="audit",
+        status="queued",
+        spec={"fit_id": str(fit.id), "folds": body.folds},
+    )
+    db.add(job)
+    db.commit()
+    ctx.jobs.submit(
+        Task(
+            job_id=job.id,
+            user_id=user.id,
+            dataset_id=fit.dataset_id,
+            request_id=request_id_var.get(),
+            kind="audit",
+        )
+    )
+    return JobCreatedOut(job_id=job.id)

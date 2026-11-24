@@ -3,22 +3,26 @@ fit's audit and methods say, and the job that cross-validates a fit."""
 
 import time
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+import api_job_workers
 import pytest
 from alembic import command
 from fastapi.testclient import TestClient
-from sqlalchemy import Engine, inspect
+from sqlalchemy import Engine, inspect, select
 from sqlalchemy.orm import Session
 
 from conftest import linear_csv, make_settings, signup, upload
 from curvestudio.discovery import AutoFitResult
-from curvestudio.tools import ToolError, all_methods_texts, audit_fit
+from curvestudio.tools import ToolError, all_methods_texts, audit_fit, cross_validate
 from curvestudio.workflow import FitBundle, FitSpec
 from curvestudio_api.app import create_app
+from curvestudio_api.export_openapi import generate
 from curvestudio_api.migrations import _config, current_revision, upgrade_to_head
-from curvestudio_api.orm import Dataset, Fit, User
+from curvestudio_api.orm import AuditLog, Dataset, Fit, Job, User
+from curvestudio_api.settings import Settings
 from curvestudio_api.storage import decode_payload
 
 API = "/api/v1"
@@ -225,6 +229,277 @@ def test_an_opened_row_is_audited_against_its_run_until_the_run_is_deleted(
     assert response.json()["simpler_model"] is None
     # the fit itself is untouched
     assert client.get(f"{API}/fits/{fit_id}", headers=headers).status_code == 200
+
+
+# -- the cross-validation job ----------------------------------------------------------------------
+
+
+def cross_validation_path(fit_id: str) -> str:
+    return f"{API}/fits/{fit_id}/audit/cross-validation"
+
+
+def start_cross_validation(
+    client: TestClient, headers: dict[str, str], fit_id: str, body: dict[str, Any] | None = None
+) -> str:
+    response = client.post(cross_validation_path(fit_id), headers=headers, json=body or {})
+    assert response.status_code == 202, response.text
+    return str(response.json()["job_id"])
+
+
+def cross_validation_specs(client: TestClient, fit_id: str) -> list[dict[str, Any]]:
+    """The specs of every cross-validation job queued for ``fit_id``, finished or not."""
+    with client.app.state.ctx.session_factory() as db:  # type: ignore[attr-defined]
+        jobs = db.scalars(select(Job).where(Job.kind == "audit"))
+        return [dict(job.spec) for job in jobs if job.spec["fit_id"] == fit_id]
+
+
+def test_the_cross_validation_job_stores_its_result_on_the_fit(fitted: dict[str, Any]) -> None:
+    client, headers, dataset = fitted["client"], fitted["headers"], fitted["dataset"]
+    fit_id = fitted["first"]["result_ref"]
+    assert stored_fit(client, fit_id)["cv"] is None
+
+    started = start_cross_validation(client, headers, fit_id)  # five folds by default
+    job = wait_for_job(client, headers, started)
+    assert job["status"] == "succeeded", job
+    assert job["kind"] == "audit"
+    assert job["spec"] == {"fit_id": fit_id, "folds": 5}
+    assert job["result_id"] == fit_id and job["result_ref"] == dataset["id"]
+
+    stored = stored_fit(client, fit_id)
+    expected = cross_validate(stored["bundle"], stored["spec"], data=stored["xy"], folds=5)
+    assert stored["cv"] == expected.model_dump(mode="json")
+    audited = client.get(audit_path(fit_id), headers=headers)
+    assert audited.status_code == 200, audited.text
+    expected_audit = audit_fit(stored["bundle"], spec=stored["spec"], cv=expected)
+    assert audited.json() == expected_audit.model_dump(mode="json")
+    assert check_of(audited.json(), "cross_validation")["verdict"] != "not_applicable"
+    with client.app.state.ctx.session_factory() as db:  # type: ignore[attr-defined]
+        actions = {
+            row.action for row in db.scalars(select(AuditLog).where(AuditLog.entity_id == fit_id))
+        }
+    assert actions == {"fit.create", "fit.cross_validate"}
+
+    # leave-one-out replaces it, once no job is active
+    started = start_cross_validation(client, headers, fit_id, {"folds": "loo"})
+    job = wait_for_job(client, headers, started)
+    assert job["status"] == "succeeded", job
+    assert job["spec"] == {"fit_id": fit_id, "folds": "loo"}
+    stored = stored_fit(client, fit_id)
+    expected = cross_validate(stored["bundle"], stored["spec"], data=stored["xy"], folds="loo")
+    assert stored["cv"] == expected.model_dump(mode="json")
+    assert stored["cv"]["folds"] == 40
+
+
+def test_the_cross_validation_job_uses_no_quota(fitted: dict[str, Any]) -> None:
+    client, headers = fitted["client"], fitted["headers"]
+    second_fit = fitted["second"]["result_ref"]
+
+    def fits_stored() -> int:
+        return client.get(f"{API}/me", headers=headers).json()["usage"]["fits"]
+
+    before = fits_stored()
+    job = wait_for_job(client, headers, start_cross_validation(client, headers, second_fit))
+    assert job["status"] == "succeeded", job
+    assert fits_stored() == before
+
+
+def test_an_impossible_fold_count_is_refused_before_a_job_is_queued(
+    fitted: dict[str, Any],
+) -> None:
+    client, headers = fitted["client"], fitted["headers"]
+    second_fit = fitted["second"]["result_ref"]
+    queued = len(cross_validation_specs(client, second_fit))
+    refused = client.post(cross_validation_path(second_fit), headers=headers, json={"folds": 1})
+    assert refused.status_code == 422, refused.text
+    body = refused.json()
+    assert body["error"] == "VALIDATION_ERROR"
+    assert body["detail"] == {"code": "INVALID_FOLDS"}
+    assert "folds" in body["message"]
+    for body in ({"folds": 0}, {"folds": "many"}, {"folds": 2.5}, {"folds": 2, "seed": 1}):
+        refused = client.post(cross_validation_path(second_fit), headers=headers, json=body)
+        assert refused.status_code == 422, (body, refused.text)
+    assert len(cross_validation_specs(client, second_fit)) == queued  # nothing was queued
+
+    # two folds is the least a cross-validation has
+    job = wait_for_job(
+        client, headers, start_cross_validation(client, headers, second_fit, {"folds": 2})
+    )
+    assert job["status"] == "succeeded", job
+
+
+def test_a_refusal_inside_the_job_is_the_jobs_failure(fitted: dict[str, Any]) -> None:
+    client, headers = fitted["client"], fitted["headers"]
+    second_fit = fitted["second"]["result_ref"]
+    # a fit that did not converge has no model to cross-validate
+    fit_id = fitted["failed"]["result_ref"]
+    job = wait_for_job(client, headers, start_cross_validation(client, headers, fit_id))
+    stored = stored_fit(client, fit_id)
+    with pytest.raises(ToolError) as refused:
+        cross_validate(stored["bundle"], stored["spec"], data=stored["xy"], folds=5)
+    assert job["status"] == "failed"
+    assert job["error_code"] == refused.value.code == "FIT_NOT_CONVERGED_INPUT"
+    assert job["error_message"] == refused.value.message
+    assert job["result_id"] is None and job["result_ref"] is None
+
+    # more folds than points is the tool's refusal as well
+    before = stored_fit(client, second_fit)["cv"]
+    job = wait_for_job(
+        client, headers, start_cross_validation(client, headers, second_fit, {"folds": 1000})
+    )
+    assert job["status"] == "failed" and job["error_code"] == "INVALID_FOLDS", job
+    assert stored_fit(client, second_fit)["cv"] == before
+
+
+def test_the_audit_routes_hide_another_users_fit_and_need_a_token(fitted: dict[str, Any]) -> None:
+    client, headers = fitted["client"], fitted["headers"]
+    fit_id = fitted["first"]["result_ref"]
+    routes = (
+        ("GET", audit_path(fit_id)),
+        ("GET", methods_path(fit_id)),
+        ("POST", cross_validation_path(fit_id)),
+    )
+    queued = len(cross_validation_specs(client, fit_id))
+    stranger = signup(client)
+    for method, path in routes:
+        body = {"folds": 5} if method == "POST" else None
+        anonymous = client.request(method, path)
+        assert anonymous.status_code == 401, (method, path, anonymous.text)
+        assert anonymous.json()["error"] == "UNAUTHORIZED"
+        foreign = client.request(method, path, headers=stranger, json=body)
+        assert foreign.status_code == 404, (method, path, foreign.text)
+        assert foreign.json()["error"] == "NOT_FOUND"
+        unknown = path.replace(fit_id, str(uuid.uuid4()))
+        missing = client.request(method, unknown, headers=headers, json=body)
+        assert missing.status_code == 404, (method, path, missing.text)
+    # nothing was started for the owner, whose fit is untouched
+    assert len(cross_validation_specs(client, fit_id)) == queued
+    assert client.get(audit_path(fit_id), headers=headers).status_code == 200
+
+
+def test_openapi_documents_the_audit_endpoints() -> None:
+    document = generate()
+    fit = "/api/v1/fits/{fit_id}"
+    assert set(document["paths"][f"{fit}/audit"]) == {"get"}
+    assert set(document["paths"][f"{fit}/methods"]) == {"get"}
+    started = document["paths"][f"{fit}/audit/cross-validation"]
+    assert set(started) == {"post"} and "202" in started["post"]["responses"]
+    schemas = document["components"]["schemas"]
+    assert {
+        "AuditCheckOut",
+        "ExcludedRowOut",
+        "FitAuditOut",
+        "FitMethodsOut",
+        "MethodsTextOut",
+        "SimplerModelOut",
+    } <= set(schemas)
+    folds = schemas["CrossValidationIn"]["properties"]["folds"]
+    assert folds["default"] == 5 and "loo" in str(folds)
+    assert "audit" in str(schemas["JobOut"]["properties"]["kind"])
+
+
+# -- the job in flight, with workers that do not finish --------------------------------------------
+
+
+def test_a_second_cross_validation_of_a_fit_is_a_409_while_one_is_queued_or_running(
+    client_factory: Callable[..., TestClient], settings_factory: Callable[..., Settings]
+) -> None:
+    client = client_factory(settings_factory(), audit_worker=api_job_workers.sleeping_worker)
+    headers = signup(client)
+    dataset = upload(client, headers, linear_csv()).json()
+    first = fit_through_api(client, headers, dataset["id"], POLY1)["result_ref"]
+    second = fit_through_api(client, headers, dataset["id"], POLY1)["result_ref"]
+
+    # the only worker is held by the first fit's job, so the second fit's waits in the queue
+    holding = start_cross_validation(client, headers, first)
+    wait_for_job(client, headers, holding, statuses=("running",))
+    queued = start_cross_validation(client, headers, second)
+    assert client.get(f"{API}/jobs/{queued}", headers=headers).json()["status"] == "queued"
+    again = client.post(cross_validation_path(second), headers=headers, json={"folds": "loo"})
+    assert again.status_code == 409, again.text
+    assert again.json()["error"] == "CONFLICT"
+    assert again.json()["detail"] == {"code": "CROSS_VALIDATION_RUNNING", "job_id": queued}
+    running = client.post(cross_validation_path(first), headers=headers, json={})
+    assert running.status_code == 409 and running.json()["detail"]["job_id"] == holding
+
+    # what the job answers with is the one to follow: it is the same job, once it runs
+    assert client.post(f"{API}/jobs/{queued}/cancel", headers=headers).status_code == 200
+    assert client.post(f"{API}/jobs/{holding}/cancel", headers=headers).status_code == 200
+    active = start_cross_validation(client, headers, second)
+    wait_for_job(client, headers, active, statuses=("running",))
+    again = client.post(cross_validation_path(second), headers=headers, json={})
+    assert again.status_code == 409 and again.json()["detail"]["job_id"] == active
+    # another fit is not in the way
+    assert start_cross_validation(client, headers, first)
+
+    # with nothing active, a new one is taken
+    assert client.post(f"{API}/jobs/{active}/cancel", headers=headers).status_code == 200
+    accepted = client.post(cross_validation_path(second), headers=headers, json={})
+    assert accepted.status_code == 202, accepted.text
+    assert accepted.json()["job_id"] != active
+
+
+def test_a_cross_validation_in_flight_does_not_count_against_the_fit_quota(
+    client_factory: Callable[..., TestClient], settings_factory: Callable[..., Settings]
+) -> None:
+    client = client_factory(
+        settings_factory(job_workers=2, quota_max_fits=2),
+        audit_worker=api_job_workers.sleeping_worker,
+    )
+    headers = signup(client)
+    dataset = upload(client, headers, linear_csv()).json()
+    first = fit_through_api(client, headers, dataset["id"], POLY1)["result_ref"]
+    running = start_cross_validation(client, headers, first)
+    wait_for_job(client, headers, running, statuses=("running",))
+
+    # one fit stored and a job in flight that stores no fit: the second of two is still allowed
+    second = fit_through_api(client, headers, dataset["id"], POLY1)["result_ref"]
+    # the quota is used up, and a cross-validation is still allowed: it is no fit
+    refused = client.post(f"{API}/datasets/{dataset['id']}/fits", headers=headers, json=POLY1)
+    assert refused.status_code == 409 and refused.json()["error"] == "QUOTA_EXCEEDED", refused.text
+    assert start_cross_validation(client, headers, second)
+
+
+def test_an_audit_job_that_overruns_its_timeout_says_cross_validation(
+    client_factory: Callable[..., TestClient], settings_factory: Callable[..., Settings]
+) -> None:
+    client = client_factory(
+        settings_factory(job_timeout_s=1.0, job_grace_s=0.2),
+        audit_worker=api_job_workers.sleeping_worker,
+    )
+    headers = signup(client)
+    dataset = upload(client, headers, linear_csv()).json()
+    fit_id = fit_through_api(client, headers, dataset["id"], POLY1)["result_ref"]
+    job = wait_for_job(client, headers, start_cross_validation(client, headers, fit_id))
+    assert job["status"] == "failed" and job["error_code"] == "TIMEOUT", job
+    assert "the cross-validation did not finish within 1 s" in job["error_message"]
+
+
+def test_a_cross_validation_whose_fit_is_deleted_fails_rather_than_succeeds(
+    client_factory: Callable[..., TestClient], settings_factory: Callable[..., Settings]
+) -> None:
+    """The audit worker waits before it runs, so the job is still in flight when the fit goes."""
+    client = client_factory(settings_factory(), audit_worker=api_job_workers.slow_audit_worker)
+    headers = signup(client)
+    dataset = upload(client, headers, linear_csv()).json()
+    first = fit_through_api(client, headers, dataset["id"], POLY1)["result_ref"]
+    second = fit_through_api(client, headers, dataset["id"], POLY1)["result_ref"]
+
+    # deleted while the job waits in the queue: there is nothing left to load when it starts
+    holding = start_cross_validation(client, headers, first)
+    wait_for_job(client, headers, holding, statuses=("running",))
+    waiting = start_cross_validation(client, headers, second)
+    assert client.delete(f"{API}/fits/{second}", headers=headers).status_code == 204
+    job = wait_for_job(client, headers, waiting)
+    assert job["status"] == "failed" and job["error_code"] == "FIT_DELETED", job
+    assert wait_for_job(client, headers, holding)["status"] == "succeeded"  # the other one ran
+
+    # deleted while the job runs: its result has nowhere to go
+    running = start_cross_validation(client, headers, first)
+    wait_for_job(client, headers, running, statuses=("running",))
+    assert client.delete(f"{API}/fits/{first}", headers=headers).status_code == 204
+    job = wait_for_job(client, headers, running)
+    assert job["status"] == "failed" and job["error_code"] == "FIT_DELETED", job
+    assert job["result_id"] is None
 
 
 # -- the migration ---------------------------------------------------------------------------------

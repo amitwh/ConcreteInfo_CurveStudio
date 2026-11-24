@@ -281,8 +281,12 @@ class ProgressOut(BaseModel):
 
 
 class JobOut(BaseModel):
+    """A job. ``result_ref`` is set when the job succeeds: the fit it stored (``fit``,
+    ``open_row``), the Auto-fit run (``autofit``) or, for a cross-validation (``audit``), the
+    dataset it ran on: its result is stored on the fit, which is then ``result_id``."""
+
     id: uuid.UUID
-    kind: Literal["fit", "autofit", "open_row"]
+    kind: Literal["fit", "autofit", "open_row", "audit"]
     status: Literal["queued", "running", "succeeded", "failed", "cancelled"]
     dataset_id: uuid.UUID
     spec: dict[str, Any]
@@ -389,6 +393,15 @@ class FitMethodsOut(BaseModel):
     text: MethodsTextOut
     markdown: MethodsTextOut
     latex: MethodsTextOut
+
+
+class CrossValidationIn(_Body):
+    """How to cross-validate a fit: in ``folds`` folds (5 by default), or ``"loo"`` to leave one
+    point out at a time. A count below 2 is refused before a job is queued, with the code the
+    tools use (``INVALID_FOLDS``); one the data cannot bear (more folds than points) fails the
+    job with the same code."""
+
+    folds: int | Literal["loo"] = 5
 
 
 class AutoFitRequest(_Body):

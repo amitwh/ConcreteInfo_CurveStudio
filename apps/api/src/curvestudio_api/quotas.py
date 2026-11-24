@@ -89,12 +89,13 @@ def usage(db: Session, user_id: uuid.UUID) -> Usage:
 
 
 def active_jobs(db: Session, user_id: uuid.UUID) -> int:
-    """Queued or running jobs that will store a fit (an Auto-fit run stores none)."""
+    """Queued or running jobs that will store a fit (an Auto-fit run stores none, and a
+    cross-validation stores its result on a fit that is already counted)."""
     return (
         db.scalar(
             select(func.count(Job.id)).where(
                 Job.user_id == user_id,
-                Job.kind != "autofit",
+                Job.kind.not_in(("autofit", "audit")),
                 Job.status.in_(("queued", "running")),
             )
         )
