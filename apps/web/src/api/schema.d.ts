@@ -698,7 +698,11 @@ export interface paths {
         get: operations["get_fit_api_v1_fits__fit_id__get"];
         put?: never;
         post?: never;
-        /** Delete Fit */
+        /**
+         * Delete Fit
+         * @description Delete a stored fit. A cross-validation of it that is queued or running is cancelled
+         *     first, as deleting a dataset cancels its jobs.
+         */
         delete: operations["delete_fit_api_v1_fits__fit_id__delete"];
         options?: never;
         head?: never;

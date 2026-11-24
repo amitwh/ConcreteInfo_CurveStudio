@@ -541,7 +541,7 @@ def test_an_audit_job_that_overruns_its_timeout_says_cross_validation(
     assert "the cross-validation did not finish within 1 s" in job["error_message"]
 
 
-def test_a_cross_validation_whose_fit_is_deleted_fails_rather_than_succeeds(
+def test_deleting_a_fit_cancels_its_cross_validation(
     client_factory: Callable[..., TestClient], settings_factory: Callable[..., Settings]
 ) -> None:
     """The audit worker waits before it runs, so the job is still in flight when the fit goes."""
@@ -551,22 +551,32 @@ def test_a_cross_validation_whose_fit_is_deleted_fails_rather_than_succeeds(
     first = fit_through_api(client, headers, dataset["id"], POLY1)["result_ref"]
     second = fit_through_api(client, headers, dataset["id"], POLY1)["result_ref"]
 
-    # deleted while the job waits in the queue: there is nothing left to load when it starts
+    # deleted while its job waits in the queue: the job is not started
     holding = start_cross_validation(client, headers, first)
     wait_for_job(client, headers, holding, statuses=("running",))
     waiting = start_cross_validation(client, headers, second)
+    assert client.get(f"{API}/jobs/{waiting}", headers=headers).json()["status"] == "queued"
     assert client.delete(f"{API}/fits/{second}", headers=headers).status_code == 204
     job = wait_for_job(client, headers, waiting)
-    assert job["status"] == "failed" and job["error_code"] == "FIT_DELETED", job
-    assert wait_for_job(client, headers, holding)["status"] == "succeeded"  # the other one ran
+    assert job["status"] == "cancelled" and job["error_code"] is None, job
+    assert job["result_id"] is None
+    # the other fit's job, on the same dataset, is left alone and runs to its end
+    assert wait_for_job(client, headers, holding)["status"] == "succeeded"
 
-    # deleted while the job runs: its result has nowhere to go
+    # deleted while its job runs: the worker is stopped
     running = start_cross_validation(client, headers, first)
     wait_for_job(client, headers, running, statuses=("running",))
     assert client.delete(f"{API}/fits/{first}", headers=headers).status_code == 204
     job = wait_for_job(client, headers, running)
-    assert job["status"] == "failed" and job["error_code"] == "FIT_DELETED", job
+    assert job["status"] == "cancelled" and job["error_code"] is None, job
     assert job["result_id"] is None
+
+    # no fit row remains
+    for fit_id in (first, second):
+        assert client.get(f"{API}/fits/{fit_id}", headers=headers).status_code == 404
+    with client.app.state.ctx.session_factory() as db:  # type: ignore[attr-defined]
+        assert db.get(Fit, uuid.UUID(first)) is None
+        assert db.get(Fit, uuid.UUID(second)) is None
 
 
 # -- the migration ---------------------------------------------------------------------------------

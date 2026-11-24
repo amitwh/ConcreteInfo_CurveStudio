@@ -200,8 +200,12 @@ def get_fit(fit_id: uuid.UUID, user: CurrentUser, db: Db) -> Response:
 
 
 @router.delete("/fits/{fit_id}", status_code=204)
-def delete_fit(fit_id: uuid.UUID, user: CurrentUser, db: Db) -> Response:
+def delete_fit(fit_id: uuid.UUID, user: CurrentUser, ctx: Ctx, db: Db) -> Response:
+    """Delete a stored fit. A cross-validation of it that is queued or running is cancelled
+    first, as deleting a dataset cancels its jobs."""
     fit = own_fit(db, user, fit_id)
+    for job in _active_cross_validations(db, user, fit):
+        ctx.jobs.cancel(job.id)
     audit.record(db, "fit.delete", "fit", user_id=user.id, entity_id=fit.id)
     db.delete(fit)
     db.commit()
@@ -311,14 +315,20 @@ def get_fit_methods(fit_id: uuid.UUID, user: CurrentUser, db: Db) -> FitMethodsO
     )
 
 
+def _active_cross_validations(db: Session, user: User, fit: Fit) -> list[Job]:
+    """The user's queued or running cross-validations of ``fit``: none, or the one that is
+    allowed at a time, or two whose requests raced."""
+    wanted = str(fit.id)
+    jobs = db.scalars(
+        select(Job).where(Job.user_id == user.id, Job.kind == "audit", Job.status.in_(ACTIVE))
+    )
+    return [job for job in jobs if job.spec["fit_id"] == wanted]
+
+
 def _active_cross_validation(db: Session, user: User, fit: Fit) -> Job | None:
     """The user's queued or running cross-validation of ``fit``, when there is one."""
-    for job in db.scalars(
-        select(Job).where(Job.user_id == user.id, Job.kind == "audit", Job.status.in_(ACTIVE))
-    ):
-        if job.spec["fit_id"] == str(fit.id):
-            return job
-    return None
+    jobs = _active_cross_validations(db, user, fit)
+    return jobs[0] if jobs else None
 
 
 @router.post("/fits/{fit_id}/audit/cross-validation", status_code=202, response_model=JobCreatedOut)

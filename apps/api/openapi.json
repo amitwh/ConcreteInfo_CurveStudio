@@ -7455,6 +7455,7 @@
     },
     "/api/v1/fits/{fit_id}": {
       "delete": {
+        "description": "Delete a stored fit. A cross-validation of it that is queued or running is cancelled\nfirst, as deleting a dataset cancels its jobs.",
         "operationId": "delete_fit_api_v1_fits__fit_id__delete",
         "parameters": [
           {
