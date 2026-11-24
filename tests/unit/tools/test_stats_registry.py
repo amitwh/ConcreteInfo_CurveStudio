@@ -81,7 +81,7 @@ def _column(name: str, values: list[float]) -> Column:
 def _group(name: str, labels: list[str]) -> GroupColumn:
     return GroupColumn(
         name=name,
-        labels=np.asarray(labels, dtype=np.str_),
+        labels=np.asarray(labels, dtype=object),
         rows=np.arange(len(labels), dtype=np.intp),
     )
 

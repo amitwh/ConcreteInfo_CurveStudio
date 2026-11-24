@@ -66,9 +66,10 @@ def _column(name: str, values: Sequence[float], rows: Sequence[int] | None = Non
 
 
 def _group(name: str, labels: Sequence[str], rows: Sequence[int]) -> GroupColumn:
+    """A group column, its labels an object array of ``str`` as the data layer builds them."""
     return GroupColumn(
         name=name,
-        labels=np.asarray(labels, dtype=np.str_),
+        labels=np.asarray(labels, dtype=object),
         rows=np.asarray(rows, dtype=np.intp),
     )
 
@@ -375,6 +376,18 @@ def test_levels_keep_the_order_of_first_appearance_and_refuse_a_single_one() -> 
     with pytest.raises(ToolError) as none_found:
         levels(_group("mix", [], rows=[]))
     assert none_found.value.code == "SINGLE_GROUP"
+
+
+def test_levels_keep_the_order_of_first_appearance_over_many_groups() -> None:
+    # Thousands of rows over dozens of groups, each repeated far from its first appearance:
+    # a level still comes where it first appears. An ordered dictionary gives that order
+    # independently of NumPy's sort.
+    rng = np.random.default_rng(20261124)
+    drawn = [f"mix {value}" for value in rng.integers(0, 60, size=5_000)]
+    crowd = _group("mix", drawn, rows=range(len(drawn)))
+
+    assert len(set(drawn)) > 30
+    assert levels(crowd) == tuple(dict.fromkeys(drawn))
 
 
 def test_list_excluded_lists_two_hundred_and_counts_the_rest() -> None:

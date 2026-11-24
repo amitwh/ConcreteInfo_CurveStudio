@@ -278,7 +278,7 @@ def aligned(values: Column, *groups: GroupColumn) -> Aligned:
     covered, spread = _spread(positions, values.rows, values.values, np.nan)
     rows.drop(~covered | np.isnan(spread), f"missing in {values.name}")
     rows.drop(np.isinf(spread), f"not a finite number in {values.name}")
-    labels: list[tuple[BoolArray, NDArray[np.str_]]] = []
+    labels: list[tuple[BoolArray, NDArray[np.object_]]] = []
     for group in groups:
         has, text = _spread(positions, group.rows, group.labels, "")
         labels.append((has, text))
