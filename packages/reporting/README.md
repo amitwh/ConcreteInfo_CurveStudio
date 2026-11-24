@@ -19,7 +19,7 @@ PDF's title, where the identity alone is also set as the author, and in the cent
 of every sheet's print header; without one both files are as they have always been.
 
 Both also take the fit's `methods` text and `audit` (`curvestudio.tools.methods_text`
-and `audit_fit`). The PDF then carries two sections after the statistics table:
+and `audit_fit`). The PDF then carries two sections, Methods before the parameter table (its paragraph speaks of "the equation and table below") and Fit audit after the statistics table:
 Methods (the paragraph, the audit's methods fragment, the equation with its
 standard errors) and Fit audit (the audit's summary, then one paragraph per check
 that reads caution or fail: title, evidence, and the next step after an arrow). The

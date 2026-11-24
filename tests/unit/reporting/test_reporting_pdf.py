@@ -407,14 +407,25 @@ LINEAR = FitSpec(model=PolynomialRef(degree=1))
 FLAGGED = (Verdict.CAUTION, Verdict.FAIL)
 """The verdicts a report lists check by check."""
 
-UP_TO_STATISTICS = ["Model equation", "Parameters", "Statistics"]
-"""The headings before the two optional sections, which follow the statistics table."""
+EQUATION_AND_TABLES = ["Model equation", "Parameters", "Statistics"]
+"""A report's headings when neither the methods text nor the audit is given."""
 
 FIGURES_ON = ["Figures", "Assumptions and limitations"]
-"""The headings after them: the figure page, then the closing section."""
+"""The headings that close a converged fit's report: the figure page, then the last section."""
 
-WITH_BOTH = [*UP_TO_STATISTICS, "Methods", "Fit audit", *FIGURES_ON]
-"""A converged fit's headings when its methods text and its audit are both given."""
+WITH_BOTH = [
+    *EQUATION_AND_TABLES[:1],
+    "Methods",
+    *EQUATION_AND_TABLES[1:],
+    "Fit audit",
+    *FIGURES_ON,
+]
+"""A converged fit's headings when its methods text and its audit are both given: the methods
+before the parameter table (their paragraph speaks of "the equation and table below"), the
+audit after the statistics table, before the page break."""
+
+WITH_METHODS = [*EQUATION_AND_TABLES[:1], "Methods", *EQUATION_AND_TABLES[1:], *FIGURES_ON]
+WITH_AUDIT = [*EQUATION_AND_TABLES, "Fit audit", *FIGURES_ON]
 
 
 def _headings(flowables: list[Flowable]) -> list[str]:
@@ -431,9 +442,9 @@ def test_without_audit_or_methods_the_report_has_the_sections_it_always_had(
     poly_bundle: FitBundleFactory, non_converged_bundle: FitBundle
 ) -> None:
     """The two sections are optional: given neither, nothing of either is in the document."""
-    assert _headings(_flowables(poly_bundle())) == [*UP_TO_STATISTICS, *FIGURES_ON]
+    assert _headings(_flowables(poly_bundle())) == [*EQUATION_AND_TABLES, *FIGURES_ON]
     assert _headings(_flowables(non_converged_bundle)) == [
-        *UP_TO_STATISTICS,
+        *EQUATION_AND_TABLES,
         "Assumptions and limitations",
     ]
 
@@ -446,7 +457,7 @@ def test_a_clean_fit_reports_its_methods_and_that_every_check_passed(
     assert audit.overall is Verdict.PASS, "the fixture is a fit with no flagged check"
     text = norm(pdf_text(make_pdf(bundle, tmp_path, audit=audit, methods=methods)))
     headings = _headings(_flowables(bundle, audit=audit, methods=methods))
-    assert headings == WITH_BOTH, "after the statistics, before the page break"
+    assert headings == WITH_BOTH, "methods before the tables, audit after them, before the break"
     assert f"{methods.paragraph} {audit.methods_fragment}" in text, (
         "the paragraph, then the fragment"
     )
@@ -455,8 +466,12 @@ def test_a_clean_fit_reports_its_methods_and_that_every_check_passed(
     assert "±" in text
     assert audit.summary in text, "every check passed: the summary says so and is the section"
     assert "Every check that could run passed" in text
+    # The summary itself names the checks that could not run; outside it, a check that is
+    # not flagged prints no line of its own.
+    outside_summary = text.replace(norm(audit.summary), "")
+    assert outside_summary != text, "the summary is in the document"
     for check in audit.checks:
-        assert check.title not in text, "a check that is not flagged prints no line of its own"
+        assert check.title not in outside_summary
 
 
 def test_a_flagged_check_prints_its_title_evidence_and_next_step(
@@ -502,11 +517,7 @@ def test_the_methods_text_alone_adds_its_section_and_no_audit(
     text = norm(pdf_text(make_pdf(bundle, tmp_path, methods=methods)))
     assert methods.paragraph in text
     assert audit.methods_fragment not in text
-    assert _headings(_flowables(bundle, methods=methods)) == [
-        *UP_TO_STATISTICS,
-        "Methods",
-        *FIGURES_ON,
-    ]
+    assert _headings(_flowables(bundle, methods=methods)) == WITH_METHODS
 
 
 def test_the_audit_alone_adds_its_fragment_and_no_equation(
@@ -533,7 +544,7 @@ def test_a_fit_that_did_not_converge_keeps_the_banner_and_prints_no_audit_line(
     text = norm(pdf_text(data))
     assert "FIT DID NOT CONVERGE" in text
     assert _headings(_flowables(bundle, audit=audit)) == [
-        *UP_TO_STATISTICS,
+        *EQUATION_AND_TABLES,
         "Assumptions and limitations",
     ]
     assert audit.summary not in text and audit.methods_fragment not in text

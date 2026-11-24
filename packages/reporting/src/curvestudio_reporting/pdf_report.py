@@ -4,9 +4,10 @@ Layout: title, the optional "Prepared by" byline, identification block (fingerpr
 seed, versions, IST date), equation, parameter table with SE and CI, statistics table,
 the fit and residual figures, and an "Assumptions and limitations" section that
 includes the exact information-criteria convention. A caller that gives the fit's methods
-text and audit (``curvestudio.tools``) gets two more sections after the statistics:
-**Methods** (the paragraph, the audit's methods fragment, the equation with its standard
-errors) and **Fit audit** (the audit's summary, then one paragraph per check that reads
+text and audit (``curvestudio.tools``) gets two more sections:
+**Methods** (before the parameter table: the paragraph, the audit's methods fragment, the
+equation with its standard errors) and, after the statistics table,
+**Fit audit** (the audit's summary, then one paragraph per check that reads
 caution or fail: its title, its evidence and, after an arrow, its next step). A fit that
 did not converge gets a red first-page warning and **no** figures of the fit — nothing
 that could pass for a result — and prints no methods or audit either: the warning says
@@ -173,9 +174,10 @@ def fit_to_pdf(
     ``methods`` and ``audit`` are the tools layer's methods text and fit audit of the same
     fit (:func:`curvestudio.tools.methods_text` in the ``"text"`` style, and
     :func:`curvestudio.tools.audit_fit`). Given, a converged fit's report carries two more
-    sections after the statistics table: **Methods**, the paragraph, then the audit's
-    methods fragment, then the equation with its estimates and standard errors; and **Fit
-    audit**, the audit's summary, then one paragraph for each check that reads caution or
+    sections: **Methods** before the parameter table (its paragraph speaks of "the equation
+    and table below"): the paragraph, then the audit's methods fragment, then the equation
+    with its estimates and standard errors; and, after the statistics table, **Fit audit**,
+    the audit's summary, then one paragraph for each check that reads caution or
     fail (its title, its evidence and, after an arrow, its next step). A check that passed
     or could not run prints nothing there. Given neither, the report is the one it has
     always been. A fit that did not converge prints neither section, whatever is given:
@@ -275,6 +277,11 @@ def _flowables(
     if bundle.warnings:
         story.append(Spacer(1, 14))
 
+    if converged:
+        # a fit that did not converge has no methods to state and nothing to audit, and its
+        # banner stands in for its figures. The methods come before the parameter table:
+        # their paragraph speaks of "the equation and table below".
+        story += _methods_section(styles, methods, audit)
     story += [
         Paragraph("Parameters", styles["Heading2"]),
         Spacer(1, 4),
@@ -285,9 +292,6 @@ def _flowables(
         _statistics_table(bundle),
     ]
     if converged:
-        # a fit that did not converge has no methods to state and nothing to audit, and its
-        # banner stands in for its figures
-        story += _methods_section(styles, methods, audit)
         story += _audit_section(styles, audit)
         story += [
             PageBreak(),
