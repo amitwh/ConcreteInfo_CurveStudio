@@ -7543,7 +7543,7 @@
     },
     "/api/v1/fits/{fit_id}/audit": {
       "get": {
-        "description": "What a stored fit's evidence shows, check by check: convergence, the residual tests,\nthe parameters, the held-out error once the fit has been cross-validated, and a simpler\nmodel once the fit was ranked by an Auto-fit run. Read from the stored fit, and for a\ncompact one from its dataset's whole table too; nothing is refitted. A bundle with no\nobservations is a 422 whose ``detail.code`` is ``NO_DATA``.",
+        "description": "What a stored fit's evidence shows, check by check: convergence, the residual tests,\nthe parameters, the held-out error once the fit has been cross-validated, and a simpler\nmodel once the fit was ranked by an Auto-fit run. Read from the stored fit; nothing is\nrefitted, and no data are handed to the audit: a fit loses rows only above\n``COMPACT_MAX_POINTS``, which is past the exact Durbin-Watson test's own limit, so the\ndataset's table could change nothing (a test in ``test_api_fit_audit.py`` trips if the two\nlimits ever cross). A bundle with no observations is a 422 whose ``detail.code`` is\n``NO_DATA``.",
         "operationId": "get_fit_audit_api_v1_fits__fit_id__audit_get",
         "parameters": [
           {

@@ -11,7 +11,7 @@ cp apps/api/.env.example .env      # edit; see the comments in the file
 uv run curvestudio-api             # one uvicorn process on CURVESTUDIO_HOST:CURVESTUDIO_PORT
 ```
 
-The schema is migrated (Alembic, up to `0005`) at start-up. With `CURVESTUDIO_WEB_DIST` pointing at
+The schema is migrated (Alembic, to the head revision, `0012` today) at start-up. With `CURVESTUDIO_WEB_DIST` pointing at
 the built web app the same process serves it, with a fallback to `index.html` for non-`/api`
 paths. The OpenAPI document is `apps/api/openapi.json`; regenerate it with
 `uv run python -m curvestudio_api.export_openapi` (a test fails when it is stale).

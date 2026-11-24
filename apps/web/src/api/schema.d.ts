@@ -720,9 +720,12 @@ export interface paths {
          * Get Fit Audit
          * @description What a stored fit's evidence shows, check by check: convergence, the residual tests,
          *     the parameters, the held-out error once the fit has been cross-validated, and a simpler
-         *     model once the fit was ranked by an Auto-fit run. Read from the stored fit, and for a
-         *     compact one from its dataset's whole table too; nothing is refitted. A bundle with no
-         *     observations is a 422 whose ``detail.code`` is ``NO_DATA``.
+         *     model once the fit was ranked by an Auto-fit run. Read from the stored fit; nothing is
+         *     refitted, and no data are handed to the audit: a fit loses rows only above
+         *     ``COMPACT_MAX_POINTS``, which is past the exact Durbin-Watson test's own limit, so the
+         *     dataset's table could change nothing (a test in ``test_api_fit_audit.py`` trips if the two
+         *     limits ever cross). A bundle with no observations is a 422 whose ``detail.code`` is
+         *     ``NO_DATA``.
          */
         get: operations["get_fit_audit_api_v1_fits__fit_id__audit_get"];
         put?: never;

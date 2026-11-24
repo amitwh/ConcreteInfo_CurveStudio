@@ -19,7 +19,6 @@ from conftest import linear_csv, make_settings, signup, upload
 from curvestudio.discovery import AutoFitResult, subsample
 from curvestudio.discovery.engine import SUBSAMPLE_N
 from curvestudio.tools import (
-    CrossValidation,
     ToolError,
     all_methods_texts,
     audit_fit,
@@ -413,57 +412,12 @@ def marked_compact(fitted: dict[str, Any]) -> str:
         return str(row.id)
 
 
-def test_a_fit_marked_compact_is_audited_with_its_datasets_table(
-    fitted: dict[str, Any], marked_compact: str
-) -> None:
-    client, headers = fitted["client"], fitted["headers"]
-    stored = stored_fit(client, marked_compact)
-    assert stored["bundle"].data.subsampled
-    response = client.get(audit_path(marked_compact), headers=headers)
-    assert response.status_code == 200, response.text
-    # the route gives the audit the dataset's table, so the exact Durbin-Watson test decides
-    assert response.json() == audit_fit(
-        stored["bundle"], spec=stored["spec"], data=stored["xy"]
-    ).model_dump(mode="json")
-    decided = check_of(response.json(), "residual_independence")
-    assert EXACT_STATISTIC.fullmatch(decided["statistic"] or ""), decided
-    assert decided["threshold"].startswith("smaller Durbin-Watson p:")
-
-    # audited without the table, the same fit falls back to Ljung-Box and says why
-    alone = check_of(
-        audit_fit(stored["bundle"], spec=stored["spec"]).model_dump(mode="json"),
-        "residual_independence",
-    )
-    assert alone["statistic"].startswith("Q")
-    missing = "the bundle holds only a subsample of the data and the full data were not given"
-    assert DECIDED + missing in alone["evidence"]
-
-
-def test_on_a_fit_past_the_exact_tests_limit_the_table_changes_nothing_in_its_audit(
-    fitted: dict[str, Any], large: dict[str, Any]
-) -> None:
-    """A compact fit the API stores has more than ``DW_EXACT_MAX_N`` points, and the exact
-    Durbin-Watson test is refused for that many before the table is read: with the table or
-    without it Ljung-Box decides, and the evidence names the point count, not a missing table."""
-    client, headers = fitted["client"], fitted["headers"]
-    fit_id = large["whole"]
-    stored = stored_fit(client, fit_id)
-    assert stored["bundle"].data.subsampled
-    assert stored["bundle"].data.n_total > DW_EXACT_MAX_N
-    response = client.get(audit_path(fit_id), headers=headers)
-    assert response.status_code == 200, response.text
-    # a cross-validation may be stored on the fit by now: the route reads it, as this does
-    cv = None if stored["cv"] is None else CrossValidation.model_validate(stored["cv"])
-    with_table = audit_fit(stored["bundle"], spec=stored["spec"], cv=cv, data=stored["xy"])
-    assert with_table == audit_fit(stored["bundle"], spec=stored["spec"], cv=cv)
-    assert response.json() == with_table.model_dump(mode="json")
-    alone = check_of(response.json(), "residual_independence")
-    assert alone["statistic"].startswith("Q")
-    too_many = (
-        f"the exact test is computed for at most {DW_EXACT_MAX_N} points and this fit has "
-        f"{stored['bundle'].data.n_total}."
-    )
-    assert DECIDED + too_many in alone["evidence"]
+def test_the_audit_route_needs_no_data_while_the_exact_test_stays_under_the_compact_limit() -> None:
+    """The audit route hands the audit no data, which is right only while a compact fit (one
+    above ``COMPACT_MAX_POINTS`` rows) is also past the exact Durbin-Watson test's own limit. If
+    this fails, the route must pass a compact fit's dataset table, as the cross-validation job
+    does (``audit_fit(..., data=...)``), with a test that shows the exact test then deciding."""
+    assert DW_EXACT_MAX_N < COMPACT_MAX_POINTS
 
 
 def test_an_impossible_fold_count_is_refused_before_a_job_is_queued(
