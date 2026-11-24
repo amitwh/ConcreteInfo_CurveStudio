@@ -187,13 +187,15 @@ export function AboutPage(): ReactElement {
           password itself), your name if you give one, the last day you were active, the
           time of your last sign-in and your error-report choice. The service also stores
           the datasets you upload and the fits you run, so your workspace and history are
-          there when you return. Your data is used only to provide the service: it is not
-          sold, and it is not shared for advertising. There are no third-party analytics or
-          advertising scripts in the app. Signing in keeps a token in your browser’s local
-          storage; that is the only browser state the app relies on. Deleting a dataset, a
-          fit, or your account removes the corresponding records. This web app can also
-          send an anonymous error report when something goes wrong; the Error reports note
-          below, with its switch, says how that is turned off.
+          there when you return. A dataset is kept as the whole table you uploaded, not
+          only the columns used for fitting, so its other columns can be analysed. Your
+          data is used only to provide the service: it is not sold, and it is not shared
+          for advertising. There are no third-party analytics or advertising scripts in
+          the app. Signing in keeps a token in your browser’s local storage; that is the
+          only browser state the app relies on. Deleting a dataset, a fit, or your account
+          removes the corresponding records. This web app can also send an anonymous error
+          report when something goes wrong; the Error reports note below, with its switch,
+          says how that is turned off.
         </p>
         {signedIn ? (
           <p>

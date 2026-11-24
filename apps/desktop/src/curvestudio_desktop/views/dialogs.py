@@ -74,11 +74,12 @@ exist; turn it off under Edit → Preferences → Privacy. Nothing else ever lea
 computer, and no error report is ever sent.</p>
 <p><b>Web:</b> to run a fit for you the service has to hold your data. It stores your email
 address, a password hash (Argon2 — never the password itself), the datasets you upload and
-the fits you run, so your workspace and history are there when you return. Your data is used
-only to provide the service: it is not sold, and it is not shared for advertising. There are
-no third-party analytics or advertising scripts in the app. Signing in keeps a token in your
-browser's local storage; that is the only browser state the app relies on. Deleting a dataset,
-a fit, or your account removes the corresponding records.</p>
+the fits you run, so your workspace and history are there when you return. A dataset is kept
+as the whole table you uploaded, not only the columns used for fitting, so its other columns
+can be analysed. Your data is used only to provide the service: it is not sold, and it is not
+shared for advertising. There are no third-party analytics or advertising scripts in the app.
+Signing in keeps a token in your browser's local storage; that is the only browser state the
+app relies on. Deleting a dataset, a fit, or your account removes the corresponding records.</p>
 <p><b>Fair use:</b> do not upload data you have no right to use, other people's personal data
 without permission, or material that is unlawful, and do not attempt to disrupt the service
 or other users' access to it. Per-account quotas and rate limits apply.</p>

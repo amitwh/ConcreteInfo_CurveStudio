@@ -273,8 +273,9 @@ and `example-kinetics.csv` (enzyme kinetics), so no single discipline leads. In 
   first launch and after an upgrade it sends one anonymous install record (version,
   operating system, package type) so we know how many installations exist — Edit →
   Preferences → Privacy turns it off. Nothing else ever leaves your computer. On the web
-  your datasets and fits are stored in your account only to provide the service; deleting
-  a dataset, a fit or your account removes them.
+  your datasets are stored as the whole table you uploaded, and your fits too, in your
+  account only to provide the service; deleting a dataset, a fit or your account
+  removes them.
 
 - CurveStudio: AGPL-3.0-or-later.
 - Qt / PySide6 (desktop): LGPL-3.0.

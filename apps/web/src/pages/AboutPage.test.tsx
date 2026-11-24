@@ -128,6 +128,11 @@ describe("AboutPage — projects, free software and policy", () => {
     expect(screen.getByRole("heading", { name: "Privacy and fair-use policy" })).toBeTruthy();
     expect(screen.getByText(/not sold, and it is not shared for advertising/i)).toBeTruthy();
   });
+
+  it("says the web service keeps a dataset as the whole table that was uploaded", () => {
+    renderAbout();
+    expect(screen.getByText(/the whole table you uploaded/)).toBeTruthy();
+  });
 });
 
 describe("AboutPage — error reports", () => {

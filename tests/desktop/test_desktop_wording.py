@@ -3,8 +3,12 @@
 The app works fully offline with no account, and sends exactly one anonymous install
 record per version (version, operating system, package type). Every surface that used
 to say "nothing is uploaded" or "no network calls, ever" now says that instead.
+
+The web half of the same policy says, wherever it is written down, that the service keeps
+a dataset as the whole table that was uploaded, not only the columns used for fitting.
 """
 
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -38,6 +42,17 @@ OLD_PROMISES = (
     "No network access",
 )
 
+WHAT_THE_WEB_KEEPS = "the whole table you uploaded"
+THE_SHORTER_WORDING_IT_REPLACES = "your datasets and fits are stored in your account"
+
+WEB_NOTICE_COPIES: dict[str, Callable[[], str]] = {
+    "the canonical help": lambda: CANONICAL_HELP.read_text(encoding="utf-8"),
+    "the packaged help": lambda: PACKAGED_HELP.read_text(encoding="utf-8"),
+    "the web help": lambda: SURFACES["web help"].read_text(encoding="utf-8"),
+    "the web About page": lambda: SURFACES["web About page"].read_text(encoding="utf-8"),
+    "the desktop About policy": lambda: POLICY_HTML,
+}
+
 
 def squeezed(text: str) -> str:
     """The text with every run of whitespace folded: a Markdown line break is still one sentence."""
@@ -66,6 +81,16 @@ def test_the_web_about_page_names_what_the_account_keeps() -> None:
         assert kept in text, kept
     assert "anonymous error report" in text
     assert "Profile → Privacy" in text
+
+
+@pytest.mark.parametrize("surface", sorted(WEB_NOTICE_COPIES))
+def test_every_copy_saying_what_the_web_keeps_names_the_whole_table(surface: str) -> None:
+    assert WHAT_THE_WEB_KEEPS in squeezed(WEB_NOTICE_COPIES[surface]()), surface
+
+
+def test_the_canonical_help_no_longer_carries_the_shorter_wording() -> None:
+    text = squeezed(CANONICAL_HELP.read_text(encoding="utf-8"))
+    assert THE_SHORTER_WORDING_IT_REPLACES not in text
 
 
 def test_the_packaged_help_is_the_canonical_help_byte_for_byte() -> None:

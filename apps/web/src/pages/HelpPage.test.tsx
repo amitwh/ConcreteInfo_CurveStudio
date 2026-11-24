@@ -80,6 +80,12 @@ describe("HelpPage", () => {
     });
   });
 
+  it("says the web service keeps a dataset as the whole table that was uploaded", () => {
+    renderHelp();
+    const section = document.getElementById("about-licence-credits");
+    expect(section?.textContent).toContain("the whole table you uploaded");
+  });
+
   it("scrolls to the fit audit section when the page opens at /help#fit-audit-and-methods-text", () => {
     // jsdom cannot scroll: the stand-in records the element the page asked to bring into view.
     const scrolled: Element[] = [];
