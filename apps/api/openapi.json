@@ -7651,7 +7651,7 @@
     },
     "/api/v1/fits/{fit_id}/export": {
       "get": {
-        "description": "Download a fit as JSON (the bundle), CSV (parameters, then fitted values per row)\nor XLSX (the Excel workbook, with its plot sheet).",
+        "description": "Download a fit as JSON (the bundle), CSV (parameters, then fitted values per row)\nor XLSX (the Excel workbook, with its plot sheet, and the fit's methods paragraph and\naudit on its summary sheet).",
         "operationId": "export_fit_api_v1_fits__fit_id__export_get",
         "parameters": [
           {

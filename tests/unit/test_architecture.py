@@ -230,10 +230,17 @@ APPS_SOURCE_ROOTS = tuple(sorted((Path(__file__).resolve().parents[2] / "apps").
 DESKTOP_SRC = Path(__file__).resolve().parents[2] / "apps" / "desktop" / "src"
 
 DESKTOP_ALLOWED_CORE = frozenset(
-    {"curvestudio.workflow", "curvestudio.project", "curvestudio.data", "curvestudio.discovery"}
+    {
+        "curvestudio.workflow",
+        "curvestudio.project",
+        "curvestudio.data",
+        "curvestudio.discovery",
+        "curvestudio.tools",
+    }
 )
 """The only ``curvestudio`` subpackages the desktop app may import (spec §5.3, D2: discovery
-for Auto-fit streaming; still never the fitting/statistics/maths layers directly)."""
+for Auto-fit streaming; the tools layer for the fit audit, the methods text and
+cross-validation; still never the fitting/statistics/maths layers directly)."""
 
 
 def find_core_imports(source: str) -> list[str]:
@@ -255,7 +262,7 @@ def test_desktop_imports_only_allowed_core_layers() -> None:
         for module in find_core_imports(path.read_text(encoding="utf-8")):
             if module not in DESKTOP_ALLOWED_CORE:
                 offenders.append(f"{path.relative_to(DESKTOP_SRC)}: {module}")
-    assert not offenders, f"desktop imports outside workflow/project/data: {offenders}"
+    assert not offenders, f"desktop imports outside its allowed core layers: {offenders}"
 
 
 def test_no_dynamic_execution_in_apps() -> None:

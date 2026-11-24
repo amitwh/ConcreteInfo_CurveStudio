@@ -772,7 +772,8 @@ export interface paths {
         /**
          * Export Fit
          * @description Download a fit as JSON (the bundle), CSV (parameters, then fitted values per row)
-         *     or XLSX (the Excel workbook, with its plot sheet).
+         *     or XLSX (the Excel workbook, with its plot sheet, and the fit's methods paragraph and
+         *     audit on its summary sheet).
          */
         get: operations["export_fit_api_v1_fits__fit_id__export_get"];
         put?: never;
