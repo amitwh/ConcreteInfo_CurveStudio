@@ -541,6 +541,52 @@ def test_an_audit_job_that_overruns_its_timeout_says_cross_validation(
     assert "the cross-validation did not finish within 1 s" in job["error_message"]
 
 
+def failed_audit_job(client: TestClient, headers: dict[str, str]) -> dict[str, Any]:
+    """Start the cross-validation of a fresh fit and wait for its job to fail."""
+    dataset = upload(client, headers, linear_csv()).json()
+    fit_id = fit_through_api(client, headers, dataset["id"], POLY1)["result_ref"]
+    job = wait_for_job(client, headers, start_cross_validation(client, headers, fit_id))
+    assert job["status"] == "failed", job
+    return job
+
+
+def test_a_crashed_audit_worker_fails_the_job_naming_the_cross_validation(
+    client_factory: Callable[..., TestClient], settings_factory: Callable[..., Settings]
+) -> None:
+    client = client_factory(settings_factory(), audit_worker=api_job_workers.crashing_worker)
+    job = failed_audit_job(client, signup(client))
+    assert job["error_code"] == "WORKER_CRASHED"
+    assert job["error_message"] == (
+        "the worker process died while cross-validating; the job did not complete"
+    )
+
+
+def test_an_oversized_cross_validation_result_fails_the_job_naming_it(
+    client_factory: Callable[..., TestClient], settings_factory: Callable[..., Settings]
+) -> None:
+    client = client_factory(
+        settings_factory(job_max_result_bytes=200_000),
+        audit_worker=api_job_workers.big_audit_result_worker,
+    )
+    job = failed_audit_job(client, signup(client))
+    assert job["error_code"] == "RESULT_TOO_LARGE"
+    assert job["error_message"] == (
+        "the cross-validation result is larger than 200,000 bytes; use fewer folds"
+    )
+
+
+def test_a_cross_validation_result_that_cannot_be_stored_fails_the_job_naming_it(
+    client_factory: Callable[..., TestClient], settings_factory: Callable[..., Settings]
+) -> None:
+    # the worker's result carries no cross-validation, so there is nothing to store on the fit
+    client = client_factory(settings_factory(), audit_worker=api_job_workers.big_result_worker)
+    job = failed_audit_job(client, signup(client))
+    assert job["error_code"] == "INTERNAL_ERROR"
+    assert (
+        job["error_message"] == "the cross-validation finished but its result could not be stored"
+    )
+
+
 def test_deleting_a_fit_cancels_its_cross_validation(
     client_factory: Callable[..., TestClient], settings_factory: Callable[..., Settings]
 ) -> None:

@@ -108,3 +108,9 @@ def slow_audit_worker(*, seconds: float = 1.5, **arguments: Any) -> dict[str, An
     """The real cross-validation after a wait, so a neighbouring request finds the job in flight."""
     time.sleep(seconds)
     return run_cross_validation_job(**arguments)
+
+
+def big_audit_result_worker(**_arguments: Any) -> dict[str, Any]:
+    """A cross-validation result larger than a fit's bundle: too large under a limit a fit
+    passes."""
+    return {"ok": True, "cv": {"padding": "x" * 500_000}}

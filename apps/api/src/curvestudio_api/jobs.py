@@ -394,6 +394,10 @@ class JobManager:
     def _finalise(self, flight: _Flight, outcome: tuple[str, Any]) -> None:
         task = flight.task
         kind, value = outcome
+        # The messages that would say "the fit" name a cross-validation, as its timeout message
+        # does; every other kind keeps the fit's wording.
+        is_audit = task.kind == "audit"
+        what = "the cross-validation" if is_audit else "the fit"
         try:
             if kind == "result":
                 result = json.loads(value)
@@ -415,24 +419,27 @@ class JobManager:
                         error_message=str(result["message"]),
                     )
             elif kind == "too_large":
+                remedy = "use fewer folds" if is_audit else "fit fewer rows"
                 self._finish(
                     task.job_id,
                     "failed",
                     from_=("running",),
                     error_code="RESULT_TOO_LARGE",
                     error_message=(
-                        f"the fit result is larger than {self._max_result_bytes:,} bytes; "
-                        "fit fewer rows"
+                        f"{what} result is larger than {self._max_result_bytes:,} bytes; {remedy}"
                     ),
                 )
             else:
                 _log.error("job process died", extra=log_fields(job=str(task.job_id), exit=value))
+                doing = "cross-validating" if is_audit else "fitting"
                 self._finish(
                     task.job_id,
                     "failed",
                     from_=("running",),
                     error_code="WORKER_CRASHED",
-                    error_message="the worker process died while fitting; the job did not complete",
+                    error_message=(
+                        f"the worker process died while {doing}; the job did not complete"
+                    ),
                 )
         except Exception:
             _log.exception("could not record the outcome of a job")
@@ -441,7 +448,7 @@ class JobManager:
                 "failed",
                 from_=("running",),
                 error_code="INTERNAL_ERROR",
-                error_message="the fit finished but its result could not be stored",
+                error_message=f"{what} finished but its result could not be stored",
             )
         finally:
             self._kill(flight)
