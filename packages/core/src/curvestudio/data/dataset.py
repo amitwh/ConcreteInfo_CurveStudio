@@ -1,5 +1,6 @@
 """Immutable dataset with a reversible log of operations."""
 
+import datetime
 import hashlib
 import numbers
 from dataclasses import dataclass, field
@@ -446,6 +447,13 @@ def _label(cell: object) -> str | None:
         return str(cell)
     if isinstance(cell, numbers.Real):
         return f"{float(cell):.15g}"
+    if isinstance(cell, datetime.datetime):
+        # A column of dates holds every cell at midnight; the day alone is the label.
+        if cell.time() == datetime.time():
+            return cell.strftime("%Y-%m-%d")
+        return str(cell)
+    if isinstance(cell, datetime.date):
+        return cell.isoformat()
     text = str(cell).strip()
     return text or None
 

@@ -1,6 +1,7 @@
 """Tests for the missing-tolerant column accessors that feed the statistical tools."""
 
 import math
+from datetime import date
 
 import numpy as np
 import pandas as pd
@@ -111,8 +112,17 @@ def test_a_numeric_group_column_gives_its_numbers_as_text(blank: float | None) -
 def test_a_date_column_serves_as_a_group() -> None:
     dates = pd.to_datetime(["2026-01-01", None, "2026-01-03"])
     group = Dataset("t", pd.DataFrame({"d": dates})).group("d")
-    assert group.labels.tolist() == ["2026-01-01 00:00:00", "2026-01-03 00:00:00"]
+    assert group.labels.tolist() == ["2026-01-01", "2026-01-03"]
     assert group.rows.tolist() == [0, 2]
+
+
+def test_a_time_of_day_stays_in_the_group_label() -> None:
+    stamps = pd.to_datetime(["2026-01-01 00:00", "2026-01-01 09:30", "2026-01-02 00:00"])
+    labels = make(d=stamps).group("d").labels.tolist()
+    # two rows share a day but not a stamp: they must stay two groups
+    assert labels == ["2026-01-01", "2026-01-01 09:30:00", "2026-01-02"]
+    plain = make(d=[date(2026, 1, 1), date(2026, 1, 2)]).group("d").labels.tolist()
+    assert plain == ["2026-01-01", "2026-01-02"]
 
 
 def test_the_arrays_are_read_only_and_detached() -> None:
