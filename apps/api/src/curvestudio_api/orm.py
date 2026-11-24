@@ -180,6 +180,10 @@ class Fit(_Timestamps, Base):
     )
     spec: Mapped[dict[str, Any]] = mapped_column(JSON)
     bundle: Mapped[dict[str, Any]] = mapped_column(JSON, deferred=True)
+    # The fit's cross-validation (the core's ``CrossValidation`` as JSON), stored by the
+    # ``audit`` job. NULL until one has run. Deferred like the bundle: leave-one-out keeps one
+    # held-out error per point, up to two thousand.
+    cv: Mapped[dict[str, Any] | None] = mapped_column(JSON, deferred=True, default=None)
     status: Mapped[str] = mapped_column(String(20))
     autofit_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("autofits.id", ondelete="SET NULL"), index=True, default=None
