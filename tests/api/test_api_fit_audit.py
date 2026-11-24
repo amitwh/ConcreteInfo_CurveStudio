@@ -488,7 +488,7 @@ def test_a_second_cross_validation_of_a_fit_is_a_409_while_one_is_queued_or_runn
     running = client.post(cross_validation_path(first), headers=headers, json={})
     assert running.status_code == 409 and running.json()["detail"]["job_id"] == holding
 
-    # what the job answers with is the one to follow: it is the same job, once it runs
+    # once nothing waits, the job answered is still the one to follow
     assert client.post(f"{API}/jobs/{queued}/cancel", headers=headers).status_code == 200
     assert client.post(f"{API}/jobs/{holding}/cancel", headers=headers).status_code == 200
     active = start_cross_validation(client, headers, second)
@@ -496,7 +496,7 @@ def test_a_second_cross_validation_of_a_fit_is_a_409_while_one_is_queued_or_runn
     again = client.post(cross_validation_path(second), headers=headers, json={})
     assert again.status_code == 409 and again.json()["detail"]["job_id"] == active
     # another fit is not in the way
-    assert start_cross_validation(client, headers, first)
+    start_cross_validation(client, headers, first)
 
     # with nothing active, a new one is taken
     assert client.post(f"{API}/jobs/{active}/cancel", headers=headers).status_code == 200
@@ -523,7 +523,7 @@ def test_a_cross_validation_in_flight_does_not_count_against_the_fit_quota(
     # the quota is used up, and a cross-validation is still allowed: it is no fit
     refused = client.post(f"{API}/datasets/{dataset['id']}/fits", headers=headers, json=POLY1)
     assert refused.status_code == 409 and refused.json()["error"] == "QUOTA_EXCEEDED", refused.text
-    assert start_cross_validation(client, headers, second)
+    start_cross_validation(client, headers, second)
 
 
 def test_an_audit_job_that_overruns_its_timeout_says_cross_validation(

@@ -326,12 +326,13 @@ def _active_cross_validation(db: Session, user: User, fit: Fit) -> Job | None:
 def cross_validate_fit(
     fit_id: uuid.UUID, body: CrossValidationIn, user: CurrentUser, ctx: Ctx, db: Db
 ) -> JobCreatedOut:
-    """Queue the cross-validation of a stored fit on its dataset's table. The result is stored
-    on the fit, where ``GET /fits/{id}/audit`` reads it: follow the job (``GET /jobs/{id}``),
-    then read the audit again. The job uses no quota. One cross-validation of a fit runs at a
-    time: while one is queued or running, to ask for another is a 409 whose ``detail.job_id``
-    names the job to follow. A fit that did not converge, or more folds than the data hold
-    points, fails the job with the code the tools refuse it by."""
+    """Queue the cross-validation of a stored fit on the data it was computed from. The result
+    is stored on the fit, where ``GET /fits/{id}/audit`` reads it: follow the job
+    (``GET /jobs/{id}``), then read the audit again. The job uses no quota. One
+    cross-validation of a fit runs at a time: while one is queued or running, to ask for
+    another is a 409 whose ``detail.job_id`` names the job to follow. A fit that did not
+    converge, or more folds than there are points, fails the job with the code the tools
+    refuse it by."""
     fit = own_fit(db, user, fit_id)
     if body.folds != "loo" and body.folds < MIN_FOLDS:
         # Refused here, with the tool's own error, so that nothing is queued which cannot run.
