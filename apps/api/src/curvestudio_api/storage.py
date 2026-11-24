@@ -25,10 +25,12 @@ import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
 
-from curvestudio.data import XY, Dataset
+from curvestudio.data import XY, Dataset, group_labels
 
 NumberArray = NDArray[np.float64]
-TextArray = NDArray[np.str_]
+TextArray = NDArray[np.object_]
+"""A text column: Python ``str`` objects in an object array. A fixed-width Unicode array
+would reserve four bytes for every character of the longest cell, in every row."""
 ColumnKind = Literal["number", "text"]
 TableColumn = dict[str, Any]
 """``{"name": str, "kind": "number" | "text", "n_missing": int}``: as stored on a dataset."""
@@ -86,6 +88,12 @@ def encode_table(
     writes ``""`` for an empty cell when the table has one column; both read back as empty);
     any other cell is its string.
 
+    A column of dates is the exception: it is written as :func:`curvestudio.data.group_labels`
+    reads its cells, so that it gives the same groups on the web as on the desktop. A date at
+    midnight is its day alone, one with a time of day keeps it, and a missing date is an empty
+    cell. No other column is changed: a text column is stored as written, blanks included,
+    because a blank is counted when the table is read back.
+
     Raises:
         ValueError: when a fit column is not a column of the table, or when the rows that
             take part do not number ``n_rows``. The fit's input is built from the same rows,
@@ -108,13 +116,26 @@ def encode_table(
     others = [name for name in table.columns if name not in fit]
     if not others:
         return None
+    kept = table.loc[active, others]  # a copy: a column of dates is replaced in it
+    for name in others:
+        if kept[name].dtype.kind == "M":
+            kept[name] = _date_cells(kept[name])
     buffer = io.BytesIO()
     # Encoded as it is written: the whole table never exists once more as text, which for a
     # large upload would double what the import process holds.
     with io.TextIOWrapper(buffer, encoding="utf-8", newline="") as text:
-        table.loc[active, others].to_csv(text, index=False, lineterminator="\n")
+        kept.to_csv(text, index=False, lineterminator="\n")
         text.flush()
         return buffer.getvalue()
+
+
+def _date_cells(dates: pd.Series) -> NDArray[np.object_]:
+    """A column of dates as :func:`group_labels` reads each cell: its label, or an empty cell
+    where the cell carries none (a missing date)."""
+    labels, rows = group_labels(dates.to_numpy(dtype=object))
+    cells = np.full(len(dates), "", dtype=object)
+    cells[rows] = labels
+    return cells
 
 
 def decode_table(payload: bytes) -> dict[str, NumberArray | TextArray]:
@@ -123,7 +144,7 @@ def decode_table(payload: bytes) -> dict[str, NumberArray | TextArray]:
     Every cell is read as text: no NA-like word becomes a missing value and nothing is
     stripped. A blank cell is empty or spaces only. A column is a **number** column when
     every cell of it that is not blank parses as a number: ``float64``, with NaN for a blank
-    cell. Any other column is a **text** column: an array of ``numpy.str_`` holding the cells
+    cell. Any other column is a **text** column: an object array of ``str`` holding the cells
     as written.
 
     Raises:
@@ -224,7 +245,7 @@ def _classify(cells: list[str]) -> tuple[ColumnKind, int, NumberArray | TextArra
             [np.nan if is_blank else float(cell) for cell, is_blank in written], dtype=np.float64
         )
         return "number", missing, values
-    return "text", missing, np.array(cells, dtype=np.str_)
+    return "text", missing, np.array(cells, dtype=object)
 
 
 def _is_number(cell: str) -> bool:

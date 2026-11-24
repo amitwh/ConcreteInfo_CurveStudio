@@ -115,7 +115,7 @@ def test_an_upload_keeps_the_other_columns(client_factory: Callable[..., TestCli
     assert row.table == TABLE
     columns = decode_table(row.table)
     assert list(columns) == ["g", "a"]
-    assert columns["g"].dtype.kind == "U"
+    assert columns["g"].dtype.kind == "O"  # an object array of Python strings
     assert columns["g"].tolist() == ["alpha", "beta", "alpha", "beta"]
     assert columns["a"].dtype == np.float64
     assert np.isnan(columns["a"][1])
@@ -352,6 +352,18 @@ def test_the_cap_covers_both_payloads(
     row = stored(client, created.json()["id"])
     assert row.table is not None and len(row.table) > 500 * 100
     assert decode_table(row.table)["note"].tolist() == [note.strip()] * 500
+
+
+def test_the_import_cap_is_192_mib_or_a_hundred_bytes_a_row_whichever_is_larger(
+    client_factory: Callable[..., TestClient], settings_factory: Callable[..., Settings]
+) -> None:
+    """What the application builds its import runner with: the cap on one import's result,
+    which carries the fit's and the table's payload together."""
+    for max_rows in (500, 2_000_000, 3_000_000):  # the floor, the floor by a hair, the rows
+        settings = settings_factory(max_rows=max_rows)
+        client = client_factory(settings)
+        runner = client.app.state.ctx.imports  # type: ignore[attr-defined]
+        assert runner._max_payload_bytes == max(192 * 1024 * 1024, settings.max_rows * 100)
 
 
 # -- the migrations --------------------------------------------------------------------------------

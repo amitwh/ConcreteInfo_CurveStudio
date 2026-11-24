@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from curvestudio.data import Dataset, ExcludeRows
+from curvestudio.data import Dataset, ExcludeRows, group_labels
 from curvestudio_api.storage import (
     decode_table,
     encode_table,
@@ -115,10 +115,10 @@ def test_text_cells_round_trip_exactly() -> None:
     decoded = decode_table(payload)
     assert list(decoded) == ["text", "mixed", "blanks"]
     text = decoded["text"]
-    assert text.dtype.kind == "U"
+    assert text.dtype.kind == "O"  # an object array of Python strings
     assert text.tolist() == [cell or "" for cell in written]  # a missing cell is empty
     mixed = decoded["mixed"]
-    assert mixed.dtype.kind == "U"  # text beside digit-like cells stays text
+    assert mixed.dtype.kind == "O"  # text beside digit-like cells stays text
     assert mixed.tolist() == ["a", "1", "b", "2.5", "007", "NA", "null", "x", "", "y", "z", "w"]
     blanks = decoded["blanks"]
     assert blanks.dtype == np.float64 and blanks.shape == (cells,)
@@ -129,6 +129,74 @@ def test_text_cells_round_trip_exactly() -> None:
         {"name": "mixed", "kind": "text", "n_missing": 1},
         {"name": "blanks", "kind": "number", "n_missing": cells},
     ]
+
+
+def test_a_text_column_is_an_array_of_python_strings() -> None:
+    """Not fixed-width cells: those reserve four bytes for every character of the longest
+    cell, in every row, so one long note in a column would ask for gigabytes."""
+    rows = 5_000
+    cells = ["short"] * rows
+    cells[-1] = "x" * 200_000
+    frame = pd.DataFrame(
+        {
+            "x": np.arange(rows, dtype=float),
+            "y": np.arange(rows, dtype=float),
+            "note": pd.Series(cells, dtype=object),
+        }
+    )
+    payload = encode_table(Dataset("t", frame), n_rows=rows, **FIT)
+    note = decode_table(payload)["note"]
+    assert note.dtype == np.dtype(object)
+    assert note.nbytes == rows * note.itemsize
+    assert all(isinstance(cell, str) for cell in note)
+    assert (note[0], len(note[-1])) == ("short", 200_000)
+    assert table_columns(payload) == [{"name": "note", "kind": "text", "n_missing": 0}]
+
+
+def test_a_date_column_is_written_as_its_group_label_reads() -> None:
+    """A date column gives the same groups on the web as on the desktop: it is stored as
+    ``group_labels`` reads it. No other column is touched, blanks included."""
+    days = pd.Series(
+        [
+            pd.Timestamp("2026-01-01"),
+            pd.Timestamp("2026-01-02 09:30:00"),
+            pd.NaT,
+            pd.Timestamp("2026-01-01"),
+        ]
+    )
+    frame = pd.DataFrame(
+        {
+            "x": [1.0, 2.0, 3.0, 4.0],
+            "y": [2.0, 4.0, 6.0, 8.0],
+            "day": days,
+            "note": pd.Series([" a ", "", "b", None], dtype=object),
+        }
+    )
+    assert frame["day"].dtype.kind == "M"
+    dataset = Dataset("t", frame)
+    payload = encode_table(dataset, n_rows=4, **FIT)
+    assert payload == b"day,note\n2026-01-01, a \n2026-01-02 09:30:00,\n,b\n2026-01-01,\n"
+    stored = decode_table(payload)
+    assert stored["day"].tolist() == ["2026-01-01", "2026-01-02 09:30:00", "", "2026-01-01"]
+    assert stored["note"].tolist() == [" a ", "", "b", ""]
+    labels, rows = group_labels(stored["day"])
+    on_the_desktop = dataset.group("day")
+    assert labels.tolist() == on_the_desktop.labels.tolist()
+    assert rows.tolist() == on_the_desktop.rows.tolist() == [0, 1, 3]
+    assert table_columns(payload) == [
+        {"name": "day", "kind": "text", "n_missing": 1},
+        {"name": "note", "kind": "text", "n_missing": 2},
+    ]
+
+    # over the rows that take part: the stored positions count those rows alone
+    kept = dataset.with_op(ExcludeRows((1,)))
+    payload = encode_table(kept, n_rows=3, **FIT)
+    assert payload == b"day,note\n2026-01-01, a \n,b\n2026-01-01,\n"
+    labels, rows = group_labels(decode_table(payload)["day"])
+    on_the_desktop = kept.group("day")
+    assert labels.tolist() == on_the_desktop.labels.tolist() == ["2026-01-01", "2026-01-01"]
+    taking_part = np.flatnonzero(kept.active_mask())
+    assert taking_part[rows].tolist() == on_the_desktop.rows.tolist() == [0, 3]
 
 
 def test_a_text_cell_longer_than_the_csv_field_limit_round_trips() -> None:
