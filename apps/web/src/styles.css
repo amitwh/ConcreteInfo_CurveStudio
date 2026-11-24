@@ -1548,10 +1548,70 @@ li.dataset:hover .dataset__delete,
   color: var(--accent);
 }
 
-/* The PDF report action sits at the far end of the tab strip. */
-.tabs__export {
+/* The panel's two actions, PDF report and Copy methods, sit together at the far end of the
+   tab strip and wrap to a new row as one group, so the first never drifts from the second. */
+.tabs__actions {
+  display: flex;
+  gap: 0.2rem;
   margin-left: auto;
   align-self: center;
+}
+
+/* Copy methods' menu opens under its button, flush with the button's right edge. */
+.tabs__menu {
+  position: relative;
+}
+
+.tabs__menu-list {
+  position: absolute;
+  top: calc(100% + 0.35rem);
+  right: 0;
+  z-index: 30;
+  min-width: 9rem;
+  padding: 0.3rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 12px 32px rgba(13, 11, 9, 0.18);
+}
+
+.tabs__menu-item {
+  display: block;
+  width: 100%;
+  margin-top: 0.1rem;
+  padding: 0.4rem 0.6rem;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.88rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tabs__menu-item:first-child {
+  margin-top: 0;
+}
+
+.tabs__menu-item:hover,
+.tabs__menu-item:focus-visible {
+  background: var(--accent-weak);
+  color: var(--accent-dark);
+}
+
+/* The methods text when the clipboard refused it: shown in a block of its own. */
+.methods-shown {
+  margin: 0.6rem 0;
+}
+
+.methods-shown p {
+  margin: 0;
+}
+
+.methods-shown textarea {
+  margin: 0.4rem 0;
+  font-size: 0.8rem;
 }
 
 /* ---- Fit audit ---- */

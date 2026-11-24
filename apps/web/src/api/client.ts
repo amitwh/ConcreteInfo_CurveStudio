@@ -37,6 +37,8 @@ export type JobOut = Schemas["JobOut"];
 export type JobCreatedOut = Schemas["JobCreatedOut"];
 export type FitAuditOut = Schemas["FitAuditOut"];
 export type AuditCheckOut = Schemas["AuditCheckOut"];
+export type FitMethodsOut = Schemas["FitMethodsOut"];
+export type MethodsTextOut = Schemas["MethodsTextOut"];
 /** A check's verdict, and the audit's overall verdict: a statement of evidence, never of proof. */
 export type AuditVerdict = FitAuditOut["overall"];
 export type FitBundle = Schemas["FitBundle"];
@@ -567,6 +569,14 @@ class ApiClient {
       method: "POST",
       body: JSON.stringify({ folds }),
     });
+  }
+
+  /**
+   * The methods text of a stored fit in three styles (plain text, Markdown, LaTeX). The
+   * server refuses a fit that did not converge with a 422.
+   */
+  async fitMethods(fitId: string): Promise<FitMethodsOut> {
+    return this.request<FitMethodsOut>(`/fits/${fitId}/methods`);
   }
 }
 

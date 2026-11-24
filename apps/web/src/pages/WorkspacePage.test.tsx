@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
 import { AuthProvider } from "../api/auth";
 import { ApiError, api } from "../api/client";
@@ -22,6 +23,19 @@ type AutofitSummaryOut = components["schemas"]["AutofitSummaryOut"];
 type AutofitOut = components["schemas"]["AutofitOut"];
 type RankedFit = components["schemas"]["RankedFit"];
 type JobOut = components["schemas"]["JobOut"];
+
+/** The page under its providers: theme, auth, and the query client the app has at its root. */
+function renderPage() {
+  return render(
+    <QueryClientProvider client={new QueryClient()}>
+      <ThemeProvider>
+        <AuthProvider>
+          <WorkspacePage />
+        </AuthProvider>
+      </ThemeProvider>
+    </QueryClientProvider>,
+  );
+}
 
 const DATASET: DatasetOut = {
   id: "ds-1",
@@ -171,13 +185,7 @@ async function flush(): Promise<void> {
 
 describe("WorkspacePage — opened Auto-fit rows", () => {
   it("re-enables the ranking table's Open buttons when the opened-row job fails", async () => {
-    render(
-      <ThemeProvider>
-        <AuthProvider>
-          <WorkspacePage />
-        </AuthProvider>
-      </ThemeProvider>,
-    );
+    renderPage();
     await flush();
     await flush();
 
@@ -208,13 +216,7 @@ describe("WorkspacePage — opened Auto-fit rows", () => {
 
 describe("WorkspacePage — layout and errors", () => {
   async function selectDataset(): Promise<void> {
-    render(
-      <ThemeProvider>
-        <AuthProvider>
-          <WorkspacePage />
-        </AuthProvider>
-      </ThemeProvider>,
-    );
+    renderPage();
     await flush();
     await flush();
     fireEvent.click(screen.getByTitle("growth.csv"));
@@ -270,13 +272,7 @@ describe("WorkspacePage — opening a row selects it", () => {
     request.mockImplementation((async (path: string, options?: RequestInit) =>
       String(path) === "/autofits/af-1" ? twoRows : route(String(path), options)) as unknown as typeof api.request);
 
-    const { container } = render(
-      <ThemeProvider>
-        <AuthProvider>
-          <WorkspacePage />
-        </AuthProvider>
-      </ThemeProvider>,
-    );
+    const { container } = renderPage();
     await flush();
     await flush();
     fireEvent.click(screen.getByTitle("growth.csv"));
@@ -324,13 +320,7 @@ describe("WorkspacePage — selecting a row after opening it", () => {
       return route(target, options);
     }) as unknown as typeof api.request);
 
-    const { container } = render(
-      <ThemeProvider>
-        <AuthProvider>
-          <WorkspacePage />
-        </AuthProvider>
-      </ThemeProvider>,
-    );
+    const { container } = renderPage();
     await flush();
     await flush();
     fireEvent.click(screen.getByTitle("growth.csv"));

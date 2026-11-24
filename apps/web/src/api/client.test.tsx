@@ -790,6 +790,28 @@ describe("the fit audit endpoints (the audit, and the cross-validation job)", ()
     });
   });
 
+  it("fitMethods GETs /fits/{id}/methods and returns the three styles", async () => {
+    api.setTokens("a1", "r1");
+    const text = {
+      paragraph: "Data were fitted by non-linear least squares.",
+      equation: "y = 2.0134·exp(−0.5210·x) + 0.1042",
+      table: "Parameter | Estimate",
+      citation_curvestudio: "CurveStudio 0.11.1 (ConcreteInfo)",
+      citation_model: [],
+      to_complete: [],
+      missing: [],
+    };
+    const METHODS = { text, markdown: text, latex: text };
+    fetchMock.mockResolvedValue(jsonResponse(200, METHODS));
+
+    await expect(api.fitMethods("fit-1")).resolves.toEqual(METHODS);
+
+    const sent = sentTo("/fits/fit-1/methods");
+    expect(sent.method).toBe("GET");
+    expect(sent.body).toBeNull();
+    expect(sent.auth).toBe("Bearer a1");
+  });
+
   it("runFitAuditCrossValidation POSTs {folds: 5} by default and returns the job id", async () => {
     api.setTokens("a1", "r1");
     fetchMock.mockResolvedValue(jsonResponse(202, { job_id: "job-1" }));

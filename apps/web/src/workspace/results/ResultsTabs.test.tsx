@@ -1,7 +1,8 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { api, type FitAuditOut } from "../../api/client";
+import { ApiError, api, type FitAuditOut, type FitMethodsOut } from "../../api/client";
 import type { components } from "../../api/schema";
 import { renderWithQuery } from "../../test/render";
 import { ResultsTabs } from "./ResultsTabs";
@@ -68,7 +69,7 @@ function bundle(status: string, termination: string): FitBundle {
 
 describe("non-converged fit display (UI honesty)", () => {
   it("shows exactly one banner: 'Fit did not converge: <reason>'", () => {
-    render(
+    renderWithQuery(
       <ResultsTabs
         fitId="fit-1"
         bundle={bundle("not_converged", "maximum number of iterations exceeded")}
@@ -86,7 +87,7 @@ describe("non-converged fit display (UI honesty)", () => {
   });
 
   it("uses the matching heading for a failed fit", () => {
-    render(
+    renderWithQuery(
       <ResultsTabs
         fitId="fit-1"
         bundle={bundle("failed", "time limit of 60 s exceeded")}
@@ -99,7 +100,7 @@ describe("non-converged fit display (UI honesty)", () => {
   });
 
   it("hides the estimates of a non-converged fit behind 'Show anyway'", async () => {
-    render(
+    renderWithQuery(
       <ResultsTabs
         fitId="fit-1"
         bundle={bundle("not_converged", "max iterations")}
@@ -117,7 +118,7 @@ describe("non-converged fit display (UI honesty)", () => {
   });
 
   it("shows the parameter table directly for a converged fit, without t/p columns", () => {
-    render(
+    renderWithQuery(
       <ResultsTabs
         fitId="fit-1"
         bundle={bundle("converged", "converged: rtol")}
@@ -144,8 +145,8 @@ describe("PDF report export", () => {
 
   function renderTabs(
     captureChart?: () => Promise<string | null>,
-  ): ReturnType<typeof render> {
-    return render(
+  ): ReturnType<typeof renderWithQuery> {
+    return renderWithQuery(
       <ResultsTabs
         fitId="fit-1"
         bundle={bundle("converged", "converged: rtol")}
@@ -252,7 +253,7 @@ describe("PDF report export", () => {
 
 describe("PredictTab inline validation", () => {
   it("shows 'every x value must be a finite number' for a non-numeric entry", async () => {
-    render(
+    renderWithQuery(
       <ResultsTabs
         fitId="fit-1"
         bundle={bundle("converged", "converged: rtol")}
@@ -276,7 +277,7 @@ describe("PredictTab inline validation", () => {
 
 describe("the tab strip", () => {
   it("lists the tabs in order, with Fit audit after Statistics", () => {
-    render(
+    renderWithQuery(
       <ResultsTabs
         fitId="fit-1"
         bundle={bundle("converged", "converged: rtol")}
@@ -335,5 +336,181 @@ describe("the tab strip", () => {
     expect(heading).toBeTruthy();
     expect(api.fitAudit).toHaveBeenCalledWith("fit-1");
     expect(screen.getByText("Every check that could run passed.")).toBeTruthy();
+  });
+});
+
+describe("Copy methods", () => {
+  const SHARED = {
+    citation_curvestudio: "CurveStudio 0.11.1 (ConcreteInfo)",
+    citation_model: ["Model exp_decay: CurveStudio model library"],
+    to_complete: ["data_source: say where the data came from"],
+    missing: [],
+  };
+
+  const METHODS: FitMethodsOut = {
+    text: {
+      paragraph: "Data (y against x) were fitted by non-linear least squares.",
+      equation: "y = 2.0134·exp(−0.5210·x) + 0.1042",
+      table: "Parameter | Estimate\na | 2.0134",
+      ...SHARED,
+    },
+    markdown: {
+      paragraph: "Data (y against x) were fitted by non-linear least squares.",
+      equation: "$y = 2.0134 e^{-0.5210x}$",
+      table: "| Parameter | Estimate |\n|---|---|",
+      ...SHARED,
+    },
+    latex: {
+      paragraph: "Data (y against x) were fitted by non-linear least squares.",
+      equation: "\\begin{equation}\ny = 2.0134\\,e^{-0.5210x} + 0.1042\n\\end{equation}",
+      table: "\\begin{tabular}{lr}\na & 2.0134 \\\\\n\\end{tabular}",
+      ...SHARED,
+    },
+  };
+
+  /** The document copied for a style: its paragraph, equation and table, a blank line between. */
+  function methodsDocument(style: keyof FitMethodsOut): string {
+    const text = METHODS[style];
+    return [text.paragraph, text.equation, text.table].join("\n\n");
+  }
+
+  function tabs(fitId = "fit-1", status = "converged") {
+    return (
+      <ResultsTabs
+        fitId={fitId}
+        bundle={bundle(status, status === "converged" ? "converged: rtol" : "max iterations")}
+        fits={[]}
+        onLoadFit={vi.fn()}
+        onDeleteFit={vi.fn()}
+      />
+    );
+  }
+
+  async function choose(user: ReturnType<typeof userEvent.setup>, entry: string): Promise<void> {
+    await user.click(screen.getByRole("button", { name: "Copy methods" }));
+    await user.click(screen.getByRole("button", { name: entry }));
+  }
+
+  it("copies each style as its paragraph, a blank line, its equation, a blank line and its table", async () => {
+    const user = userEvent.setup();
+    const writeText = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue(undefined);
+    vi.spyOn(api, "fitMethods").mockResolvedValue(METHODS);
+    renderWithQuery(tabs());
+
+    const styles: Array<[string, keyof FitMethodsOut, string]> = [
+      ["Text", "text", "plain text"],
+      ["Markdown", "markdown", "Markdown"],
+      ["LaTeX", "latex", "LaTeX"],
+    ];
+    for (const [entry, style, name] of styles) {
+      await choose(user, entry);
+      expect(
+        await screen.findByText(`Copied. The ${name} methods text is on the clipboard.`),
+      ).toBeTruthy();
+      expect(writeText).toHaveBeenLastCalledWith(methodsDocument(style));
+    }
+
+    // All three came from one request: a second copy does not fetch again.
+    expect(api.fitMethods).toHaveBeenCalledTimes(1);
+    expect(api.fitMethods).toHaveBeenCalledWith("fit-1");
+  });
+
+  it("shows the document with Select all when the clipboard refuses, and does not say Copied", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(navigator.clipboard, "writeText").mockRejectedValue(new Error("denied"));
+    vi.spyOn(api, "fitMethods").mockResolvedValue(METHODS);
+    renderWithQuery(tabs());
+
+    await choose(user, "LaTeX");
+
+    expect(
+      await screen.findByText(
+        "The clipboard is not available here, so the LaTeX methods text is shown below. Use Select all, then copy.",
+      ),
+    ).toBeTruthy();
+    const shown = screen.getByLabelText("Methods text as LaTeX") as HTMLTextAreaElement;
+    expect(shown.value).toBe(methodsDocument("latex"));
+    expect(shown.readOnly).toBe(true);
+    expect(screen.queryByText(/Copied\./)).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Select all" }));
+    expect([shown.selectionStart, shown.selectionEnd]).toEqual([0, shown.value.length]);
+  });
+
+  it("shows the document the same way when the browser has no clipboard at all", async () => {
+    vi.spyOn(api, "fitMethods").mockResolvedValue(METHODS);
+    Object.defineProperty(navigator, "clipboard", { value: undefined, configurable: true });
+    renderWithQuery(tabs());
+
+    fireEvent.click(screen.getByRole("button", { name: "Copy methods" }));
+    fireEvent.click(screen.getByRole("button", { name: "Markdown" }));
+
+    expect(await screen.findByLabelText("Methods text as Markdown")).toBeTruthy();
+    expect(screen.queryByText(/Copied\./)).toBeNull();
+  });
+
+  it("shows why the methods text could not be fetched", async () => {
+    const user = userEvent.setup();
+    const reason =
+      "the fit is not_converged (max iterations): a fit that did not converge has no estimates to report";
+    vi.spyOn(api, "fitMethods").mockRejectedValue(
+      new ApiError(422, "VALIDATION_ERROR", reason, { code: "FIT_NOT_CONVERGED_INPUT" }),
+    );
+    renderWithQuery(tabs());
+
+    await choose(user, "Text");
+
+    expect((await screen.findByRole("alert")).textContent).toBe(reason);
+    expect(screen.queryByText(/Copied\./)).toBeNull();
+  });
+
+  it("is disabled, with its hint, for a fit that did not converge", async () => {
+    const fitMethods = vi.spyOn(api, "fitMethods");
+    renderWithQuery(tabs("fit-1", "not_converged"));
+
+    const control = screen.getByRole("button", { name: "Copy methods" }) as HTMLButtonElement;
+    expect(control.disabled).toBe(true);
+    expect(screen.getByText("No methods text for a fit that did not converge.")).toBeTruthy();
+
+    await userEvent.setup().click(control);
+    expect(fitMethods).not.toHaveBeenCalled();
+  });
+
+  it("closes its menu on Escape, returning focus to the button, and once Tab leaves the menu", async () => {
+    const user = userEvent.setup();
+    renderWithQuery(tabs());
+    const trigger = screen.getByRole("button", { name: "Copy methods" });
+
+    await user.click(trigger);
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("button", { name: "LaTeX" })).toBeNull();
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    expect(document.activeElement).toBe(trigger);
+
+    // Tab walks the entries, and the menu goes with the focus once it moves past them.
+    await user.click(trigger);
+    for (const entry of ["Text", "Markdown", "LaTeX"]) {
+      await user.tab();
+      expect(document.activeElement).toBe(screen.getByRole("button", { name: entry }));
+    }
+    await user.tab();
+    expect(screen.queryByRole("button", { name: "LaTeX" })).toBeNull();
+  });
+
+  it("carries nothing said about one fit's methods text over to another fit", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(navigator.clipboard, "writeText").mockRejectedValue(new Error("denied"));
+    vi.spyOn(api, "fitMethods").mockResolvedValue(METHODS);
+    const view = renderWithQuery(tabs());
+
+    await choose(user, "Text");
+    expect(await screen.findByLabelText("Methods text as plain text")).toBeTruthy();
+
+    view.rerender(
+      <QueryClientProvider client={view.queryClient}>{tabs("fit-2")}</QueryClientProvider>,
+    );
+
+    expect(screen.queryByLabelText("Methods text as plain text")).toBeNull();
   });
 });
