@@ -8,11 +8,14 @@
     "node": ">=24"
   },
   "scripts": {
-    "dev": "vite",
+    "dev": "node scripts/sync-help.mjs && vite",
     "build": "vite build",
+    "prebuild": "node scripts/sync-help.mjs",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "pretest": "node scripts/sync-help.mjs",
+    "sync:help": "node scripts/sync-help.mjs",
     "gen:api": "openapi-typescript ../api/openapi.json -o src/api/schema.d.ts"
   },
   "dependencies": {
@@ -25,7 +28,9 @@
     "plotly.js": "4.3.0",
     "react": "19.3.1",
     "react-dom": "19.3.1",
-    "react-router-dom": "7.18.5"
+    "react-markdown": "10.1.0",
+    "react-router-dom": "7.18.5",
+    "remark-gfm": "4.0.1"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

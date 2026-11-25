@@ -1,46 +1,36 @@
+/**
+ * /help as rendered from the canonical Markdown (docs/help-content.md — design item
+ * 10): the headings come from the document itself, every anchor the app has ever
+ * linked to still resolves, the screenshots are the document's own, and the search
+ * still filters the sections. The expected structure is read from docs/, not
+ * restated by hand, so a canonical edit that drifts from the page fails here.
+ */
+
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import { HelpPage } from "./HelpPage";
+import { HELP_SECTIONS } from "../content/helpDocument";
 
-const SECTION_TITLES = [
-  "Getting started",
-  "Importing data",
-  "Auto-fit",
-  "Manual fit and custom equations",
-  "Understanding the numbers",
-  "Prediction",
-  "Projects (desktop)",
-  "Exports",
-  "Keyboard shortcuts (desktop)",
-  "Troubleshooting",
-  "Fit audit and methods text",
-  "Tools that start from a fit",
-  "Statistics tools",
-  "Summarising columns",
-  "Comparing means",
-  "Rank-based comparisons",
-  "Relationships between columns",
-  "Counts",
-  "Comparing two methods",
-  "Measurement and classification",
-  "Sample size and power",
-  "Advanced models",
-  "Evidence synthesis",
-  "Bayesian tests",
-  "About, licence, projects and policy",
-];
+const here = dirname(fileURLToPath(import.meta.url));
+const canonicalMarkdown = readFileSync(resolve(here, "../../../../docs/help-content.md"), "utf8");
 
-function renderHelp(entry = "/help") {
-  return render(
-    <MemoryRouter initialEntries={[entry]}>
-      <HelpPage />
-    </MemoryRouter>,
-  );
+/** The `##` headings of the canonical document, in file order. */
+function canonicalHeadings(marker: "## " | "### "): string[] {
+  return canonicalMarkdown
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith(marker))
+    .map((line) => line.slice(marker.length).trim());
 }
 
-/** Run `body` with the browser at `address`: a memory router leaves the real address alone. */
+function renderHelp(): void {
+  render(<HelpPage />);
+}
+
+/** Run `body` with the browser at `address`: jsdom leaves the real address alone. */
 function atAddress(address: string, body: () => void): void {
   const before = window.location.href;
   window.history.replaceState(null, "", address);
@@ -51,14 +41,38 @@ function atAddress(address: string, body: () => void): void {
   }
 }
 
+/** Every file under `dir` (recursively) whose name ends in one of `extensions`. */
+function sourceFiles(dir: string, extensions: string[]): string[] {
+  const files: string[] = [];
+  for (const entry of readdirSync(dir)) {
+    const path = `${dir}/${entry}`;
+    if (statSync(path).isDirectory()) {
+      files.push(...sourceFiles(path, extensions));
+    } else if (extensions.some((extension) => entry.endsWith(extension))) {
+      files.push(path);
+    }
+  }
+  return files;
+}
+
 describe("HelpPage", () => {
-  it("renders all twenty-five section headings in order", () => {
+  it("renders the canonical document's section headings in order", () => {
     renderHelp();
+    const expected = canonicalHeadings("## ");
+    expect(expected, "the canonical document no longer holds twenty-five sections").toHaveLength(
+      25,
+    );
     const headings = screen.getAllByRole("heading", { level: 2 });
-    expect(headings.map((heading) => heading.textContent)).toEqual(SECTION_TITLES);
+    expect(headings.map((heading) => heading.textContent)).toEqual(expected);
   });
 
-  it("gives every section a stable anchor", () => {
+  it("renders the canonical document's subheadings in order", () => {
+    renderHelp();
+    const headings = screen.getAllByRole("heading", { level: 3 });
+    expect(headings.map((heading) => heading.textContent)).toEqual(canonicalHeadings("### "));
+  });
+
+  it("gives every section one of the anchors the app has always used", () => {
     renderHelp();
     for (const id of [
       "getting-started",
@@ -86,6 +100,33 @@ describe("HelpPage", () => {
     }
   });
 
+  it("maps every canonical heading to a unique anchor, or refuses to render", () => {
+    // A heading without a SECTION_IDS entry makes importing the document throw —
+    // the loud failure that keeps a renamed section from shipping unanchorable.
+    const ids = HELP_SECTIONS.map((section) => section.id);
+    expect(HELP_SECTIONS).toHaveLength(canonicalHeadings("## ").length);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("resolves every /help#… link anywhere in the app to a rendered section", () => {
+    renderHelp();
+    const srcRoot = resolve(here, "..");
+    const anchors = new Set<string>();
+    for (const file of sourceFiles(srcRoot, [".ts", ".tsx"])) {
+      if (file.includes(".test.")) continue;
+      for (const match of readFileSync(file, "utf8").matchAll(/\/help#[\w-]+/g)) {
+        anchors.add(match[0]);
+      }
+    }
+    expect(anchors.size, "the sweep found no /help# links — it is looking in the wrong place").toBeGreaterThan(
+      0,
+    );
+    for (const link of anchors) {
+      const section = document.getElementById(link.split("#")[1] ?? "");
+      expect(section, `${link} does not resolve to a rendered section`).not.toBeNull();
+    }
+  });
+
   it("lists the fit audit section with the anchor /help#fit-audit-and-methods-text", () => {
     atAddress("/help", () => {
       renderHelp();
@@ -96,7 +137,7 @@ describe("HelpPage", () => {
       expect(link.textContent).toMatch(/11\s*Fit audit and methods text/);
 
       const section = document.getElementById("fit-audit-and-methods-text");
-      expect(section?.querySelector("h2")?.textContent).toBe("Fit audit and methods text");
+      expect(section?.querySelector("h2")?.textContent).toBe("11. Fit audit and methods text");
       // and its content is the section's: the table of the eleven checks
       const table = section?.querySelector("table");
       expect(table?.querySelectorAll("th")).toHaveLength(2);
@@ -110,7 +151,7 @@ describe("HelpPage", () => {
     renderHelp();
     const section = document.getElementById("tools-that-start-from-a-fit");
     expect(section).not.toBeNull();
-    expect(section?.querySelector("h2")?.textContent).toBe("Tools that start from a fit");
+    expect(section?.querySelector("h2")?.textContent).toBe("12. Tools that start from a fit");
     expect(
       Array.from(section?.querySelectorAll("h3") ?? []).map((heading) => heading.textContent),
     ).toEqual(["Model discernibility", "Experiment feasibility", "Where to measure next"]);
@@ -136,7 +177,7 @@ describe("HelpPage", () => {
       },
     });
     atAddress("/help#fit-audit-and-methods-text", () => {
-      renderHelp("/help#fit-audit-and-methods-text");
+      renderHelp();
       expect(scrolled.map((element) => element.id)).toEqual(["fit-audit-and-methods-text"]);
     });
   });
@@ -173,17 +214,34 @@ describe("HelpPage", () => {
 });
 
 describe("HelpPage screenshots", () => {
-  it("renders the workspace and paste screenshots with captions", () => {
+  it("renders the document's own screenshots, captioned, from the app's /help assets", () => {
     renderHelp();
-    const images = Array.from(document.querySelectorAll(".help-figure img"));
-    expect(images.map((image) => image.getAttribute("src"))).toEqual([
+    const figures = Array.from(document.querySelectorAll(".help-figure"));
+    expect(figures.map((figure) => figure.querySelector("img")?.getAttribute("src"))).toEqual([
       "/help/workspace.png",
-      "/help/paste.png",
+      "/help/paste-grid.png",
+      "/help/manual-fit.png",
+      "/help/details.png",
     ]);
-    for (const image of images) {
-      expect(image.getAttribute("alt")).toBeTruthy();
+    for (const figure of figures) {
+      const image = figure.querySelector("img");
+      expect(image?.getAttribute("alt")).toBeTruthy();
+      expect(figure.querySelector("figcaption")?.textContent).toBe(image?.getAttribute("alt"));
     }
-    expect(screen.getByText(/the chart captions the selected model's fitted equation/i)).toBeTruthy();
-    expect(screen.getByText(/drop it straight into the grid/i)).toBeTruthy();
+  });
+});
+
+describe("HelpPage links", () => {
+  it("opens the document's external links in a new tab, safely", () => {
+    renderHelp();
+    const external = Array.from(document.querySelectorAll<HTMLAnchorElement>("a[target='_blank']"));
+    expect(external.length).toBeGreaterThan(0);
+    for (const link of external) {
+      expect(link.getAttribute("rel")).toContain("noopener");
+      expect(link.getAttribute("rel")).toContain("noreferrer");
+    }
+    expect(
+      external.some((link) => link.getAttribute("href") === "https://www.concreteinfo.in"),
+    ).toBe(true);
   });
 });

@@ -20,6 +20,17 @@ export default tseslint.config(
     },
   },
   {
+    // The build scripts (help sync, structure extraction) run under Node, not the browser.
+    files: ["scripts/**/*.mjs"],
+    languageOptions: {
+      globals: {
+        console: "readonly",
+        process: "readonly",
+        URL: "readonly",
+      },
+    },
+  },
+  {
     files: ["**/*.{ts,tsx}"],
     rules: {
       "@typescript-eslint/no-unused-vars": [

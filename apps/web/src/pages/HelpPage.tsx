@@ -1,134 +1,109 @@
 /**
- * /help — the canonical CurveStudio help text (the desktop app renders the same
- * content). A section index sits beside the content on wide screens and above it on
- * narrow ones; the search box filters the index and jumps to the first match.
+ * /help — the canonical CurveStudio help (docs/help-content.md) rendered as
+ * Markdown through react-markdown + remark-gfm, so the web shows the same text
+ * the desktop app renders from the one source. The Markdown stack is imported
+ * here only: this route is lazy, keeping it out of every other chunk. Raw HTML
+ * stays disabled — react-markdown's default sanitisation is left untouched.
+ *
+ * A section index sits beside the content on wide screens and above it on narrow
+ * ones; the search box filters the index and jumps to the first match.
  */
 
 import {
   useEffect,
+  isValidElement,
   useMemo,
   useState,
-  type SubmitEvent,
+  type ComponentPropsWithoutRef,
   type ReactElement,
   type ReactNode,
+  type SubmitEvent,
 } from "react";
-import { Link } from "react-router-dom";
+import Markdown, { type Components } from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { BookOpen, Search } from "lucide-react";
-import {
-  HELP_SECTIONS,
-  sectionSearchText,
-  type HelpBlock,
-  type HelpSection,
-  type Inline,
-} from "../content/help";
+import { HELP_SECTIONS, type HelpSection } from "../content/helpDocument";
 
-const SEARCHABLE = HELP_SECTIONS.map((section) => ({
-  section,
-  text: sectionSearchText(section),
-}));
+const SEARCHABLE = HELP_SECTIONS.map((section) => ({ section, text: section.searchText }));
 
-function InlineNodes({ nodes }: { nodes: Inline[] }): ReactElement {
-  return <>{nodes.map((node, index) => renderInline(node, index))}</>;
+type ImageProps = ComponentPropsWithoutRef<"img">;
+
+function isImage(node: ReactNode): node is ReactElement<ImageProps> {
+  return isValidElement(node) && typeof (node.props as ImageProps).src === "string";
 }
 
-function renderInline(node: Inline, index: number): ReactNode {
-  if (typeof node === "string") return node;
-  switch (node.kind) {
-    case "code":
-      return <code key={index}>{node.text}</code>;
-    case "strong":
-      return <strong key={index}>{node.text}</strong>;
-    case "em":
-      return <em key={index}>{node.text}</em>;
-    case "link":
-      return node.href.startsWith("/") ? (
-        <Link key={index} to={node.href}>
-          {node.text}
-        </Link>
-      ) : (
-        <a key={index} href={node.href} rel="noopener noreferrer" target="_blank">
-          {node.text}
-        </a>
-      );
-  }
+/** The canonical document references its screenshots as `images/…`; the web ships them at /help/…. */
+function helpAsset(src: string | undefined): string | undefined {
+  if (src === undefined || !src.startsWith("images/")) return src;
+  return `/help/${src.slice("images/".length)}`;
 }
 
-function Block({ block }: { block: HelpBlock }): ReactElement {
-  switch (block.kind) {
-    case "p":
-      return (
-        <p>
-          <InlineNodes nodes={block.content} />
-        </p>
-      );
-    case "h3":
-      return <h3>{block.text}</h3>;
-    case "ul":
-      return (
-        <ul>
-          {block.items.map((item, index) => (
-            <li key={index}>
-              <InlineNodes nodes={item} />
-            </li>
-          ))}
-        </ul>
-      );
-    case "ol":
-      return (
-        <ol>
-          {block.items.map((item, index) => (
-            <li key={index}>
-              <InlineNodes nodes={item} />
-            </li>
-          ))}
-        </ol>
-      );
-    case "figure":
+/**
+ * The Markdown rendering details: external links open a new tab, screenshots
+ * resolve to the app's own /help assets (a lone image in a paragraph becomes a
+ * captioned figure), and tables keep the app's wrapping and styles.
+ */
+const components: Components = {
+  a({ node: _node, children, href, ...rest }) {
+    const external = href !== undefined && !href.startsWith("/");
+    return (
+      <a
+        href={href}
+        {...rest}
+        rel={external ? "noopener noreferrer" : undefined}
+        target={external ? "_blank" : undefined}
+      >
+        {children}
+      </a>
+    );
+  },
+  img({ node: _node, src, alt, ...rest }) {
+    return <img src={helpAsset(src)} alt={alt} loading="lazy" {...rest} />;
+  },
+  p({ node: _node, children, ...rest }) {
+    const content = Array.isArray(children) ? children : [children];
+    const onlyImage =
+      content.length >= 1 &&
+      content.every((child) => isImage(child) || (typeof child === "string" && child.trim() === ""));
+    if (onlyImage) {
+      const image = content.find((child) => isImage(child));
+      const caption = image === undefined ? undefined : (image.props as ImageProps).alt;
       return (
         <figure className="help-figure">
-          <img src={block.src} alt={block.alt} loading="lazy" />
-          <figcaption>{block.caption}</figcaption>
+          {image}
+          {typeof caption === "string" && caption !== "" ? (
+            <figcaption>{caption}</figcaption>
+          ) : null}
         </figure>
       );
-    case "table":
-      return (
-        <div className="table-wrap">
-          <table className="table help-table">
-            <thead>
-              <tr>
-                {block.headers.map((header) => (
-                  <th key={header} scope="col">
-                    {header}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {block.rows.map((row, rowIndex) => (
-                <tr key={rowIndex}>
-                  {row.map((cell, cellIndex) => (
-                    <td key={cellIndex}>
-                      <InlineNodes nodes={cell} />
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      );
-  }
-}
+    }
+    return <p {...rest}>{children}</p>;
+  },
+  table({ node: _node, children, ...rest }) {
+    return (
+      <div className="table-wrap">
+        <table className="table help-table" {...rest}>
+          {children}
+        </table>
+      </div>
+    );
+  },
+};
 
 function Section({ section }: { section: HelpSection }): ReactElement {
   return (
     <section id={section.id} className="help-section" aria-labelledby={`${section.id}-title`}>
       <h2 id={`${section.id}-title`}>{section.title}</h2>
-      {section.blocks.map((block, index) => (
-        <Block key={index} block={block} />
-      ))}
+      <Markdown remarkPlugins={[remarkGfm]} components={components}>
+        {section.body}
+      </Markdown>
     </section>
   );
+}
+
+/** The index shows the heading's number as its own chip, as the desktop's list does. */
+function displayTitle(section: HelpSection): string {
+  return section.title.replace(/^\d+\.\s+/, "");
 }
 
 /** Scroll to a section without touching focus (the search box keeps the caret). */
@@ -217,7 +192,7 @@ export function HelpPage(): ReactElement {
                       <span className="help-index__num" aria-hidden="true">
                         {HELP_SECTIONS.indexOf(section) + 1}
                       </span>
-                      {section.title}
+                      {displayTitle(section)}
                     </a>
                   </li>
                 ))}

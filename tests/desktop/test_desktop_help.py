@@ -9,6 +9,9 @@ the Lucide icon mapping.
 """
 
 import json
+import re
+import shutil
+import subprocess
 from importlib import resources
 from pathlib import Path
 
@@ -26,6 +29,7 @@ from curvestudio_desktop.views import icons
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CANONICAL_HELP = REPO_ROOT / "docs" / "help-content.md"
 CANONICAL_PROJECTS = REPO_ROOT / "docs" / "other-projects.json"
+WEB_APP = REPO_ROOT / "apps" / "web"
 
 #: Every internal name the views ask :func:`icons.icon` for. A missing entry must fail
 #: here, not render blank in the toolbar.
@@ -117,6 +121,42 @@ def test_help_content_ships_the_canonical_document_verbatim() -> None:
     from curvestudio_desktop.views.help_dialog import help_markdown
 
     assert help_markdown() == CANONICAL_HELP.read_text(encoding="utf-8")
+
+
+def test_the_web_renderer_agrees_on_the_section_structure() -> None:
+    """Design item 10: the same Markdown through both apps' renderers.
+
+    The desktop splits and renders ``docs/help-content.md`` with its own
+    ``parse_sections``/``markdown_to_html``; the web renders the same file with
+    react-markdown + remark-gfm — the stack ``/help`` uses — through
+    ``apps/web/scripts/help-structure.mjs``. The heading/section structure must be
+    identical, level for level and word for word.
+    """
+    from curvestudio_desktop.views.help_dialog import markdown_to_html, parse_sections
+
+    node = shutil.which("node")
+    if node is None or not (WEB_APP / "node_modules" / "react-markdown").is_dir():
+        pytest.skip("the web renderer needs node and apps/web's dependencies (npm ci in apps/web)")
+
+    rendered = subprocess.run(
+        [node, "scripts/help-structure.mjs"],
+        cwd=WEB_APP,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert rendered.returncode == 0, rendered.stderr
+    web_headings = [(heading["level"], heading["text"]) for heading in json.loads(rendered.stdout)]
+
+    canonical = CANONICAL_HELP.read_text(encoding="utf-8")
+    desktop_headings: list[tuple[int, str]] = []
+    for section in parse_sections(canonical):
+        desktop_headings.append((2, section.title))
+        desktop_headings.extend(
+            (3, match.group(1))
+            for match in re.finditer(r"<h3>(.*?)</h3>", markdown_to_html(section.body))
+        )
+    assert web_headings == desktop_headings
 
 
 def test_help_dialog_lists_the_twenty_five_canonical_sections_in_order(qtbot, settings) -> None:
