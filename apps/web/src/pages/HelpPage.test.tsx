@@ -23,6 +23,7 @@ const SECTION_TITLES = [
   "Relationships between columns",
   "Counts",
   "Comparing two methods",
+  "Measurement and classification",
   "Sample size and power",
   "About, licence, projects and policy",
 ];
@@ -47,7 +48,7 @@ function atAddress(address: string, body: () => void): void {
 }
 
 describe("HelpPage", () => {
-  it("renders all twenty section headings in order", () => {
+  it("renders all twenty-one section headings in order", () => {
     renderHelp();
     const headings = screen.getAllByRole("heading", { level: 2 });
     expect(headings.map((heading) => heading.textContent)).toEqual(SECTION_TITLES);
@@ -67,6 +68,7 @@ describe("HelpPage", () => {
       "relationships-between-columns",
       "counts",
       "comparing-two-methods",
+      "measurement-and-classification",
       "sample-size-and-power",
       "about-licence-credits",
     ]) {

@@ -495,7 +495,7 @@ describe("HomePage", () => {
     expect(record.getAttribute("rel")).toBe("noopener noreferrer");
   });
 
-  it("lists the nineteen statistical tools by family in the Statistics section", () => {
+  it("lists the twenty-five statistical tools by family in the Statistics section", () => {
     renderHome();
     const section = document.getElementById("statistics");
     expect(section).not.toBeNull();
@@ -504,9 +504,10 @@ describe("HomePage", () => {
     // One sentence says what the tools are for and where they run.
     expect(
       scoped.getByText(
-        "Nineteen statistical tools, from summarising the columns of a dataset to planning " +
+        "Twenty-five statistical tools, from summarising the columns of a dataset to planning " +
           "the sample a study needs, compare means and ranks, trace relationships, count " +
-          "associations and compare two methods — in the web app, the desktop app and the " +
+          "associations, compare two methods and check a score's discrimination, a scale's " +
+          "consistency and a process's stability — in the web app, the desktop app and the " +
           "command line.",
       ),
     ).toBeTruthy();
@@ -533,11 +534,28 @@ describe("HomePage", () => {
           "Sign test",
         ],
       ],
-      ["Relationships between columns", ["Correlation", "Linear regression"]],
+      [
+        "Relationships between columns",
+        [
+          "Correlation",
+          "Principal component analysis",
+          "Factor analysis",
+          "Logistic regression",
+          "Linear regression",
+        ],
+      ],
       ["Counts", ["Contingency table", "McNemar's test"]],
       [
         "Method comparison",
         ["Bland–Altman agreement", "Deming regression", "Passing–Bablok regression"],
+      ],
+      [
+        "Measurement and classification",
+        [
+          "Control chart and process capability",
+          "Reliability (Cronbach's alpha)",
+          "Receiver operating characteristic curve",
+        ],
       ],
       ["Sample size and power", ["Sample size and power"]],
     ];
@@ -552,7 +570,7 @@ describe("HomePage", () => {
       (tool) => tool.textContent,
     );
     expect(toolTitles).toEqual(families.flatMap(([, tools]) => tools));
-    expect(toolTitles).toHaveLength(19);
+    expect(toolTitles).toHaveLength(25);
   });
 
   it("claims no absence in the Statistics section: what was not found is not proof", () => {

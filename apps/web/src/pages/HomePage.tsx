@@ -295,10 +295,10 @@ const PRIOR_ART_SENTENCE =
 const PRIOR_ART_URL =
   "https://github.com/amitwh/ConcreteInfo_CurveStudio/blob/main/docs/prior-art.md";
 
-/** The nineteen statistical tools that have shipped, by family, in the catalogue's order.
+/** The twenty-five statistical tools that have shipped, by family, in the catalogue's order.
  *  Titles are the catalogue's own (`packages/core/src/curvestudio/tools/stats/registry.py`,
  *  `FAMILIES` and each registered tool's `title`); the count and titles are pinned by the
- *  "lists the nineteen statistical tools by family" test in `HomePage.test.tsx`. */
+ *  "lists the twenty-five statistical tools by family" test in `HomePage.test.tsx`. */
 const STATISTICS_FAMILIES: ReadonlyArray<{ title: string; tools: readonly string[] }> = [
   { title: "Summarise", tools: ["Descriptive statistics", "Distribution analysis"] },
   {
@@ -320,11 +320,28 @@ const STATISTICS_FAMILIES: ReadonlyArray<{ title: string; tools: readonly string
       "Sign test",
     ],
   },
-  { title: "Relationships between columns", tools: ["Correlation", "Linear regression"] },
+  {
+    title: "Relationships between columns",
+    tools: [
+      "Correlation",
+      "Principal component analysis",
+      "Factor analysis",
+      "Logistic regression",
+      "Linear regression",
+    ],
+  },
   { title: "Counts", tools: ["Contingency table", "McNemar's test"] },
   {
     title: "Method comparison",
     tools: ["Bland–Altman agreement", "Deming regression", "Passing–Bablok regression"],
+  },
+  {
+    title: "Measurement and classification",
+    tools: [
+      "Control chart and process capability",
+      "Reliability (Cronbach's alpha)",
+      "Receiver operating characteristic curve",
+    ],
   },
   { title: "Sample size and power", tools: ["Sample size and power"] },
 ];
@@ -332,9 +349,10 @@ const STATISTICS_FAMILIES: ReadonlyArray<{ title: string; tools: readonly string
 /** What the tools are for, one sentence: each family's purpose in turn, and the three
  *  surfaces that run the same catalogue. Pinned verbatim by `HomePage.test.tsx`. */
 const STATISTICS_TOOLS_SENTENCE =
-  "Nineteen statistical tools, from summarising the columns of a dataset to planning the " +
-  "sample a study needs, compare means and ranks, trace relationships, count associations and " +
-  "compare two methods — in the web app, the desktop app and the command line.";
+  "Twenty-five statistical tools, from summarising the columns of a dataset to planning the " +
+  "sample a study needs, compare means and ranks, trace relationships, count associations, " +
+  "compare two methods and check a score's discrimination, a scale's consistency and a " +
+  "process's stability — in the web app, the desktop app and the command line.";
 
 /* ---- "Fits you can reproduce" gallery ------------------------------------------------ */
 

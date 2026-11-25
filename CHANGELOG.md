@@ -118,6 +118,12 @@ All notable changes are listed here. Dates are IST. Format: [Keep a Changelog](h
   keeps every result; the desktop has a Statistics page with the same tools and their plots;
   and `curvestudio stats <tool>` runs any of them from the command line. The help has twenty
   sections.
+- **Six more statistical tools in two families**: Principal component analysis, Factor
+  analysis and Logistic regression join Relationships between columns, and a new Measurement
+  and classification family holds Receiver operating characteristic curve, Reliability
+  (Cronbach's alpha) and Control chart and process capability. The home page lists all six,
+  the help explains each one and grows a section for the new family, and the same tools run
+  on the web app, the desktop app and the command line.
 
 ### Fixed
 - **The OAuth callback log names the sign-in provider's error code** (Microsoft's AADSTS

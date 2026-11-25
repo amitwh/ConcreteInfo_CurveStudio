@@ -258,7 +258,7 @@ residuals and knowing the measurement.
 ## 12. Statistics tools
 
 The **Statistics page** on the desktop and the **Statistics mode** on the web run the same
-nineteen tools, in seven families, on a dataset's columns. Pick a tool from the catalogue,
+twenty-five tools, in eight families, on a dataset's columns. Pick a tool from the catalogue,
 choose the dataset it reads, fill in its fields and press **Run**; the command line runs the
 same tools with `curvestudio stats --list` and `curvestudio stats <tool> <file> …`.
 
@@ -411,7 +411,8 @@ much or why.
 ## 16. Relationships between columns
 
 The **Relationships between columns** family asks whether one column moves with another: the
-correlation coefficient for a pair, and a regression line for a model.
+correlation coefficient for a pair, a regression line for a model, the components or factors
+behind a set of columns, and the odds of a two-level outcome.
 
 ### Correlation
 
@@ -437,6 +438,58 @@ variance, and the exact Durbin–Watson test independence in the order of the ro
 not one number: read the residuals against each predictor. A predictor that does not vary, or
 that is exactly collinear with the others, is refused, and so is a model with fewer than one
 residual degree of freedom.
+
+### Principal component analysis
+
+Reads two to thirty numeric columns on the rows complete in all of them and turns them into
+components — orthogonal linear combinations, ordered by the variance they explain.
+**Standardise the columns**, the default, decomposes the correlation matrix, so a column in
+large units does not drown the others; turning it off decomposes the covariance matrix of the
+centred columns. **Most components to show** limits the tables and the plots, never the
+percentages, which are computed over every component. The estimates give the variance the
+first component and the first two components explain, and how many components reach 80 %. The
+components table carries each eigenvalue, its share of the variance, the cumulative share and
+its loadings; the scores table summarises the rows' scores. A scree plot shows the eigenvalues,
+and the scores on the first two components are drawn as a scatter plot when both are shown.
+Bartlett's test of sphericity asks whether the columns are uncorrelated at all, and the
+Kaiser-Meyer-Olkin measure how much variance they share: a small p-value and a high measure are
+what make the components worth reading. A constant column is refused under standardisation and
+left out with a warning otherwise, and fewer than four complete rows are refused. A component
+is a direction in the data, not a cause, and a loading is not proof that a column belongs to it.
+
+### Factor analysis
+
+Reads three to thirty numeric columns and factors their correlation matrix by principal-axis
+factoring, with the communalities iterated from the squared multiple correlations. **Number of
+factors** runs from one to the smaller of 10 and one fewer than the columns, and **Rotation**
+turns them by Kaiser's normalised varimax or leaves them unrotated. The estimates give the
+Kaiser-Meyer-Olkin measure with its reading, the share of the variance the factors explain and
+Kaiser's criterion, the number of factors with an eigenvalue above one; Bartlett's test of
+sphericity is reported as a test. The loadings table carries each column's loadings, its
+communality and its uniqueness, the variance table each factor's share, and the scores table
+summarises the regression-method scores; the first two factors are drawn as a scatter plot when
+there are two or more. Each column's outliers are checked against Tukey's fences, and linearity
+is left to the scatter plots because no single number reads it. A communality at or above one
+is a Heywood case: it is warned about and the numbers are still shown. Fewer than ten complete
+rows, a constant column, a singular correlation matrix or a factor count the columns cannot
+carry is refused. A factor is a direction in the data, not a latent cause.
+
+### Logistic regression
+
+Explains a two-level **Outcome** from one to twenty numeric **Predictors** by the log odds of
+the event, which is the outcome label that appears second, in the order of first appearance;
+the result names both labels. It reports each coefficient with its standard error, z statistic,
+p-value, Wald interval and odds ratio, the likelihood ratio test of the model, McFadden's and
+Nagelkerke's pseudo R squared, the AIC, the area under the ROC curve, and sensitivity,
+specificity and accuracy at the 0.5 cut-off. The coefficients table shows the fit, the
+classification table its agreement with the observed labels, and the calibration plot the
+fitted probabilities against the observed rates; predictions can be made at predictor values
+you give (up to 1,000 rows). The Hosmer-Lemeshow test checks calibration, while linearity of
+the logit and independence of the rows are stated as things no single number can read.
+Complete or quasi-complete separation is warned about with the coefficients still shown, and a
+fit that did not converge says so. A predictor that does not vary, or is exactly collinear with
+the others, is refused. An odds ratio measures association in these rows; it does not show that
+a predictor causes the outcome.
 
 ## 17. Counts
 
@@ -503,7 +556,67 @@ For all three, a slope away from one or an intercept away from zero is read at a
 against the line of identity. Agreement between two methods is evidence about these samples,
 not proof that the methods may be used interchangeably in every range.
 
-## 19. Sample size and power
+## 19. Measurement and classification
+
+The **Measurement and classification** family reads a measurement against a standard: how well
+a score separates two classes, how consistently a set of items measures one thing, and whether
+a process stays inside its limits.
+
+### Receiver operating characteristic curve
+
+Pairs a numeric **Score** with a two-level **Outcome** by row position on the rows complete in
+both, and reads the outcome label that appears second, in the order of first appearance, as the
+positive class; both labels and their counts are named. A higher score is read as pointing to
+the positive class unless **A higher score means positive** is turned off, when the scores are
+negated first. The curve is drawn at every distinct score, and the area under it is the
+probability that a randomly chosen positive row scores above a randomly chosen negative row,
+with ties counted as one half; its interval is DeLong's. **Best cut-off (Youden)** is the
+threshold that maximises sensitivity plus specificity minus one, and the sensitivity and
+specificity at that cut are reported beside it. A two-sided Mann-Whitney U test of the scores is
+reported with the tie-corrected normal approximation, a threshold table lists the curve's
+points, and the ROC curve is plotted. Fewer than six rows in either class, or fewer than three
+distinct scores, are refused. The curve ranks a score: it says how well the score orders the
+positive rows above the negative ones, not that the score diagnoses anything, and a cut chosen
+from these rows needs confirming on new ones.
+
+### Reliability (Cronbach's alpha)
+
+Reads two to fifty numeric **Items** measured on the same rows and reports the internal
+consistency of their sum: Cronbach's alpha with Feldt's interval at the chosen level, the
+standardised alpha and the mean inter-item correlation. An F test of the reliability coefficient
+(Feldt) tests alpha against zero. Every item is listed with its mean, standard deviation,
+corrected item-total correlation and the alpha the scale would have with that item deleted. An
+item named in **Reverse-keyed items** is recoded as max + min − value on its own observed range
+and the result says which items were recoded; an item that correlates negatively with the rest
+and is not named is warned about. Fewer than three complete rows, a constant item or an item
+count outside the tool's range is refused. Alpha is a lower bound on reliability when the items
+are not tau-equivalent, and tau-equivalence cannot be tested from these rows; a high alpha is
+consistent with a set of items measuring one construct without establishing that they do.
+
+### Control chart and process capability
+
+Reads one column of **Values** in row order as an individuals chart, or as an X-bar and R chart
+when **Chart** says so. The X-bar and R chart reads the **Subgroups** label column, takes each
+maximal run of one label in order and cuts it into consecutive subgroups of **Subgroup size**
+(two to ten, five when empty); a piece shorter than that size is left out, counted and listed.
+The individuals chart sets its centre line at the mean and its limits at the mean plus or minus
+2.66 times the mean moving range, from d2 = 1.128; the X-bar and R chart sets its centre line at
+the grand mean and its limits from A2, D3 and D4 times the mean range, with the constants for
+subgroup sizes 2 to 10 taken from Montgomery's *Introduction to Statistical Quality Control*.
+The estimates give the centre line, both control limits and the mean moving range (or the mean
+range), and the chart statistics table repeats them with the range chart's limits and the other
+figures; the control chart plot draws the points with the centre line and both limits. The
+Western Electric rules 1 (a point beyond a limit), 2 (two of three consecutive points beyond
+two standard deviations on the same side) and 4 (eight consecutive points on one side) name
+their points in a special-causes table when they fire, and a stability check reads the chart
+for special causes. At least 20 points are needed for the individuals chart and ten complete
+subgroups for the X-bar and R chart, and a constant series is refused. Both **Lower
+specification limit** and **Upper specification limit** add Cp, Cpk, Pp, Ppk and the estimated
+percentage of values outside the limits, after Shapiro-Wilk's W test checks normality. A
+capability index needs a stable, normal process: it describes the process the data came from
+only while the chart shows it in control and the values are close enough to normal.
+
+## 20. Sample size and power
 
 The **Sample size and power** family needs no data. It answers one of two questions about a
 design: how many observations per group a target power needs, or what power a given number of
@@ -526,7 +639,7 @@ becomes useful.
 Every number is a statement about the design and significance level you stated. It is not a
 p-value, and it does not prove that the study will find an effect or that the effect is real.
 
-## 20. About, licence, projects and policy
+## 21. About, licence, projects and policy
 
 CurveStudio is built by **ConcreteInfo** — <https://www.concreteinfo.in> · amit@concreteinfo.in.
 The About window and the About page list the other tools we build and maintain, in two groups —
