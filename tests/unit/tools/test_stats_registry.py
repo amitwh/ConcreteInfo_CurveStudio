@@ -502,4 +502,5 @@ def test_the_families_are_named_in_the_order_a_person_meets_them() -> None:
         ("measurement", "Measurement and classification"),
         ("power", "Sample size and power"),
         ("evidence", "Evidence synthesis"),
+        ("bayes", "Bayesian tests"),
     )
