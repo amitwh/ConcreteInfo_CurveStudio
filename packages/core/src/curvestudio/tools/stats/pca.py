@@ -238,15 +238,19 @@ def _kaiser_meyer_olkin(correlation: FloatArray) -> float | None:
     return shared / total
 
 
-def _verdict(p_value: float | None) -> Verdict:
-    """The verdict a p-value gives an assumption."""
+def _sphericity_verdict(p_value: float | None) -> Verdict:
+    """The verdict Bartlett's p-value gives the suitability of a component analysis.
+
+    The null hypothesis is that the columns are uncorrelated, so a small p is the good news
+    here: it reads as a pass, and the reverse as a failure.
+    """
     if p_value is None:
         return Verdict.NOT_APPLICABLE
-    if p_value < FAIL_P:
-        return Verdict.FAIL
     if p_value < CAUTION_P:
+        return Verdict.PASS
+    if p_value < 2.0 * CAUTION_P:
         return Verdict.CAUTION
-    return Verdict.PASS
+    return Verdict.FAIL
 
 
 def _sphericity_check(found: _Bartlett) -> AuditCheck:
@@ -258,18 +262,17 @@ def _sphericity_check(found: _Bartlett) -> AuditCheck:
             Verdict.NOT_APPLICABLE,
             found.reason or "The test could not be run on this correlation matrix.",
         )
-    verdict = _verdict(found.p_value)
+    verdict = _sphericity_verdict(found.p_value)
     titles = {
-        Verdict.PASS: "The columns look close to uncorrelated, so components may add little",
-        Verdict.CAUTION: "The columns show some correlation, so components may summarise them",
-        Verdict.FAIL: "The columns are strongly correlated, so components can summarise them",
+        Verdict.PASS: "The columns are correlated enough for components to summarise them",
+        Verdict.CAUTION: "The columns show only weak correlation",
+        Verdict.FAIL: "The columns look close to uncorrelated, so components may add little",
     }
     next_steps = {
-        Verdict.PASS: "With little correlation among the columns, components may add little "
-        "to them.",
-        Verdict.CAUTION: "If the columns are only weakly related, a component may not "
-        "summarise them well.",
-        Verdict.FAIL: None,
+        Verdict.PASS: None,
+        Verdict.CAUTION: "With only weak correlation among the columns, components may add "
+        "little to them.",
+        Verdict.FAIL: "The columns are close to uncorrelated; components may not summarise them.",
     }
     return assumption(
         "sphericity",

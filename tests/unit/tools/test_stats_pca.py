@@ -517,8 +517,9 @@ def test_the_fetched_checks_read_the_correlation_of_the_usa_arrests() -> None:
     result = _run(columns=_usa_arrests())
 
     sphericity = result.assumptions[0]
-    assert sphericity.verdict is Verdict.FAIL
-    assert "strongly correlated" in sphericity.title
+    # the null is "the columns are uncorrelated", so small p is the good news here
+    assert sphericity.verdict is Verdict.PASS
+    assert "correlated enough" in sphericity.title
     assert sphericity.statistic is not None and sphericity.statistic.startswith("chi-square")
 
     factorability = result.assumptions[1]
