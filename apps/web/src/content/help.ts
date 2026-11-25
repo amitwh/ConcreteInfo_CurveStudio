@@ -721,7 +721,7 @@ export const HELP_SECTIONS: HelpSection[] = [
           strong("Statistics page"),
           " on the desktop and the ",
           strong("Statistics mode"),
-          " on the web run the same twenty-five tools, in eight families, on a dataset's columns. Pick a tool from the catalogue, choose the dataset it reads, fill in its fields and press ",
+          " on the web run the same twenty-nine tools, in eleven families, on a dataset's columns. Pick a tool from the catalogue, choose the dataset it reads, fill in its fields and press ",
           strong("Run"),
           "; the command line runs the same tools with ",
           code("curvestudio stats --list"),
@@ -1226,6 +1226,140 @@ export const HELP_SECTIONS: HelpSection[] = [
         kind: "p",
         content: [
           "Every number is a statement about the design and significance level you stated. It is not a p-value, and it does not prove that the study will find an effect or that the effect is real.",
+        ],
+      },
+    ],
+  },
+  {
+    id: "advanced-models",
+    title: "Advanced models",
+    blocks: [
+      {
+        kind: "p",
+        content: [
+          "The ",
+          strong("Advanced models"),
+          " family fits models for data whose structure one line cannot hold: measurements that share a group effect, and time until an event that some rows never reach.",
+        ],
+      },
+      { kind: "h3", text: "Linear mixed model" },
+      {
+        kind: "p",
+        content: [
+          "Explains a numeric ",
+          strong("Outcome"),
+          " from one to twenty ",
+          strong("Predictors"),
+          " with a fixed line, and gives every level of the ",
+          strong("Group"),
+          " column its own random intercept — an amount drawn from one normal distribution with mean zero and one shared variance, added to that group's rows. The fixed effects are estimated by restricted maximum likelihood (REML), each coefficient with its standard error, t statistic, p-value and interval, on Satterthwaite's degrees of freedom. The random intercept is tested against an ordinary least-squares line by a likelihood-ratio test whose null distribution is half chi-square with zero degrees of freedom and half with one. The estimates give the residual and between-group variances, the intraclass correlation, and Nakagawa and Schielzeth's marginal and conditional R squared; a group-effects table and a plot show each group's intercept shift, and predictions can be made at predictor values you give (up to 1,000 rows). A predictor that does not vary or is exactly collinear with the others is refused, as is a constant outcome, fewer than six rows or fewer than three groups, and every row left out is counted and listed.",
+        ],
+      },
+      {
+        kind: "p",
+        content: [
+          "A random intercept is not a random slope: the model assumes each predictor acts the same way in every group, and a group whose slope differs is not described by it. REML assumes the group effects and the errors are normally distributed, and whether the group effects are normal is something these data cannot show; with few groups, treat the group as a fixed factor instead. A random effect the test finds is evidence that the groups differ, not a measurement of how much of the variation lies between them.",
+        ],
+      },
+      { kind: "h3", text: "Survival analysis" },
+      {
+        kind: "p",
+        content: [
+          "Reads one numeric ",
+          strong("Time"),
+          " column — the follow-up time to the event or to censoring — and a two-level ",
+          strong("Event"),
+          " column, whose level second in order of first appearance is the event unless ",
+          strong("Event level"),
+          " names it. A ",
+          strong("Groups"),
+          " column draws each group's Kaplan–Meier curve and reports its median with the Brookmeyer–Crowley interval and its restricted mean survival to the largest observed time with its standard error, and the log-rank test compares the groups' survival, with Holm's adjustment for the pairwise comparisons. ",
+          strong("Predictors"),
+          " fit a Cox model by Newton–Raphson on the partial likelihood with Breslow's handling of tied event times: each hazard ratio carries its Wald interval, the model a likelihood-ratio test, and Harrell's concordance index how well the risks order the event times. Proportional hazards is checked approximately by the correlation of the scaled Schoenfeld residuals with the event time, from ten events; a fit that does not converge is reported with its last change, never returned as if it had. A time must not be below zero, and at least five events and two distinct times are needed.",
+        ],
+      },
+      {
+        kind: "p",
+        content: [
+          "Censoring is assumed independent of the event time, and that is an assumption these data cannot show: it is argued from how the follow-up ended. A Cox hazard ratio is meaningful only while the hazards stay proportional, so read a coefficient the check finds changing as an average over the follow-up. A survival curve describes these rows; it does not predict any one person's time.",
+        ],
+      },
+    ],
+  },
+  {
+    id: "evidence-synthesis",
+    title: "Evidence synthesis",
+    blocks: [
+      {
+        kind: "p",
+        content: [
+          "The ",
+          strong("Evidence synthesis"),
+          " family combines the results of several studies into one estimate and says how much the studies disagree.",
+        ],
+      },
+      { kind: "h3", text: "Meta-analysis" },
+      {
+        kind: "p",
+        content: [
+          "Reads one ",
+          strong("Effects"),
+          " column and its ",
+          strong("Standard errors"),
+          ", one row per study, or, for a ratio measure, the four columns of each study's two-by-two table; ",
+          strong("Study labels"),
+          " name the rows and ",
+          strong("Measure"),
+          " says what the effects are — a generic effect, a mean difference, a standardised mean difference, a correlation, an odds ratio or a risk ratio. The studies are pooled by inverse variance, both as a fixed-effect mean and as a random-effects mean whose weights add the DerSimonian and Laird estimate of the between-study variance, each with its interval. Cochran's Q and I squared say how much of the variation between the studies is more than sampling error, and from three studies a prediction interval says where a new study's effect might fall. From ten studies Egger's test bears on publication bias. A forest plot draws the studies and both pools, a funnel plot sets each effect against its standard error with that axis inverted, and a two-by-two table with a zero or complete cell is refused rather than continuity-corrected. A row missing a value is left out and listed.",
+        ],
+      },
+      {
+        kind: "p",
+        content: [
+          "Pooling assumes the studies measure one quantity on the scale the measure names, and that they are independent, which a column cannot record. A pooled estimate cannot rule out publication bias: a funnel plot and Egger's test can suggest asymmetry, and only from ten studies, but neither establishes that small studies reporting nothing are absent. A high I squared says the studies disagree more than chance explains, and the random-effects pool averages that disagreement rather than resolving it.",
+        ],
+      },
+    ],
+  },
+  {
+    id: "bayesian-tests",
+    title: "Bayesian tests",
+    blocks: [
+      {
+        kind: "p",
+        content: [
+          "The ",
+          strong("Bayesian tests"),
+          " family answers the questions the t tests ask in the currency of evidence: how much more likely the data are under an alternative than under a null, and what the posterior says about the size of the effect.",
+        ],
+      },
+      { kind: "h3", text: "Bayesian test" },
+      {
+        kind: "p",
+        content: [
+          "Choose the ",
+          strong("Design"),
+          ": one sample against a hypothesised mean, paired observations, two independent groups, or a single proportion from counts; a field the design does not take is refused. The three effect designs report the JZS Bayes factor of Rouder and colleagues, which integrates the likelihood ratio against a Cauchy prior on the standardised effect whose ",
+          strong("Prior scale"),
+          " is 0.707 unless you set another, and the posterior of that prior: its mean, its credible interval at ",
+          strong("Level"),
+          ", and the probability the effect falls inside ",
+          strong("Null region"),
+          ", the range you count as no practical effect. The proportion design takes ",
+          strong("Successes"),
+          " and ",
+          strong("Trials"),
+          " under a ",
+          strong("Prior alpha"),
+          " and ",
+          strong("Prior beta"),
+          ", and reports the beta posterior, the probability the proportion exceeds the hypothesised value, and its Bayes factor by the Savage–Dickey ratio. A posterior density plot is drawn.",
+        ],
+      },
+      {
+        kind: "p",
+        content: [
+          "A Bayes factor is evidence under the stated prior, not the probability that either hypothesis is true, and it is not a p-value: change the prior and the number moves, so report the prior with it. A credible interval is a statement about the effect given these data and that prior, and the null region is a choice of what counts as no practical effect, not a fact found in the data.",
         ],
       },
     ],

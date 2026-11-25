@@ -25,6 +25,9 @@ const SECTION_TITLES = [
   "Comparing two methods",
   "Measurement and classification",
   "Sample size and power",
+  "Advanced models",
+  "Evidence synthesis",
+  "Bayesian tests",
   "About, licence, projects and policy",
 ];
 
@@ -48,7 +51,7 @@ function atAddress(address: string, body: () => void): void {
 }
 
 describe("HelpPage", () => {
-  it("renders all twenty-one section headings in order", () => {
+  it("renders all twenty-four section headings in order", () => {
     renderHelp();
     const headings = screen.getAllByRole("heading", { level: 2 });
     expect(headings.map((heading) => heading.textContent)).toEqual(SECTION_TITLES);
@@ -70,6 +73,9 @@ describe("HelpPage", () => {
       "comparing-two-methods",
       "measurement-and-classification",
       "sample-size-and-power",
+      "advanced-models",
+      "evidence-synthesis",
+      "bayesian-tests",
       "about-licence-credits",
     ]) {
       const section = document.getElementById(id);

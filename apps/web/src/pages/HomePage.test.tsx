@@ -495,7 +495,7 @@ describe("HomePage", () => {
     expect(record.getAttribute("rel")).toBe("noopener noreferrer");
   });
 
-  it("lists the twenty-five statistical tools by family in the Statistics section", () => {
+  it("lists the twenty-nine statistical tools by family in the Statistics section", () => {
     renderHome();
     const section = document.getElementById("statistics");
     expect(section).not.toBeNull();
@@ -504,11 +504,12 @@ describe("HomePage", () => {
     // One sentence says what the tools are for and where they run.
     expect(
       scoped.getByText(
-        "Twenty-five statistical tools, from summarising the columns of a dataset to planning " +
+        "Twenty-nine statistical tools, from summarising the columns of a dataset to planning " +
           "the sample a study needs, compare means and ranks, trace relationships, count " +
-          "associations, compare two methods and check a score's discrimination, a scale's " +
-          "consistency and a process's stability — in the web app, the desktop app and the " +
-          "command line.",
+          "associations, compare two methods, check a score's discrimination, a scale's " +
+          "consistency and a process's stability, combine the effects of several studies, " +
+          "weigh a hypothesis against its alternative under a stated prior, and model grouped " +
+          "or time-to-event data — in the web app, the desktop app and the command line.",
       ),
     ).toBeTruthy();
 
@@ -558,6 +559,9 @@ describe("HomePage", () => {
         ],
       ],
       ["Sample size and power", ["Sample size and power"]],
+      ["Advanced models", ["Linear mixed model", "Survival analysis"]],
+      ["Evidence synthesis", ["Meta-analysis"]],
+      ["Bayesian tests", ["Bayesian test"]],
     ];
 
     const element = section as HTMLElement;
@@ -570,7 +574,7 @@ describe("HomePage", () => {
       (tool) => tool.textContent,
     );
     expect(toolTitles).toEqual(families.flatMap(([, tools]) => tools));
-    expect(toolTitles).toHaveLength(25);
+    expect(toolTitles).toHaveLength(29);
   });
 
   it("claims no absence in the Statistics section: what was not found is not proof", () => {

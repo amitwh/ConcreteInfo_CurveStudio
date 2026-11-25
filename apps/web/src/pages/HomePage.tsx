@@ -295,10 +295,10 @@ const PRIOR_ART_SENTENCE =
 const PRIOR_ART_URL =
   "https://github.com/amitwh/ConcreteInfo_CurveStudio/blob/main/docs/prior-art.md";
 
-/** The twenty-five statistical tools that have shipped, by family, in the catalogue's order.
+/** The twenty-nine statistical tools that have shipped, by family, in the catalogue's order.
  *  Titles are the catalogue's own (`packages/core/src/curvestudio/tools/stats/registry.py`,
  *  `FAMILIES` and each registered tool's `title`); the count and titles are pinned by the
- *  "lists the twenty-five statistical tools by family" test in `HomePage.test.tsx`. */
+ *  "lists the twenty-nine statistical tools by family" test in `HomePage.test.tsx`. */
 const STATISTICS_FAMILIES: ReadonlyArray<{ title: string; tools: readonly string[] }> = [
   { title: "Summarise", tools: ["Descriptive statistics", "Distribution analysis"] },
   {
@@ -344,15 +344,20 @@ const STATISTICS_FAMILIES: ReadonlyArray<{ title: string; tools: readonly string
     ],
   },
   { title: "Sample size and power", tools: ["Sample size and power"] },
+  { title: "Advanced models", tools: ["Linear mixed model", "Survival analysis"] },
+  { title: "Evidence synthesis", tools: ["Meta-analysis"] },
+  { title: "Bayesian tests", tools: ["Bayesian test"] },
 ];
 
 /** What the tools are for, one sentence: each family's purpose in turn, and the three
  *  surfaces that run the same catalogue. Pinned verbatim by `HomePage.test.tsx`. */
 const STATISTICS_TOOLS_SENTENCE =
-  "Twenty-five statistical tools, from summarising the columns of a dataset to planning the " +
+  "Twenty-nine statistical tools, from summarising the columns of a dataset to planning the " +
   "sample a study needs, compare means and ranks, trace relationships, count associations, " +
-  "compare two methods and check a score's discrimination, a scale's consistency and a " +
-  "process's stability — in the web app, the desktop app and the command line.";
+  "compare two methods, check a score's discrimination, a scale's consistency and a " +
+  "process's stability, combine the effects of several studies, weigh a hypothesis against " +
+  "its alternative under a stated prior, and model grouped or time-to-event data — in the " +
+  "web app, the desktop app and the command line.";
 
 /* ---- "Fits you can reproduce" gallery ------------------------------------------------ */
 
