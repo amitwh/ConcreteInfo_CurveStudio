@@ -25,7 +25,7 @@ import { ConfirmDialog } from "../components/ConfirmDialog";
 import { Meter } from "../components/Meter";
 import { Switch } from "../components/Switch";
 import { ErrorBox, Loading, apiErrorText } from "../components/States";
-import { fmtBytes } from "../format";
+import { fmtBytes, fmtDate } from "../format";
 
 /** The profile's key in the query cache; every change below writes its answer here. */
 const ME_KEY = ["me"] as const;
@@ -82,7 +82,9 @@ function Profile({ me }: { me: MeOut }): ReactElement {
         hint={
           <>
             When something goes wrong, an anonymous report helps us fix it. Reports never
-            include your account, your projects or your data.
+            include your account, your projects or your data. Activating a licence sends your
+            account id and the licence key to ConcreteInfo's licensing service, which stores
+            nothing else about your account.
           </>
         }
       />
@@ -340,10 +342,57 @@ function AccountSection({ me }: { me: MeOut }): ReactElement {
 
 /* ---- Plan and usage ------------------------------------------------------------------- */
 
+/**
+ * The Plan card: the resolved plan and its limits, and — only while the installation sells
+ * plans (`me.billing`) — the licence beside them. A held entitlement shows its status and
+ * expiry with a way to release it; none held shows the portal's Upgrade link (when one is
+ * configured) and the key field that activates one.
+ */
 function PlanSection({ me }: { me: MeOut }): ReactElement {
-  const { plan, usage } = me;
+  const section = useSection();
+  const onSaved = useApply();
+  const ids = useId();
+  const { plan, usage, licence, billing } = me;
+  const [licenceKey, setLicenceKey] = useState("");
+  const [confirming, setConfirming] = useState(false);
+  const { locked, error } = section;
+  // A released row stays on /me; only a live or lapsed entitlement is a licence held.
+  const held = licence != null && licence.status !== "released";
+
+  const close = useCallback((): void => setConfirming(false), []);
+
+  const release = (): void =>
+    void section.run(async () => {
+      await api.releaseLicence();
+      onSaved(await api.me());
+      close();
+      return "Licence released.";
+    });
+
+  const activate = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
+    event.preventDefault();
+    const key = licenceKey.trim();
+    if (key === "") {
+      section.fail("Enter a licence key.");
+      return;
+    }
+    await section.run(async () => {
+      const answer = await api.activateLicence(key);
+      onSaved(await api.me());
+      setLicenceKey("");
+      return answer.message === ""
+        ? "Licence activated."
+        : `Licence activated — ${answer.message}.`;
+    });
+  };
+
+  // While the confirmation is open, its result is shown there, not twice.
+  const feedback = confirming ? null : (
+    <SectionFeedback notice={section.notice} error={section.error} />
+  );
+
   return (
-    <SectionFrame title="Plan and usage" feedback={null}>
+    <SectionFrame title="Plan and usage" feedback={feedback}>
       <p className="profile-plan">
         Plan: <strong>{plan.name}</strong>
       </p>
@@ -362,6 +411,70 @@ function PlanSection({ me }: { me: MeOut }): ReactElement {
           limit={plan.max_autofits_per_day}
         />
       </div>
+      {billing != null &&
+        (held && licence != null ? (
+          <>
+            <p>
+              Licence status: <strong>{licence.status}</strong>, expires{" "}
+              {fmtDate(licence.expires_at)}.
+            </p>
+            <button
+              type="button"
+              className="btn"
+              disabled={locked}
+              onClick={() => {
+                section.clear();
+                setConfirming(true);
+              }}
+            >
+              Release this licence
+            </button>
+          </>
+        ) : (
+          <>
+            {billing.portal_url !== "" && (
+              <p>
+                <a
+                  className="btn"
+                  href={billing.portal_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Upgrade
+                </a>
+              </p>
+            )}
+            <form className="profile-form" onSubmit={(event) => void activate(event)} noValidate>
+              <div className="field">
+                <label htmlFor={`${ids}-key`}>Licence key</label>
+                <input
+                  id={`${ids}-key`}
+                  type="text"
+                  value={licenceKey}
+                  maxLength={200}
+                  autoComplete="off"
+                  spellCheck={false}
+                  disabled={locked}
+                  onChange={(event) => setLicenceKey(event.target.value)}
+                />
+              </div>
+              <button type="submit" className="btn btn--primary" disabled={locked}>
+                Activate
+              </button>
+            </form>
+          </>
+        ))}
+      {confirming && (
+        <ConfirmDialog
+          title="Release this licence?"
+          message="The licence goes back to the pool and this account returns to the free plan. You can activate it again with the same key."
+          confirmLabel="Release this licence"
+          busy={locked}
+          error={error}
+          onConfirm={release}
+          onClose={close}
+        />
+      )}
     </SectionFrame>
   );
 }

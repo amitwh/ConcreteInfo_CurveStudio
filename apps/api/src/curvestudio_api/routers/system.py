@@ -18,6 +18,7 @@ from curvestudio_api.modules.admin.service import erase_account
 from curvestudio_api.orm import DEFAULT_PREFERENCES, Entitlement, RefreshToken, User
 from curvestudio_api.routers.auth import _limit, audit_failed_password_check
 from curvestudio_api.schemas import (
+    BillingOut,
     DeleteMeIn,
     HealthOut,
     LicenceActivatedOut,
@@ -131,6 +132,12 @@ def _me_out(db: Session, ctx: Ctx, user: User) -> MeOut:
     limits = quotas.effective_limits(db, ctx.settings, user.plan_override)
     used = quotas.usage(db, user.id)
     preferences = _preferences(user)
+    # How the profile learns the connector is on and where the Upgrade link goes.
+    billing = (
+        BillingOut(portal_url=ctx.settings.licence_portal_url)
+        if licences.billing_on(ctx.settings)
+        else None
+    )
     return MeOut(
         id=user.id,
         email=user.email,
@@ -152,6 +159,7 @@ def _me_out(db: Session, ctx: Ctx, user: User) -> MeOut:
         ),
         usage=UsageOut(**asdict(used), autofits_today=quotas.autofit_runs_today(db, user.id)),
         licence=_me_licence(db, ctx.settings, user),
+        billing=billing,
     )
 
 

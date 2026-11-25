@@ -26,6 +26,11 @@ export type TokenOut = Schemas["TokenOut"];
 export type UserOut = Schemas["UserOut"];
 /** The signed-in account in full: profile, preferences, the plan's limits and usage so far. */
 export type MeOut = Schemas["MeOut"];
+/** The connector's presence on /me: where a licence can be bought (null while billing is off). */
+export type BillingOut = Schemas["BillingOut"];
+/** The account's licence entitlement; what activating one answers, message included. */
+export type LicenceOut = Schemas["LicenceOut"];
+export type LicenceActivatedOut = Schemas["LicenceActivatedOut"];
 export type EmailVerificationOut = Schemas["EmailVerificationOut"];
 export type MessageOut = Schemas["MessageOut"];
 export type ModelInfo = Schemas["ModelInfo"];
@@ -441,6 +446,27 @@ class ApiClient {
 
   async me(): Promise<MeOut> {
     return this.request<MeOut>("/me");
+  }
+
+  /** The account's licence entitlement (404 BILLING_OFF / LICENCE_NONE while there is none). */
+  async getLicence(): Promise<LicenceOut> {
+    return this.request<LicenceOut>("/me/licence");
+  }
+
+  /**
+   * Activate a licence key: the account moves to the plan the key maps to. The answer names
+   * what the activation had to release; a refused key leaves the account as it was.
+   */
+  async activateLicence(key: string): Promise<LicenceActivatedOut> {
+    return this.request<LicenceActivatedOut>("/me/licence", {
+      method: "POST",
+      body: JSON.stringify({ key }),
+    });
+  }
+
+  /** Release the account's licence: the seat goes back and the account returns to free. */
+  async releaseLicence(): Promise<void> {
+    return this.request<void>("/me/licence", { method: "DELETE" });
   }
 
   /** Change the displayed name (the server strips it; 1–100 characters). */

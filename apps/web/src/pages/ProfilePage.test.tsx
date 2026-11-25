@@ -38,6 +38,21 @@ const METER_PERCENT = ["30%", "25%", "80%", "0%"];
 
 const SENT = { message: "sent" };
 
+/** The connector's presence on /me, and the entitlement an activation lands. */
+const BILLING = { portal_url: "https://licence.example.test/pricing" };
+const KEY = "CURVESTUDIO-KEY-1";
+const LICENCE = {
+  id: "e1",
+  plan_code: "pro",
+  plan: "Paid",
+  status: "active",
+  expires_at: "2027-03-31T23:59:59+05:30",
+  grace_until: "2027-04-07T23:59:59+05:30",
+  last_checked_at: "2026-11-25T09:00:00+05:30",
+  portal_url: BILLING.portal_url,
+} as const;
+const ACTIVATED = { ...LICENCE, message: "" };
+
 /** A 422 as the API sends it: a generic message, the reason in detail.errors[0].msg. */
 function rejected(msg: string): ApiError {
   return new ApiError(422, "VALIDATION_ERROR", "the request is not valid", {
@@ -74,6 +89,8 @@ function mockEndpoints(me: MeOut = ME): void {
   vi.spyOn(api, "deleteMe").mockResolvedValue(undefined);
   vi.spyOn(api, "resendVerification").mockResolvedValue(SENT);
   vi.spyOn(api, "forgotPassword").mockResolvedValue(SENT);
+  vi.spyOn(api, "activateLicence").mockImplementation(async () => ({ ...ACTIVATED }));
+  vi.spyOn(api, "releaseLicence").mockResolvedValue(undefined);
 }
 
 /** Waits for the page to finish loading and returns the user-event driver. */
@@ -349,6 +366,162 @@ describe("ProfilePage — Plan and usage", () => {
     expect(screen.getByText("120%")).toBeTruthy();
     expect(datasets.getAttribute("aria-valuenow")).toBe("12");
     expect(datasets.getAttribute("aria-valuemax")).toBe("12");
+  });
+});
+
+describe("ProfilePage — the licence card", () => {
+  /** The card as it is while the connector is off: none of the licence controls. */
+  it("shows no licence controls while billing is off", async () => {
+    await opened();
+    const plan = section("Plan and usage");
+    expect(within(plan).queryByRole("link", { name: "Upgrade" })).toBeNull();
+    expect(within(plan).queryByLabelText(/licence key/i)).toBeNull();
+    expect(within(plan).queryByRole("button", { name: "Release this licence" })).toBeNull();
+  });
+
+  it("offers the Upgrade link and a key field when no licence is held", async () => {
+    await opened({ ...ME, billing: BILLING });
+    const plan = section("Plan and usage");
+    const upgrade = within(plan).getByRole("link", { name: "Upgrade" });
+    expect(upgrade.getAttribute("href")).toBe(BILLING.portal_url);
+    expect(upgrade.getAttribute("target")).toBe("_blank");
+    expect(upgrade.getAttribute("rel")).toBe("noopener noreferrer");
+    expect(within(plan).getByLabelText(/licence key/i)).toBeTruthy();
+    expect(within(plan).getByRole("button", { name: "Activate" })).toBeTruthy();
+    expect(within(plan).queryByRole("button", { name: "Release this licence" })).toBeNull();
+  });
+
+  it("keeps the key field but drops the Upgrade link when no portal is configured", async () => {
+    await opened({ ...ME, billing: { portal_url: "" } });
+    const plan = section("Plan and usage");
+    expect(within(plan).queryByRole("link", { name: "Upgrade" })).toBeNull();
+    expect(within(plan).getByLabelText(/licence key/i)).toBeTruthy();
+  });
+
+  it("shows the held licence's status and expiry, and no activation controls", async () => {
+    await opened({ ...ME, billing: BILLING, licence: { ...LICENCE } });
+    const plan = section("Plan and usage");
+    expect(within(plan).getByText("active")).toBeTruthy();
+    expect(within(plan).getByText(/expires 31\/03\/2027/)).toBeTruthy();
+    expect(within(plan).getByRole("button", { name: "Release this licence" })).toBeTruthy();
+    expect(within(plan).queryByLabelText(/licence key/i)).toBeNull();
+    expect(within(plan).queryByRole("link", { name: "Upgrade" })).toBeNull();
+  });
+
+  it("treats a released entitlement as none held", async () => {
+    await opened({
+      ...ME,
+      billing: BILLING,
+      licence: { ...LICENCE, status: "released" as const },
+    });
+    const plan = section("Plan and usage");
+    expect(within(plan).getByRole("link", { name: "Upgrade" })).toBeTruthy();
+    expect(within(plan).queryByRole("button", { name: "Release this licence" })).toBeNull();
+  });
+
+  it("refuses an empty key in the page, without a request", async () => {
+    const user = await opened({ ...ME, billing: BILLING });
+    await user.click(within(section("Plan and usage")).getByRole("button", { name: "Activate" }));
+    expect((await screen.findByRole("alert")).textContent).toMatch(/enter a licence key/i);
+    expect(api.activateLicence).not.toHaveBeenCalled();
+  });
+
+  it("activates a key, shows the answer and refetches the profile", async () => {
+    const user = await opened({ ...ME, billing: BILLING });
+    const held: MeOut = { ...ME, billing: BILLING, licence: { ...LICENCE } };
+    vi.mocked(api.me).mockResolvedValue(held);
+
+    await user.type(within(section("Plan and usage")).getByLabelText(/licence key/i), KEY);
+    await user.click(within(section("Plan and usage")).getByRole("button", { name: "Activate" }));
+
+    expect(api.activateLicence).toHaveBeenCalledWith(KEY);
+    expect(await statusText()).toBe("Licence activated.");
+    expect(api.me).toHaveBeenCalledTimes(2);
+    expect(auth.updateUser).toHaveBeenLastCalledWith(held);
+    const plan = section("Plan and usage");
+    expect(within(plan).getByRole("button", { name: "Release this licence" })).toBeTruthy();
+    expect(within(plan).queryByLabelText(/licence key/i)).toBeNull();
+  });
+
+  it("says so when the activation had to release the previous licence", async () => {
+    const user = await opened({ ...ME, billing: BILLING });
+    vi.mocked(api.activateLicence).mockResolvedValue({
+      ...ACTIVATED,
+      message: "the previous licence was released first",
+    });
+    await user.type(within(section("Plan and usage")).getByLabelText(/licence key/i), KEY);
+    await user.click(within(section("Plan and usage")).getByRole("button", { name: "Activate" }));
+    expect(await statusText()).toBe(
+      "Licence activated — the previous licence was released first.",
+    );
+  });
+
+  it("shows the service's message when the key is refused", async () => {
+    const user = await opened({ ...ME, billing: BILLING });
+    vi.mocked(api.activateLicence).mockRejectedValue(
+      new ApiError(422, "VALIDATION_ERROR", "that key has been revoked", {
+        code: "LICENCE_INVALID",
+      }),
+    );
+    await user.type(within(section("Plan and usage")).getByLabelText(/licence key/i), KEY);
+    await user.click(within(section("Plan and usage")).getByRole("button", { name: "Activate" }));
+
+    expect((await screen.findByRole("alert")).textContent).toBe("that key has been revoked");
+    expect(auth.updateUser).not.toHaveBeenCalled();
+  });
+
+  it("asks before releasing the licence, then refetches the profile", async () => {
+    const user = await opened({ ...ME, billing: BILLING, licence: { ...LICENCE } });
+    const release = (): HTMLElement =>
+      within(section("Plan and usage")).getByRole("button", { name: "Release this licence" });
+
+    await user.click(release());
+    const dialog = await screen.findByRole("dialog", { name: "Release this licence?" });
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(api.releaseLicence).not.toHaveBeenCalled();
+
+    await user.click(release());
+    const again = await screen.findByRole("dialog", { name: "Release this licence?" });
+    vi.mocked(api.me).mockResolvedValue({ ...ME, billing: BILLING });
+    await user.click(within(again).getByRole("button", { name: "Release this licence" }));
+
+    expect(api.releaseLicence).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(api.me).toHaveBeenCalledTimes(2);
+    expect(auth.updateUser).toHaveBeenLastCalledWith({ ...ME, billing: BILLING });
+    expect(await statusText()).toBe("Licence released.");
+    expect(within(section("Plan and usage")).getByRole("link", { name: "Upgrade" })).toBeTruthy();
+  });
+
+  it("keeps the confirmation open with the error when the release fails", async () => {
+    const user = await opened({ ...ME, billing: BILLING, licence: { ...LICENCE } });
+    vi.mocked(api.releaseLicence).mockRejectedValue(
+      new ApiError(0, "NETWORK", "could not reach the server", null),
+    );
+    await user.click(
+      within(section("Plan and usage")).getByRole("button", { name: "Release this licence" }),
+    );
+    await user.click(
+      within(await screen.findByRole("dialog", { name: "Release this licence?" })).getByRole(
+        "button",
+        { name: "Release this licence" },
+      ),
+    );
+    const dialog = screen.getByRole("dialog", { name: "Release this licence?" });
+    expect((await within(dialog).findByRole("alert")).textContent).toBe(
+      "could not reach the server",
+    );
+    expect(auth.updateUser).not.toHaveBeenCalled();
+  });
+
+  it("says in the privacy note what activating a licence sends", async () => {
+    await opened();
+    expect(
+      screen.getByText(
+        /activating a licence sends your account id and the licence key to ConcreteInfo's licensing service/i,
+      ),
+    ).toBeTruthy();
   });
 });
 

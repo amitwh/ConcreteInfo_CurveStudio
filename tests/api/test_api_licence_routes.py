@@ -185,7 +185,17 @@ def test_billing_off_answers_404_billing_off_and_me_reports_no_licence(
         assert body["detail"]["code"] == "BILLING_OFF"
     me = client.get(f"{API}/me", headers=headers).json()
     assert me["licence"] is None
+    assert me["billing"] is None
     assert me["plan"]["name"] == "self-hosted"
+
+
+def test_me_carries_the_portal_url_while_the_connector_is_configured(
+    licence_client: tuple[TestClient, Portal],
+) -> None:
+    client, _portal = licence_client
+    headers = signup(client)
+    me = client.get(f"{API}/me", headers=headers).json()
+    assert me["billing"] == {"portal_url": PORTAL_URL}
 
 
 def test_activation_answers_201_and_me_shows_the_licence_and_the_mapped_plan(

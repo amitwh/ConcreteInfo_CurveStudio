@@ -972,6 +972,20 @@
         "title": "AutofitSummaryOut",
         "type": "object"
       },
+      "BillingOut": {
+        "description": "Whether this installation sells plans, and where. ``/me`` carries it only while the\nlicence connector is configured, so the profile knows the Upgrade link's target (empty\nwhen no portal is set).",
+        "properties": {
+          "portal_url": {
+            "title": "Portal Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "portal_url"
+        ],
+        "title": "BillingOut",
+        "type": "object"
+      },
       "Body_create_dataset_api_v1_datasets_post": {
         "properties": {
           "file": {
@@ -4217,6 +4231,16 @@
       },
       "MeOut": {
         "properties": {
+          "billing": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BillingOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "created_at": {
             "title": "Created At",
             "type": "string"

@@ -858,7 +858,8 @@ and `example-kinetics.csv` (enzyme kinetics), so no single discipline leads. In 
   Preferences → Privacy turns it off. Nothing else ever leaves your computer. On the web
   your datasets are stored as the whole table you uploaded, and your fits too, in your
   account only to provide the service; deleting a dataset, a fit or your account
-  removes them.
+  removes them. Activating a licence sends the account id and the licence key to
+  ConcreteInfo's licensing service, which stores nothing else about the account.
 
 - CurveStudio: AGPL-3.0-or-later.
 - Qt / PySide6 (desktop): LGPL-3.0.

@@ -255,6 +255,14 @@ class LicenceActivatedOut(LicenceOut):
     message: str = ""
 
 
+class BillingOut(BaseModel):
+    """Whether this installation sells plans, and where. ``/me`` carries it only while the
+    licence connector is configured, so the profile knows the Upgrade link's target (empty
+    when no portal is set)."""
+
+    portal_url: str
+
+
 class MeOut(UserOut):
     role: Literal["member", "admin"]
     preferences: PreferencesOut
@@ -263,6 +271,8 @@ class MeOut(UserOut):
     usage: UsageOut
     # The account's licence entitlement; ``None`` while billing is off or none was activated.
     licence: LicenceOut | None = None
+    # The connector's presence; ``None`` hides the licence controls on the profile.
+    billing: BillingOut | None = None
 
 
 class HealthOut(BaseModel):

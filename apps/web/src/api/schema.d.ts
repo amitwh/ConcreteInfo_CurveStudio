@@ -1736,6 +1736,16 @@ export interface components {
             n_candidates: number;
             rank_by: components["schemas"]["RankBy"];
         };
+        /**
+         * BillingOut
+         * @description Whether this installation sells plans, and where. ``/me`` carries it only while the
+         *     licence connector is configured, so the profile knows the Upgrade link's target (empty
+         *     when no portal is set).
+         */
+        BillingOut: {
+            /** Portal Url */
+            portal_url: string;
+        };
         /** Body_create_dataset_api_v1_datasets_post */
         Body_create_dataset_api_v1_datasets_post: {
             /**
@@ -3036,6 +3046,7 @@ export interface components {
         };
         /** MeOut */
         MeOut: {
+            billing?: components["schemas"]["BillingOut"] | null;
             /** Created At */
             created_at: string;
             /** Email */
