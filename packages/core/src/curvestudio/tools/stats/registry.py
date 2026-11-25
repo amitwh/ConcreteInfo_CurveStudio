@@ -42,6 +42,7 @@ FAMILIES: tuple[tuple[str, str], ...] = (
     ("comparison", "Method comparison"),
     ("measurement", "Measurement and classification"),
     ("power", "Sample size and power"),
+    ("advanced", "Advanced models"),
     ("evidence", "Evidence synthesis"),
     ("bayes", "Bayesian tests"),
 )
@@ -451,6 +452,7 @@ TOOL_MODULES: tuple[str, ...] = (
     "curvestudio.tools.stats.logistic",
     "curvestudio.tools.stats.means",
     "curvestudio.tools.stats.meta",
+    "curvestudio.tools.stats.mixed",
     "curvestudio.tools.stats.pca",
     "curvestudio.tools.stats.power",
     "curvestudio.tools.stats.quality",
