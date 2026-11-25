@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
+import { fontPreloadPlugin } from "./src/lib/fontPreload.ts";
 
 /** The app's own version (package.json), shown on /about and in exports. */
 const pkg = JSON.parse(
@@ -12,7 +13,7 @@ const pkg = JSON.parse(
 // Dev server proxies /api to the local FastAPI backend; in production the API itself
 // serves the built SPA from CURVESTUDIO_WEB_DIST, so every request is same-origin.
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), fontPreloadPlugin()],
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
     // The module-built Plotly (lib/plotly-bundle.ts) pulls CJS source modules that read

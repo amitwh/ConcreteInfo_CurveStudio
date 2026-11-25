@@ -29,6 +29,10 @@ vi.mock("./components/useInstallPrompt", () => ({
   useInstallPrompt: () => ({ canInstall: false, install: vi.fn() }),
 }));
 
+// The idle chart-bundle prefetch is that behaviour's own suite (chartPrefetch.test.tsx);
+// mocked here so these tests never schedule a real Plotly download.
+vi.mock("./lib/chartPrefetch", () => ({ useChartPrefetch: () => {} }));
+
 // The workspace is the thing that must survive navigation; a marker is enough here.
 vi.mock("./pages/WorkspacePage", () => ({
   WorkspacePage: () => <div data-testid="workspace">workspace</div>,

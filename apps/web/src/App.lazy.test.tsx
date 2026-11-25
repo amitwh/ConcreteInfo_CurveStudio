@@ -28,6 +28,10 @@ vi.mock("./components/useInstallPrompt", () => ({
   useInstallPrompt: () => ({ canInstall: false, install: vi.fn() }),
 }));
 
+// The idle chart-bundle prefetch is that behaviour's own suite (chartPrefetch.test.tsx);
+// mocked here so these routing tests never schedule a real Plotly download.
+vi.mock("./lib/chartPrefetch", () => ({ useChartPrefetch: () => {} }));
+
 vi.mock("./pages/HomePage", () => ({
   HomePage: () => <main data-testid="home">home</main>,
 }));

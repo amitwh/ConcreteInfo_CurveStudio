@@ -21,6 +21,7 @@ import { Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { useAuth } from "./api/auth";
 import { LazyBoundary, Loading } from "./components/States";
 import { ThemeProvider } from "./components/ThemeToggle";
+import { useChartPrefetch } from "./lib/chartPrefetch";
 import { HomePage } from "./pages/HomePage";
 
 /**
@@ -100,6 +101,9 @@ function PublicHeader(): ReactElement {
 
 export default function App(): ReactElement {
   const { status } = useAuth();
+  // Once a session is authed, the chart bundle starts downloading at the browser's next
+  // idle moment, so the first chart after sign-in waits on its render, not its download.
+  useChartPrefetch(status);
   return (
     <ThemeProvider>
       <div className="app-shell">

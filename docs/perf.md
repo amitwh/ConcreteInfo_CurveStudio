@@ -122,6 +122,46 @@ that provider behind sign-in is the one remaining in-app lever, worth ~7 KB gzip
 rest the API client, error reporter, shell and icons. No planned P6 task removes those
 bytes; the LCP target below is the one this task moves.
 
+### Task 3, 25/11/2026 — the header asset sized, the fonts preloaded
+
+Command: the same `node /home/amith/tmp/cs-verify/perf/bundles.mjs <worktree>/apps/web/dist`
+after `npm run build`, on the Task 3 worktree (code state `1efe2e8` plus the Task 3
+change). Full output: `bundles.task3.out` next to the script.
+
+| Asset | Before | After |
+| --- | --- | --- |
+| `curvestudio-logo.png` (every page's header; also embedded in the PDF report) | 661 × 176 PNG, 117,710 B | 330 × 88 PNG-8 (256 colours), **17,895 B** |
+
+−84.8 %. The header renders the logo at 165 × 44 CSS px (the `width`/`height`
+attributes on the three `<img>`s that use it: the public header, the workspace header,
+the home footer), so 330 × 88 is its full 2 × retina size; the PDF report header prints
+it at 26 pt height, where 88 px is ~2.5 × device pixels. Produced with the system's own
+tools — ImageMagick Catrom resize, pngquant 256-colour quantisation, optipng — no new
+dependency. Format comparison on the same 330 × 88 render: lossless WebP 24,976 B,
+*larger* than the palette PNG, so the PNG-8 is the smallest format that renders
+identically; lossy WebP q90 was 8,206 B but is not pixel-identical and react-pdf (the
+report embeds this same file as a data URL) cannot use WebP. Visual verification:
+`node /home/amith/tmp/cs-verify/perf/task3_probe.mjs` (same env switches as
+`web_timings.mjs`; not committed) screenshots the header logo element at
+deviceScaleFactor 2 with the old asset build and the new one — PNGs under
+`/home/amith/tmp/cs-verify/perf/screenshots/task3/{before,after}`; the two renders are
+visually identical (side-by-side inspected: same text, colours, proportions, tagline
+legibility; the pixel diff, RMSE 0.14 public / 0.026 workspace header, is edge
+anti-aliasing from the two resampling paths of the same art).
+
+The two Latin font files the first screen renders are now preloaded in the served
+HTML — `<link rel="preload" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2"
+as="font" type="font/woff2" crossorigin="anonymous">` and the same for
+`jetbrains-mono-latin-wght-normal-B9CIFXIH.woff2` (48,256 B and 40,404 B). The hashes
+exist only at build time, so `fontPreloadPlugin` (`apps/web/src/lib/fontPreload.ts`,
+wired into `vite.config.ts`) finds each family's latin subset among the emitted assets
+after the bundle is complete and has Vite inject the two links into `index.html`; its
+`latinFontPreloads` unit tests pin the selection (latin only, never `latin-ext`, never
+ambiguous) and the attributes. Which two to preload was verified, not assumed: the
+probe above also lists every woff2 the public page actually fetches — exactly those two
+latin files, plus the 19.0 KB `inter-greek` subset some greek-range glyph on the page
+pulls in (not latin, deliberately not preloaded).
+
 ## Web: public page LCP under throttle
 
 Command: `node /home/amith/tmp/cs-verify/perf/web_timings.mjs` (section A of the output
@@ -175,6 +215,28 @@ may build concurrently at other moments, which is why the size table above — t
 deterministic figure — is the one to compare on. The uncompressed-serving caveat above
 still applies to both columns equally.
 
+### Task 3, 25/11/2026 — LCP with the sized logo and the preloaded fonts
+
+Command: section A of the same run as the first-chart table below (`CS_RUN=run-web-task3`,
+port 8799, same throttle and script). Full output: `web_timings-task3.out` and `.err`
+next to the script.
+
+| Figure | Task 1, 25/11/2026 | Task 3, 25/11/2026 |
+| --- | ---: | ---: |
+| LCP, median | 1,068 ms | **1,112 ms** (runs 1,104–1,128) — target ≤ 2.0 s, met |
+| LCP element | an `<h2>` heading | an `<h2>` heading |
+| Transferred per load, median | 557,219 bytes over 11 requests | 547,356 bytes over 11 requests |
+
+The logo's −99.8 KB shows in the transferred figure, but the two font preloads
+(88.7 KB together) now share the throttle's bandwidth with the entry script from the
+first bytes, and the LCP element — an `<h2>` painted fallback-then-swapped — lands
+~44 ms later. That is the honest cost of the fonts arriving with the CSS instead of
+after it: the first font-dependent paint no longer waits on a post-CSS fetch chain.
+The run ranges do not overlap (1,064–1,100 vs 1,104–1,128), so the +44 ms is real,
+small, and inside every target. Machine activity at measurement time (~21:50 IST):
+load average ≈ 1.5–1.9 on the 12-thread workstation, no parallel builds (process list
+checked); a background browser sync and an rclone transfer were active throughout.
+
 ## Web: the first chart after sign-in, throttled
 
 Same script and throttle (section B). The run signs in through the real form on the public
@@ -196,6 +258,38 @@ two extra chunk fetches under the 40 ms-RTT throttle. Task 3's idle prefetch of 
 workspace and chart bundles when a visitor is signed in is the designed remedy; the ≤ 3 s
 target still holds, but the figure is worse than the baseline and is recorded here so
 Task 3 is judged against the honest number.
+
+### Task 3, 25/11/2026 — the idle prefetch
+
+Command: section B of the same run as the Task 3 LCP table (`web_timings.mjs`,
+`CS_RUN=run-web-task3`, port 8799, same throttle, fresh context per run). Full output
+`web_timings-task3.out` next to the script.
+
+| Figure | Baseline (25/11/2026) | Task 1, 25/11/2026 | Task 3, 25/11/2026 |
+| --- | ---: | ---: | ---: |
+| Submit click → first chart, median | 2,172 ms | 2,658 ms | **1,802 ms** (runs 1,787–1,957) — target ≤ 3 s, met |
+
+The prefetch is `useChartPrefetch` (`apps/web/src/lib/chartPrefetch.ts`, mounted in
+`App.tsx`): once the auth status is `authed`, `requestIdleCallback` — with a 2 s timeout,
+and a same-length timer where the API is missing — starts the same dynamic import
+PlotChart's loader uses, so the browser's module map deduplicates and a chart mounted
+mid-prefetch waits on the in-flight fetch instead of starting a second one. An anonymous
+visitor schedules nothing. The mechanism was checked directly, not inferred:
+`node /home/amith/tmp/cs-verify/perf/task3_prefetch_check.mjs` (same throttle, one
+scripted run) shows both chart resources — the JS chunk and its CSS — requested at
+t0+1,054 ms and complete by t0+1,094 ms, before the dataset list had even rendered
+(t0+1,727 ms), and no further chart fetch after the row click: the first chart now
+waits on its render, not its download. That recovers the whole Task 1 regression and
+beats the pre-split baseline by 370 ms.
+
+Judgement call, recorded: the shell (`AuthenticatedApp`) and workspace chunks were NOT
+additionally prefetched. In the one state the plan allows prefetching in — a visitor
+signed in — those two chunks are already being fetched by the render itself (the
+`LazyBoundary`s fetch them the moment the authed tree mounts), so an idle prefetch for
+them is a no-op by construction; the measured 1,802 ms, with the chart chunk provably
+in memory before the click, confirms the chart bundle was the only chunk worth pulling
+early. What remains on the path is the sign-in API call and the sequential
+shell → workspace fetch chain, which no signed-in prefetch can overlap.
 
 ## Web: a 100 000-row dataset's plot time
 
