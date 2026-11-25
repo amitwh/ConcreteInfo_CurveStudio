@@ -4,8 +4,8 @@ import { fileURLToPath } from "node:url";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { api, ApiError } from "../api/client";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { API_BASE, api, ApiError } from "../api/client";
 import otherProjects from "../content/other-projects.json";
 import { HomePage } from "./HomePage";
 
@@ -55,6 +55,10 @@ beforeEach(() => {
   loginMock.mockReset();
   loginMock.mockResolvedValue(undefined);
   vi.mocked(api.oauthProviders).mockResolvedValue([]);
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 describe("HomePage", () => {
@@ -374,6 +378,46 @@ describe("HomePage", () => {
     vi.mocked(api.oauthProviders).mockResolvedValue(["google"]);
     renderHome();
     expect(await screen.findByRole("button", { name: /continue with google/i })).toBeTruthy();
+  });
+
+  it("orders the sign-in card: fields, Sign in, divider, social buttons, then the links", async () => {
+    vi.mocked(api.oauthProviders).mockResolvedValue(["google"]);
+    renderHome();
+    const card = document.getElementById("login-card");
+    expect(card).not.toBeNull();
+    const scoped = within(card as HTMLElement);
+    const social = await scoped.findByRole("button", { name: /continue with google/i });
+
+    const email = scoped.getByLabelText("Email");
+    const password = scoped.getByLabelText("Password");
+    const signIn = scoped.getByRole("button", { name: "Sign in" });
+    const divider = scoped.getByText("or");
+    const createAccount = scoped.getByRole("link", { name: "Create an account" });
+    const forgotPassword = scoped.getByRole("link", { name: "Forgot password?" });
+
+    const follows = (earlier: HTMLElement, later: HTMLElement): void => {
+      expect(
+        earlier.compareDocumentPosition(later) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    };
+    follows(email, password);
+    follows(password, signIn);
+    follows(signIn, divider);
+    follows(divider, social);
+    follows(social, createAccount);
+    follows(createAccount, forgotPassword);
+  });
+
+  it("starts the same OAuth flow from the card as the register page does", async () => {
+    vi.mocked(api.oauthProviders).mockResolvedValue(["google"]);
+    // jsdom will not let `location.assign` be replaced, so stand in a whole `location`
+    // to capture where the button would send the visitor.
+    const assign = vi.fn();
+    vi.stubGlobal("location", { assign });
+    renderHome();
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: /continue with google/i }));
+    expect(assign).toHaveBeenCalledWith(`${API_BASE}/auth/oauth/google/start`);
   });
 
   it("shows the ConcreteInfo product and open-source project links in the footer", () => {

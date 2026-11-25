@@ -818,6 +818,12 @@ textarea {
   font-size: 1.25rem;
 }
 
+/* The social block sits below the card, as on the home page's sign-in card; the
+   page's centered grid would otherwise shrink it to its content width. */
+.auth-page .oauth-block {
+  width: min(24rem, 100%);
+}
+
 .about-page .card {
   width: min(38rem, 100%);
 }

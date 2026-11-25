@@ -976,12 +976,12 @@ export function HomePage(): ReactElement {
                 <button type="submit" className="btn btn--primary btn--block" disabled={busy}>
                   {busy ? "Signing in…" : "Sign in"}
                 </button>
-                <p className="muted hp-login__links">
-                  <Link to="/register">Create an account</Link> ·{" "}
-                  <Link to="/forgot-password">Forgot password?</Link>
-                </p>
               </form>
               <OAuthButtons />
+              <p className="muted hp-login__links">
+                <Link to="/register">Create an account</Link> ·{" "}
+                <Link to="/forgot-password">Forgot password?</Link>
+              </p>
             </div>
           </div>
         </section>

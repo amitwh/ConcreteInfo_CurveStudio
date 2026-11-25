@@ -116,6 +116,20 @@ describe("RegisterPage", () => {
     expect(assign).toHaveBeenCalledWith(`${API_BASE}/auth/oauth/google/start`);
   });
 
+  it("renders the social buttons below the form, outside it", async () => {
+    vi.mocked(api.oauthProviders).mockResolvedValue(["google"]);
+    renderRegister();
+    const social = await screen.findByRole("button", { name: /continue with google/i });
+    const form = screen.getByRole("button", { name: "Create account" }).closest("form");
+    expect(form).not.toBeNull();
+    // Outside the form element, so the buttons can never submit it…
+    expect(form?.contains(social)).toBe(false);
+    // …and visually after it.
+    expect(
+      (form as HTMLElement).compareDocumentPosition(social) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
   it("renders only the form when no social providers are configured", async () => {
     renderRegister();
     // Let the (empty) discovery settle before asserting on what is absent.

@@ -158,8 +158,8 @@ export function RegisterPage(): ReactElement {
         <p className="muted">
           Already registered? <Link to="/#login-card">Sign in</Link>
         </p>
-        <OAuthButtons />
       </form>
+      <OAuthButtons />
     </main>
   );
 }
