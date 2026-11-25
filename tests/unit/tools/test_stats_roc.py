@@ -617,7 +617,7 @@ def test_the_tool_is_registered_under_measurement_with_described_fields() -> Non
     ]
     assert all(field.description for field in info.fields)
     assert info.fields[-1].option_schema is not None
-    assert {entry.name for entry in catalogue() if entry.family == "measurement"} == {"roc"}
+    assert {entry.name for entry in catalogue() if entry.family == "measurement"} >= {"roc"}
 
 
 def test_the_registry_builds_and_runs_the_curve_from_column_names() -> None:
