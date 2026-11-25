@@ -19,6 +19,17 @@ All notable changes are listed here. Dates are IST. Format: [Keep a Changelog](h
   the web About page, the desktop About dialog and the help say so.
 
 ### Added
+- **The licence connector (billing groundwork)**: an installation that sells plans
+  accepts AppLicense keys on the profile — `POST /api/v1/me/licence` moves the account to
+  the plan the key maps to (releasing an existing licence first, audited), `DELETE`
+  returns it to `free`, and a housekeeping re-check (at most hourly, daily per licence)
+  holds an unreachable portal to a seven-day grace past expiry before lapsing. `/me`
+  carries the entitlement (`licence`) and the connector's presence (`billing`), the
+  profile shows the licence card (Upgrade link, key activation, release with
+  confirmation), and the admin console lists each account's entitlement. The key and
+  token never reach a log or an audit row; while `CURVESTUDIO_LICENCE_URL` or
+  `CURVESTUDIO_LICENCE_APP_ID` is empty the connector is off and every install keeps
+  today's behaviour unchanged.
 - **XLSX fit reports and SVG plots on the web**: the fit export route serves
   `format=xlsx` (reporting package, plot sheet included) and the chart panel gains
   SVG beside PNG.
