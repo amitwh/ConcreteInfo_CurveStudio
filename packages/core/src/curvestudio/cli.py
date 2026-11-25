@@ -29,8 +29,19 @@ app take the same ones; ``--list`` names the tools by family, and ``--json`` pri
 result exactly as the tool returns it (``model_dump(mode="json")``). ``power`` is the one
 tool that takes no file.
 
+``curvestudio discern FILE`` runs Auto-fit with the ``autofit`` command's defaults and then
+reports whether those data can tell the leading group's models apart
+(:func:`curvestudio.tools.discernibility.discernibility`). ``curvestudio simulate`` simulates
+a design for a model and measures how well each run recovers its true parameters
+(:func:`curvestudio.tools.feasibility.simulate`); the model's own example supplies the true
+values when neither ``--params`` nor ``--from-file`` is given. ``curvestudio advise FILE``
+fits the model asked for and recommends where to measure next
+(:func:`curvestudio.tools.advisor.advise`). All three print the one
+:class:`~curvestudio.tools.stats.ToolResult` as JSON with ``--json`` and as the same readable
+report ``stats`` prints without it.
+
 This module is the outermost layer of the package: it may import the layers below it (data,
-fitting, models, discovery, workflow and tools), and nothing imports it. A user mistake
+expressions, fitting, models, discovery, workflow and tools), and nothing imports it. A user mistake
 (unreadable file, missing column, unknown model, data that fails validation, an impossible
 method/loss combination) is reported as a message on stderr, never as a traceback, and drives
 the exit code:
@@ -54,6 +65,12 @@ Command      Exit codes
              not converge (the tool refuses it: there are no estimates to report).
 ``stats``    ``0`` the tool ran. ``3`` a usage or input error, or a tool that refused its
              input.
+``discern``  ``0`` the report was made. ``3`` a usage or input error, an Auto-fit that
+             could not run, or a report the tool refused.
+``simulate`` ``0`` the simulation ran. ``3`` a usage or input error, a fit that could not
+             be made or did not converge, or a request the simulator refused.
+``advise``   ``0`` the recommendation was made. ``3`` a usage or input error, a fit that
+             could not be made or did not converge, or a request the advisor refused.
 ===========  =======================================================================
 """
 
@@ -79,6 +96,7 @@ from curvestudio.discovery import (
     RankedFit,
     autofit,
 )
+from curvestudio.expressions import analyze_expression
 from curvestudio.fitting import (
     FitConfig,
     FitResult,
@@ -88,7 +106,8 @@ from curvestudio.fitting import (
     fit_polynomial,
 )
 from curvestudio.fitting.methods import LOSSES, METHODS
-from curvestudio.models import get_model, list_models
+from curvestudio.models import ModelExample, get_model, list_models
+from curvestudio.statistics import StatisticsError
 from curvestudio.tools import (
     FitAudit,
     MethodsText,
@@ -98,6 +117,9 @@ from curvestudio.tools import (
     cross_validate,
     methods_text,
 )
+from curvestudio.tools.advisor import AdvisorRequest, advise
+from curvestudio.tools.discernibility import DiscernibilityRequest, discernibility
+from curvestudio.tools.feasibility import DesignSpec, NoiseSpec, SimulationRequest, simulate
 from curvestudio.tools.methods import STYLES
 from curvestudio.tools.stats import (
     FAMILIES,
@@ -117,6 +139,7 @@ from curvestudio.tools.stats.registry import (
     run_tool,
 )
 from curvestudio.workflow import (
+    CustomRef,
     FitBundle,
     FitSpec,
     PolynomialRef,
@@ -153,9 +176,9 @@ _AUDIT_EXIT_CODES = {
 }
 """The exit code of ``audit`` for each overall verdict."""
 
-_USAGE_IS_INPUT_ERROR = frozenset({"audit", "methods", "stats"})
+_USAGE_IS_INPUT_ERROR = frozenset({"audit", "methods", "stats", "discern", "simulate", "advise"})
 """The commands whose usage errors exit ``3``: for ``audit`` argparse's ``2`` is a verdict, and
-``methods`` and ``stats`` give their input errors the same code."""
+``methods``, ``stats`` and the three fit tools give their input errors the same code."""
 
 MAX_STARTS = 1000
 """Upper bound for --starts: multistart cost and memory grow linearly in it."""
@@ -165,6 +188,15 @@ MAX_POLY_DEGREE = 10
 
 DEFAULT_TOP = 10
 """Rows of the ranked table shown unless ``--top`` says otherwise."""
+
+DEFAULT_POLY_DEGREE = 2
+"""Degree of ``--model poly`` when ``--degree`` is not given."""
+
+DEFAULT_SIMULATION_POINTS = 5
+"""Evenly spaced points a simulation design falls back on (the apps' default count)."""
+
+DEFAULT_SIMULATION_NOISE = 0.1
+"""Constant SD a simulation falls back on when neither ``--noise`` nor ``--cv`` is given."""
 
 _ERROR_PREFIX = "curvestudio: error:"
 _ROW_NOTE = (
@@ -235,7 +267,9 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     commands = parser.add_subparsers(
-        dest="command", required=True, metavar="{fit,autofit,models,audit,methods,stats}"
+        dest="command",
+        required=True,
+        metavar="{fit,autofit,models,audit,methods,stats,discern,simulate,advise}",
     )
 
     fit_command = commands.add_parser(
@@ -295,6 +329,9 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_audit_command(commands)
     _add_methods_command(commands)
     _add_stats_command(commands)
+    _add_discern_command(commands)
+    _add_simulate_command(commands)
+    _add_advise_command(commands)
 
     commands.add_parser(
         "models",
@@ -631,6 +668,309 @@ def _prediction_rows(text: str) -> tuple[tuple[float, ...], ...]:
     return tuple(rows)
 
 
+def _float_list(text: str) -> tuple[float, ...]:
+    """An argparse ``type`` for numbers separated by commas."""
+    try:
+        values = tuple(float(cell) for cell in text.split(","))
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{text!r} is not numbers separated by commas") from None
+    if not values:
+        raise argparse.ArgumentTypeError("give at least one number")
+    if not all(math.isfinite(value) for value in values):
+        raise argparse.ArgumentTypeError(f"must be finite numbers, got {text!r}")
+    return values
+
+
+def _design_range(text: str) -> tuple[float, float, int]:
+    """An argparse ``type`` for a design range: ``LOW:HIGH:COUNT``."""
+    parts = text.split(":")
+    if len(parts) != 3:
+        raise argparse.ArgumentTypeError(f"{text!r} is not LOW:HIGH:COUNT, e.g. 0:10:5")
+    try:
+        low, high = float(parts[0]), float(parts[1])
+        count = int(parts[2])
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{text!r} is not LOW:HIGH:COUNT, e.g. 0:10:5") from None
+    if not (math.isfinite(low) and math.isfinite(high)):
+        raise argparse.ArgumentTypeError(f"LOW and HIGH must be finite, got {text!r}")
+    return low, high, count
+
+
+def _assignments(text: str) -> dict[str, float]:
+    """An argparse ``type`` for ``name=value`` pairs separated by commas."""
+    values: dict[str, float] = {}
+    for item in text.split(","):
+        name, equals, value = item.partition("=")
+        name = name.strip()
+        if not equals or not name:
+            raise argparse.ArgumentTypeError(
+                f"{text!r} is not NAME=VALUE pairs separated by commas, e.g. a=1,b=2"
+            )
+        try:
+            number = float(value)
+        except ValueError:
+            raise argparse.ArgumentTypeError(f"{value!r} is not a number in {item!r}") from None
+        if not math.isfinite(number):
+            raise argparse.ArgumentTypeError(f"{name!r} must be a finite number, got {value!r}")
+        if name in values:
+            raise argparse.ArgumentTypeError(f"{name!r} is given more than once")
+        values[name] = number
+    return values
+
+
+# --- fit-tool arguments -------------------------------------------------------------------
+
+
+def _add_model_choice(command: argparse.ArgumentParser) -> None:
+    """What the fit is of: a library id, ``poly``, or an equation of its own."""
+    target = command.add_mutually_exclusive_group(required=True)
+    target.add_argument(
+        "--model",
+        metavar="ID",
+        help=(
+            "a library model id (see 'curvestudio models'), or 'poly' for a polynomial of --degree"
+        ),
+    )
+    target.add_argument(
+        "--equation",
+        metavar="TEXT",
+        help="a custom equation, e.g. 'a + b*x'; its parameters are read from the text",
+    )
+    command.add_argument(
+        "--degree",
+        type=_bounded_int(1, MAX_POLY_DEGREE, "--degree"),
+        metavar="N",
+        help=f"degree of --model poly (1-{MAX_POLY_DEGREE}; default: {DEFAULT_POLY_DEGREE})",
+    )
+
+
+def _add_discern_command(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    command = commands.add_parser(
+        "discern",
+        help="report whether the data can tell the leading models apart",
+        description=(
+            "Import FILE, run Auto-fit with the autofit command's defaults, and report whether "
+            "the leading group's models can be told apart: the information groups, the models "
+            "whose predictions agree, the parameters the data do not pin down, and what would "
+            "separate the groups."
+        ),
+        epilog=f"{_ROW_NOTE} Exit codes: 0 the report was made, 3 a usage or input error.",
+    )
+    command.add_argument("file", help="input file: csv, tsv, txt, json or xlsx")
+    command.add_argument("--x", required=True, metavar="COL", help="column with the x values")
+    command.add_argument("--y", required=True, metavar="COL", help="column with the y values")
+    command.add_argument("--weights", metavar="COL", help="column holding positive weights")
+    command.add_argument(
+        "--top",
+        type=_non_negative_int,
+        metavar="N",
+        help="show at most N rows of each table in the report (default: all of them)",
+    )
+    command.add_argument(
+        "--level",
+        type=_number,
+        default=0.95,
+        metavar="F",
+        help="confidence level of the prediction and profile intervals (default: 0.95)",
+    )
+    command.add_argument(
+        "--grid-points",
+        type=_bounded_int(2, 100_000, "--grid-points"),
+        default=200,
+        metavar="N",
+        help="how many x values the curves are compared on (default: 200)",
+    )
+    command.add_argument(
+        "--max-models",
+        type=_bounded_int(1, 10_000, "--max-models"),
+        default=12,
+        metavar="N",
+        help="cap on how many of the leading group's models are compared (default: 12)",
+    )
+    command.add_argument(
+        "--no-profile",
+        dest="profile",
+        action="store_false",
+        help="skip the profile-likelihood check of each parameter",
+    )
+    command.add_argument(
+        "--json",
+        action="store_true",
+        help="print the result as JSON (model_dump(mode='json')) instead of the report",
+    )
+
+
+def _add_simulate_command(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    command = commands.add_parser(
+        "simulate",
+        help="simulate a design and measure how well the estimates recover",
+        description=(
+            "Simulate a design for a model whose true parameters are given (or taken from the "
+            "model's own example, or from a fit of a file), and report each parameter's bias, "
+            "its empirical and reported standard errors, and the interval's coverage."
+        ),
+        epilog=(
+            "Exit codes: 0 the simulation ran, 3 a usage or input error. Without --params and "
+            "without --from-file a library model's example supplies the true values; without "
+            "--design and without --at the design is five evenly spaced points over the "
+            "example's (or the file's) range; without --noise and --cv a constant SD of 0.1 "
+            "is used. Each fallback is stated on standard error."
+        ),
+    )
+    _add_model_choice(command)
+    command.add_argument(
+        "--params",
+        type=_assignments,
+        metavar="A=1,B=2",
+        help="the true parameter values; the model's example supplies them when omitted",
+    )
+    command.add_argument(
+        "--from-file",
+        dest="file",
+        metavar="FILE",
+        help="take the true values from a fit of this file, with --x and --y",
+    )
+    command.add_argument("--x", metavar="COL", help="x column of --from-file")
+    command.add_argument("--y", metavar="COL", help="y column of --from-file")
+    design = command.add_mutually_exclusive_group()
+    design.add_argument(
+        "--design",
+        type=_design_range,
+        metavar="LOW:HIGH:COUNT",
+        help="evenly spaced design: the ends and how many points, e.g. 0:10:5",
+    )
+    design.add_argument(
+        "--at",
+        type=_float_list,
+        metavar="V,V,...",
+        help="explicit design locations, e.g. 0,2.5,5",
+    )
+    command.add_argument(
+        "--replicates",
+        type=_bounded_int(1, 100, "--replicates"),
+        default=1,
+        metavar="N",
+        help="rows at each design point (default: 1)",
+    )
+    noise = command.add_mutually_exclusive_group()
+    noise.add_argument(
+        "--noise",
+        type=_positive_float,
+        metavar="SD",
+        help="constant standard deviation of the added normal noise",
+    )
+    noise.add_argument(
+        "--cv",
+        type=_positive_float,
+        metavar="F",
+        help="coefficient of variation of the multiplicative normal noise",
+    )
+    command.add_argument(
+        "--runs",
+        type=_parse_int,
+        default=200,
+        metavar="N",
+        help="how many datasets to simulate (2 to 5,000; default: 200)",
+    )
+    command.add_argument(
+        "--seed",
+        type=_non_negative_int,
+        default=0,
+        metavar="S",
+        help="seed of the draws (default: 0); the same seed reproduces the same result",
+    )
+    command.add_argument(
+        "--level",
+        type=_number,
+        default=0.95,
+        metavar="F",
+        help="confidence level of the coverage interval (default: 0.95)",
+    )
+    command.add_argument(
+        "--difference",
+        type=_assignments,
+        metavar="A=0.5,B=-1",
+        help="also measure the simulated power against these differences",
+    )
+    command.add_argument(
+        "--json",
+        action="store_true",
+        help="print the result as JSON (model_dump(mode='json')) instead of the report",
+    )
+    command.set_defaults(weights=None)
+
+
+def _add_advise_command(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    command = commands.add_parser(
+        "advise",
+        help="recommend where to measure next for a fitted model",
+        description=(
+            "Import FILE, fit the model asked for through the workflow, and recommend the next "
+            "measurement locations: the points that sharpen the information matrix (or the "
+            "named parameter's standard error) most, and what each buys."
+        ),
+        epilog=f"{_ROW_NOTE} Exit codes: 0 the recommendation was made, 3 a usage or input error.",
+    )
+    command.add_argument("file", help="input file: csv, tsv, txt, json or xlsx")
+    command.add_argument("--x", required=True, metavar="COL", help="column with the x values")
+    command.add_argument("--y", required=True, metavar="COL", help="column with the y values")
+    _add_model_choice(command)
+    command.add_argument(
+        "--points",
+        type=_bounded_int(1, 20, "--points"),
+        default=3,
+        metavar="N",
+        help="how many points to recommend (1-20; default: 3)",
+    )
+    command.add_argument(
+        "--candidates",
+        type=_bounded_int(10, 1_000, "--candidates"),
+        default=400,
+        metavar="N",
+        help="candidate locations the exchange tries (10-1,000; default: 400)",
+    )
+    command.add_argument(
+        "--low",
+        type=_number,
+        metavar="L",
+        help="lowest candidate location (default: the data's lowest x)",
+    )
+    command.add_argument(
+        "--high",
+        type=_number,
+        metavar="H",
+        help="highest candidate location (default: the data's highest x)",
+    )
+    command.add_argument(
+        "--replicates",
+        type=_bounded_int(1, 20, "--replicates"),
+        default=1,
+        metavar="N",
+        help="rows at each recommended point (1-20; default: 1)",
+    )
+    command.add_argument(
+        "--parameter",
+        metavar="NAME",
+        help=(
+            "minimise this parameter's standard error instead of the determinant "
+            "(default: D-optimal)"
+        ),
+    )
+    command.add_argument(
+        "--level",
+        type=_number,
+        default=0.95,
+        metavar="F",
+        help="confidence level of the prediction band (default: 0.95)",
+    )
+    command.add_argument(
+        "--json",
+        action="store_true",
+        help="print the result as JSON (model_dump(mode='json')) instead of the report",
+    )
+    command.set_defaults(weights=None)
+
+
 # --- entry point ------------------------------------------------------------------------
 
 
@@ -661,6 +1001,12 @@ def main(argv: list[str] | None = None) -> int:
         return _run_methods(args)
     if args.command == "stats":
         return _run_stats(args)
+    if args.command == "discern":
+        return _run_discern(args)
+    if args.command == "simulate":
+        return _run_simulate(args)
+    if args.command == "advise":
+        return _run_advise(args)
     return _run_models()
 
 
@@ -1004,20 +1350,25 @@ def _add_fit_target(command: argparse.ArgumentParser) -> None:
     )
 
 
-def _fit_for_tools(args: argparse.Namespace) -> _Fitted | int:
+def _fit_for_tools(args: argparse.Namespace, spec: FitSpec | None = None) -> _Fitted | int:
     """Read the file and fit what the arguments name, the way the apps do.
 
-    Returns the fit, or the exit code of the failure, its message then being on stderr. The
-    weights are used when a column was named for them.
+    ``spec`` is the specification when the caller has already built one (the fit tools do);
+    without it the arguments' ``--model`` or ``--poly`` is fitted, which is what ``audit`` and
+    ``methods`` take. Returns the fit, or the exit code of the failure, its message then being
+    on stderr. The weights are used when a column was named for them.
     """
     loaded = _load_xy(args)
     if isinstance(loaded, list):
         return _fail_lines(loaded, EXIT_INPUT_ERROR)
     xy, _dataset_name, data_warnings = loaded
-    model = (
-        PolynomialRef(degree=args.poly) if args.poly is not None else RegisteredRef(id=args.model)
-    )
-    spec = FitSpec(model=model, use_weights=args.weights is not None)
+    if spec is None:
+        model = (
+            PolynomialRef(degree=args.poly)
+            if args.poly is not None
+            else RegisteredRef(id=args.model)
+        )
+        spec = FitSpec(model=model, use_weights=args.weights is not None)
     try:
         bundle = fit_dataset(xy, spec)
     except WorkflowError as exc:
@@ -1194,8 +1545,12 @@ def _print_tool_list() -> None:
         print()
 
 
-def _print_stats_report(result: ToolResult) -> None:
-    """The result as text: every block it carries, in the order a person reads them."""
+def _print_stats_report(result: ToolResult, top: int | None = None) -> None:
+    """The result as text: every block it carries, in the order a person reads them.
+
+    ``top`` caps how many rows each table prints (``None`` prints them all); the counts and
+    the interpretation still describe the whole result.
+    """
     print(result.title)
     print(f"Tool: {result.tool}, level: {_g(result.level)}")
     print()
@@ -1229,7 +1584,7 @@ def _print_stats_report(result: ToolResult) -> None:
         print("  none")
     print()
     for block in result.tables:
-        _print_stats_table(block)
+        _print_stats_table(block, top)
         print()
     print("Interpretation:")
     print(result.interpretation)
@@ -1271,19 +1626,23 @@ def _p_cell(value: float | None) -> str:
     return p_text(value).removeprefix("p = ").removeprefix("p < ")
 
 
-def _print_stats_table(block: Table) -> None:
-    """A result's table: its title, its note, and one line per row."""
+def _print_stats_table(block: Table, top: int | None = None) -> None:
+    """A result's table: its title, its note, and one line per row (at most ``top``)."""
     print(block.title)
     if block.note:
         print(f"  note: {block.note}")
     headers = tuple(column.label for column in block.columns)
+    shown = block.rows if top is None else block.rows[:top]
     rows = [
         tuple(
             _cell_text(cell, column.kind) for cell, column in zip(row, block.columns, strict=True)
         )
-        for row in block.rows
+        for row in shown
     ]
     _print_stats_rows(headers, rows)
+    hidden = len(block.rows) - len(shown)
+    if hidden:
+        print(f"  ({hidden} more row{'s' if hidden != 1 else ''} not shown; --top sets the cap)")
 
 
 def _cell_text(cell: Cell, kind: ColumnKind) -> str:
@@ -1313,6 +1672,223 @@ def _print_stats_rows(headers: Sequence[str], rows: Sequence[Sequence[str]]) -> 
     print(line(headers))
     for row in rows:
         print(line(row))
+
+
+# --- the fit tools ------------------------------------------------------------------------
+
+
+def _fit_spec_from_args(args: argparse.Namespace) -> FitSpec | int:
+    """The specification ``--model``/``--degree``/``--equation`` describe, or an exit code.
+
+    ``--model poly`` is a polynomial of ``--degree`` (default two); ``--equation`` is a custom
+    equation whose parameter names are read from the text. A library id is checked against
+    the registry here, so an unknown one is reported with the same near-match hint ``fit``
+    gives.
+    """
+    if args.equation is not None:
+        if args.degree is not None:
+            return _fail("--degree cannot be used with --equation", EXIT_INPUT_ERROR)
+        try:
+            report = analyze_expression(args.equation)
+        except ValueError as exc:
+            return _fail(f"INVALID_EQUATION: {exc}", EXIT_INPUT_ERROR)
+        if not report.parameters:
+            return _fail(
+                "INVALID_EQUATION: the equation has no parameters to fit; "
+                "name them, e.g. 'a + b*x'",
+                EXIT_INPUT_ERROR,
+            )
+        try:
+            model = CustomRef(equation=args.equation, parameters=list(report.parameters))
+        except ValueError as exc:
+            return _fail(f"INVALID_EQUATION: {exc}", EXIT_INPUT_ERROR)
+        return FitSpec(model=model)
+    if args.model == "poly":
+        degree = DEFAULT_POLY_DEGREE if args.degree is None else args.degree
+        return FitSpec(model=PolynomialRef(degree=degree))
+    if args.degree is not None:
+        return _fail("--degree is only used with --model poly", EXIT_INPUT_ERROR)
+    try:
+        get_model(args.model)
+    except KeyError:
+        return _fail(f"UNKNOWN_MODEL: {_unknown_model(args.model)}", EXIT_INPUT_ERROR)
+    return FitSpec(model=RegisteredRef(id=args.model))
+
+
+def _model_example(spec: FitSpec) -> ModelExample | None:
+    """The library model's worked example, or ``None`` for a polynomial, an equation, or one."""
+    if not isinstance(spec.model, RegisteredRef):
+        return None
+    return get_model(spec.model.id).example
+
+
+def _print_tool_result(result: ToolResult, args: argparse.Namespace) -> None:
+    """The result as the machine-readable JSON or as the report ``stats`` prints."""
+    if args.json:
+        print(json.dumps(result.model_dump(mode="json")))
+    else:
+        _print_stats_report(result, top=getattr(args, "top", None))
+
+
+def _run_discern(args: argparse.Namespace) -> int:
+    """Run Auto-fit with the autofit command's defaults, then the discernibility report."""
+    loaded = _load_xy(args)
+    if isinstance(loaded, list):
+        return _fail_lines(loaded, EXIT_INPUT_ERROR)
+    xy, _dataset_name, data_warnings = loaded
+    _warn(data_warnings)
+    try:
+        # AutoFitConfig() is what the autofit command builds from its default flags.
+        ranking = autofit(xy, AutoFitConfig())
+    except AutoFitError as exc:
+        return _fail(f"{exc.code}: {exc}", EXIT_INPUT_ERROR)
+    except ValueError as exc:
+        return _fail(f"invalid Auto-fit configuration: {exc}", EXIT_INPUT_ERROR)
+    request = DiscernibilityRequest(
+        level=args.level,
+        grid_points=args.grid_points,
+        max_models=args.max_models,
+        profile=args.profile,
+    )
+    try:
+        result = discernibility(xy, ranking, request=request)
+    except ToolError as exc:
+        return _fail(str(exc), EXIT_INPUT_ERROR)
+    _print_tool_result(result, args)
+    return EXIT_OK
+
+
+def _run_simulate(args: argparse.Namespace) -> int:
+    """Build the specification, the truth, the design and the noise, then simulate."""
+    spec = _fit_spec_from_args(args)
+    if isinstance(spec, int):
+        return spec
+    xy: XY | None = None
+    example: ModelExample | None = None
+    if args.file is not None:
+        if args.params is not None:
+            return _fail("--params cannot be used with --from-file", EXIT_INPUT_ERROR)
+        if args.x is None or args.y is None:
+            return _fail("--from-file needs --x and --y", EXIT_INPUT_ERROR)
+        fitted = _fit_for_tools(args, spec)
+        if isinstance(fitted, int):
+            return fitted
+        _warn(fitted.data_warnings)
+        xy = fitted.xy
+        fit = fitted.bundle.result
+        if fit.status is not FitStatus.CONVERGED:
+            return _fail(
+                f"the fit of {args.file!r} did not converge ({fit.termination_reason}); "
+                "its estimates cannot be the truth",
+                EXIT_INPUT_ERROR,
+            )
+        truth = {parameter.name: parameter.value for parameter in fit.parameters}
+    else:
+        if args.x is not None or args.y is not None:
+            return _fail("--x and --y are only used with --from-file", EXIT_INPUT_ERROR)
+        if args.params is not None:
+            truth = dict(args.params)
+        else:
+            example = _model_example(spec)
+            if example is None:
+                return _fail(
+                    "--params is required: the model has no example to supply its true values",
+                    EXIT_INPUT_ERROR,
+                )
+            truth = dict(example.params)
+            listed = ", ".join(f"{name} = {_g(value)}" for name, value in truth.items())
+            print(
+                "curvestudio: note: --params was not given; the model's example supplies the "
+                f"true values ({listed})",
+                file=sys.stderr,
+            )
+
+    if args.at is not None:
+        design = DesignSpec(locations=args.at, replicates=args.replicates)
+    elif args.design is not None:
+        low, high, count = args.design
+        design = DesignSpec(low=low, high=high, count=count, replicates=args.replicates)
+    else:
+        if xy is not None:
+            low, high = float(xy.x.min()), float(xy.x.max())
+            where = "the file's x range"
+        elif example is not None:
+            low, high = float(example.x_range[0]), float(example.x_range[1])
+            where = "the model example's x range"
+        else:
+            low, high = 0.0, 1.0
+            where = "the default range"
+        count = DEFAULT_SIMULATION_POINTS
+        design = DesignSpec(low=low, high=high, count=count, replicates=args.replicates)
+        print(
+            "curvestudio: note: --design and --at were not given; simulating "
+            f"{count} evenly spaced points over {where} ({_g(low)} to {_g(high)})",
+            file=sys.stderr,
+        )
+
+    if args.noise is not None:
+        noise = NoiseSpec(kind="sd", value=args.noise)
+    elif args.cv is not None:
+        noise = NoiseSpec(kind="cv", value=args.cv)
+    else:
+        noise = NoiseSpec(kind="sd", value=DEFAULT_SIMULATION_NOISE)
+        print(
+            "curvestudio: note: --noise and --cv were not given; using a constant SD of "
+            f"{_g(DEFAULT_SIMULATION_NOISE)}",
+            file=sys.stderr,
+        )
+
+    request = SimulationRequest(
+        truth=truth,
+        design=design,
+        noise=noise,
+        runs=args.runs,
+        seed=args.seed,
+        level=args.level,
+        difference=args.difference,
+    )
+    try:
+        result = simulate(spec, request)
+    except (ToolError, WorkflowError) as exc:
+        return _fail(str(exc), EXIT_INPUT_ERROR)
+    _print_tool_result(result, args)
+    return EXIT_OK
+
+
+def _run_advise(args: argparse.Namespace) -> int:
+    """Fit the file through the workflow, then recommend where to measure next."""
+    spec = _fit_spec_from_args(args)
+    if isinstance(spec, int):
+        return spec
+    fitted = _fit_for_tools(args, spec)
+    if isinstance(fitted, int):
+        return fitted
+    _warn(fitted.data_warnings)
+    fit = fitted.bundle.result
+    if fit.status is not FitStatus.CONVERGED:
+        return _fail(
+            f"the fit of {args.file!r} did not converge ({fit.termination_reason}); "
+            "the advisor needs a converged fit",
+            EXIT_INPUT_ERROR,
+        )
+    request = AdvisorRequest(
+        points=args.points,
+        candidates=args.candidates,
+        low=args.low,
+        high=args.high,
+        replicates=args.replicates,
+        objective="parameter" if args.parameter is not None else "d_optimal",
+        parameter=args.parameter,
+        level=args.level,
+    )
+    try:
+        result = advise(fitted.xy, spec, fit, request=request)
+    except (ToolError, WorkflowError) as exc:
+        return _fail(str(exc), EXIT_INPUT_ERROR)
+    except StatisticsError as exc:
+        return _fail(f"NO_STATISTICS: {exc}", EXIT_INPUT_ERROR)
+    _print_tool_result(result, args)
+    return EXIT_OK
 
 
 def _print_excluded(result: ToolResult) -> None:
@@ -1350,7 +1926,7 @@ def _run_models() -> int:
 
 
 def _column_width(header: str, values: list[str]) -> int:
-    return max(len(header), *(len(value) for value in values))
+    return max([len(header), *(len(value) for value in values)])
 
 
 # --- report ------------------------------------------------------------------------------

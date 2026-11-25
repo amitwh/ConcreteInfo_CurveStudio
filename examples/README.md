@@ -91,6 +91,34 @@ it, for a script to read. `power` is the one tool that needs no file.
 Its exit codes are `0` when the tool ran, and `3` for a usage or input error, with the tool's
 code and message on standard error.
 
+## The fit tools: discernibility, feasibility, next measurement
+
+Three commands read a fit and answer a question about it: whether the data can tell the
+leading models apart, how well a design would recover a model's parameters, and where to
+measure next. Each prints the one result the desktop and web apps render; `--json` prints it
+exactly as the tool returns it.
+
+```bash
+# Can these data tell the leading models apart? Runs Auto-fit with the autofit defaults.
+uv run curvestudio discern examples/decay.csv --x x --y y
+
+# How well would this design recover the model's parameters?
+uv run curvestudio simulate --model exp_growth --design 0:4:5 --noise 0.1 --runs 200 --seed 7
+uv run curvestudio simulate --model exp_decay_offset --from-file examples/decay.csv --x x --y y \
+    --design 0:10:5 --noise 0.1 --difference a=0.5
+
+# Where should the next measurements be taken?
+uv run curvestudio advise examples/decay.csv --x x --y y --model exp_decay_offset --points 3
+```
+
+`simulate` needs no file: without `--params` a library model's `example` supplies the true
+values (the note on standard error says so), and without `--design` or `--at` it uses five
+evenly spaced points over the example's range. `--cv` simulates multiplicative noise instead
+of `--noise`'s constant standard deviation. `advise` fits through the same workflow `audit`
+uses; `--parameter NAME` minimises that parameter's standard error instead of using
+D-optimality. Their exit codes are `0` when the tool ran and `3` for a usage or input error,
+with the tool's code and message on standard error.
+
 ## Row numbers in messages
 
 Row numbers in validation errors and data warnings are **1-based data rows**: the
