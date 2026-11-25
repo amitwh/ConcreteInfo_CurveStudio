@@ -290,6 +290,7 @@ describe("the tab strip", () => {
       "Parameters",
       "Statistics",
       "Fit audit",
+      "More tools",
       "Residuals",
       "Equation",
       "Predict",

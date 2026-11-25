@@ -22,6 +22,7 @@ import { exportFitPdf } from "../../lib/report/export";
 import { isConverged } from "../traces";
 import { EquationTab } from "./EquationTab";
 import { FitAuditTab } from "./FitAuditTab";
+import { FitToolsTab } from "./FitToolsTab";
 import { HistoryTab } from "./HistoryTab";
 import { ParametersTab } from "./ParametersTab";
 import { PredictTab } from "./PredictTab";
@@ -46,6 +47,7 @@ const TABS = [
   "Parameters",
   "Statistics",
   "Fit audit",
+  "More tools",
   "Residuals",
   "Equation",
   "Predict",
@@ -358,27 +360,39 @@ export function ResultsTabs({
         </p>
       )}
       {methodsOutcome !== null && <MethodsOutcomeView outcome={methodsOutcome} />}
+      {tab !== "More tools" && (
+        <div
+          role="tabpanel"
+          id={tabId(tab, "panel")}
+          aria-labelledby={tabId(tab, "tab")}
+        >
+          {tab === "Parameters" && <ParametersTab bundle={bundle} />}
+          {tab === "Statistics" && <StatisticsTab bundle={bundle} />}
+          {/* Keyed on the fit: another fit is another audit, with no job of the last one followed. */}
+          {tab === "Fit audit" && <FitAuditTab key={fitId} fitId={fitId} converged={!failed} />}
+          {tab === "Residuals" && <ResidualsTab bundle={bundle} />}
+          {tab === "Equation" && <EquationTab bundle={bundle} />}
+          {tab === "Predict" && <PredictTab fitId={fitId} bundle={bundle} />}
+          {tab === "History" && (
+            <HistoryTab
+              fits={fits}
+              activeFitId={fitId}
+              onLoad={onLoadFit}
+              onDelete={onDeleteFit}
+              loadError={fitsError}
+            />
+          )}
+        </div>
+      )}
+      {/* The tools run as jobs and keep their stored result: this panel stays mounted, hidden
+          while another tab is on screen, so a finished result survives a tab switch. */}
       <div
         role="tabpanel"
-        id={tabId(tab, "panel")}
-        aria-labelledby={tabId(tab, "tab")}
+        id={tabId("More tools", "panel")}
+        aria-labelledby={tabId("More tools", "tab")}
+        hidden={tab !== "More tools"}
       >
-        {tab === "Parameters" && <ParametersTab bundle={bundle} />}
-        {tab === "Statistics" && <StatisticsTab bundle={bundle} />}
-        {/* Keyed on the fit: another fit is another audit, with no job of the last one followed. */}
-        {tab === "Fit audit" && <FitAuditTab key={fitId} fitId={fitId} converged={!failed} />}
-        {tab === "Residuals" && <ResidualsTab bundle={bundle} />}
-        {tab === "Equation" && <EquationTab bundle={bundle} />}
-        {tab === "Predict" && <PredictTab fitId={fitId} bundle={bundle} />}
-        {tab === "History" && (
-          <HistoryTab
-            fits={fits}
-            activeFitId={fitId}
-            onLoad={onLoadFit}
-            onDelete={onDeleteFit}
-            loadError={fitsError}
-          />
-        )}
+        <FitToolsTab key={fitId} fitId={fitId} bundle={bundle} />
       </div>
     </section>
   );

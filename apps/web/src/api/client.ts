@@ -55,6 +55,15 @@ export type CandidateOutcome = Schemas["CandidateOutcome"];
 export type ProgressOut = Schemas["ProgressOut"];
 export type RowCurve = Schemas["RowCurve"];
 export type OpenRowOut = Schemas["OpenRowOut"];
+/** What the model-discernibility report is asked for; the server defaults the rest. */
+export type DiscernibilityOptions = Pick<
+  Schemas["DiscernibilityRequest"],
+  "level" | "grid_points"
+>;
+/** A feasibility simulation: the truth, the design, the noise, the run count and the seed. */
+export type SimulationRequest = Schemas["SimulationRequest"];
+/** The next-measurement advice: how many points, over which range, for which parameter. */
+export type AdvisorRequest = Schemas["AdvisorRequest"];
 
 /* ---- Statistics: the blocks of one statistical result ---- */
 /** What one statistical tool returns: the only thing a result renderer is shown. */
@@ -610,6 +619,43 @@ class ApiClient {
    */
   async fitMethods(fitId: string): Promise<FitMethodsOut> {
     return this.request<FitMethodsOut>(`/fits/${fitId}/methods`);
+  }
+
+  /**
+   * Queue the model-discernibility report of a stored fit. Follow the job; once it succeeds
+   * its `result_ref` is the stored statistical result, read at `GET /stats/results/{id}`.
+   * A second report of the same fit while one is queued or running is a 409.
+   */
+  async fitDiscernibility(
+    fitId: string,
+    options: DiscernibilityOptions,
+  ): Promise<JobCreatedOut> {
+    return this.request<JobCreatedOut>(`/fits/${fitId}/discernibility`, {
+      method: "POST",
+      body: JSON.stringify(options),
+    });
+  }
+
+  /**
+   * Queue a feasibility simulation under a stored fit's specification. The job stores its
+   * result as a statistical result; a second simulation of the same fit is a 409.
+   */
+  async fitSimulation(fitId: string, request: SimulationRequest): Promise<JobCreatedOut> {
+    return this.request<JobCreatedOut>(`/fits/${fitId}/simulate`, {
+      method: "POST",
+      body: JSON.stringify(request),
+    });
+  }
+
+  /**
+   * Queue the next-measurement advice for a stored fit. The job stores its result as a
+   * statistical result; a second advice of the same fit is a 409.
+   */
+  async fitAdvisor(fitId: string, request: AdvisorRequest): Promise<JobCreatedOut> {
+    return this.request<JobCreatedOut>(`/fits/${fitId}/advisor`, {
+      method: "POST",
+      body: JSON.stringify(request),
+    });
   }
 
   /** Every statistical tool, with the families a person meets them in. */

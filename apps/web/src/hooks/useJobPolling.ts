@@ -18,10 +18,14 @@ export interface JobState {
   phase: JobPhase;
   /** Last status seen from the server (queued / running / …). */
   status?: JobOut["status"];
+  /** The job's latest progress snapshot, when the server records one. */
+  progress?: JobOut["progress"];
   /** The fit id, once the job succeeded. */
   fitId?: string;
   /** Why the job failed or polling gave up. */
   message?: string;
+  /** The server's machine-readable failure code, when the job itself failed. */
+  code?: string | null;
 }
 
 export function useJobPolling(onFinished: (fitId: string) => void): {
@@ -74,7 +78,7 @@ export function useJobPolling(onFinished: (fitId: string) => void): {
       switch (job.status) {
         case "queued":
         case "running":
-          setState({ phase: "polling", status: job.status });
+          setState({ phase: "polling", status: job.status, progress: job.progress });
           schedule(Math.min(delayRef.current * 2, MAX_DELAY_MS));
           return;
         case "succeeded":
@@ -92,6 +96,7 @@ export function useJobPolling(onFinished: (fitId: string) => void): {
             phase: "failed",
             status: job.status,
             message: job.error_message ?? "the fit failed",
+            code: job.error_code,
           });
           return;
         case "cancelled":

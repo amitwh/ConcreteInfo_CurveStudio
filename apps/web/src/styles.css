@@ -1795,6 +1795,36 @@ li.dataset:hover .dataset__delete,
   font-size: 0.9rem;
 }
 
+/* ---- The fit's further tools ---- */
+.fit-tools__truth {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 0.86rem;
+}
+
+.fit-tools__status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0.8rem 0;
+}
+
+.fit-tools__status:empty {
+  display: none;
+}
+
+.fit-tools__status .alert,
+.fit-tools__status .hint {
+  margin: 0;
+}
+
+.fit-tools__result {
+  margin-top: 1rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid var(--border);
+}
+
 .stats {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(7rem, 1fr));
