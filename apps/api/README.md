@@ -50,9 +50,46 @@ paths. The OpenAPI document is `apps/api/openapi.json`; regenerate it with
 * `CURVESTUDIO_ENV=prod` refuses to start without `CURVESTUDIO_JWT_PRIVATE_KEY_PEM` and
   `CURVESTUDIO_JWT_PUBLIC_KEY_PEM` (a matching RSA pair) and adds HSTS.
 * Postgres: `CURVESTUDIO_DATABASE_URL=postgresql://user:password@host/db` (psycopg 3).
+* The licence connector (paid plans) is off until `CURVESTUDIO_LICENCE_URL` and
+  `CURVESTUDIO_LICENCE_APP_ID` are set; while off, quotas behave exactly as before — see
+  "Licence connector (paid plans)" below.
 * A stored fit holds per-row arrays, so its size grows with the dataset (about 130 MB of JSON
   at 500 000 rows). Results above `CURVESTUDIO_JOB_MAX_RESULT_BYTES` fail the job
   (`RESULT_TOO_LARGE`); lower `CURVESTUDIO_MAX_ROWS` for hosted deployments.
+
+## Licence connector (paid plans)
+
+A customer buys a licence key in the AppLicense self-service portal and pastes it into their
+CurveStudio profile: `POST /api/v1/me/licence` activates it and the account moves to the plan
+the key's plan code maps to; `GET /me` shows the entitlement (and `GET /me/licence` reads it
+alone); `DELETE /me/licence` releases the seat and returns the account to `free`. Activating
+over an existing licence releases the old one first — both are audited, and the answer says so.
+The device the portal sees is `web:<account id>`, so one web account is one seat. The key and
+the token never reach a log line or an audit row. The housekeeper re-checks entitlements after
+its purge (at most once an hour, once a day per entitlement): unreachable portals are held
+until a seven-day grace past the licence's expiry, then the entitlement lapses to `free`
+without deleting anything.
+
+The connector is **off** while `CURVESTUDIO_LICENCE_URL` or `CURVESTUDIO_LICENCE_APP_ID` is
+empty — every install today: the three routes answer `404` with `detail.code = "BILLING_OFF"`,
+`/me` reports `licence: null` and `billing: null`, the housekeeping pass does nothing, and the
+`plans` rows with `CURVESTUDIO_QUOTA_*` stay the only source of limits. Setting both values
+turns billing on by itself.
+
+Settings (all empty by default; secrets through the environment only):
+
+* `CURVESTUDIO_LICENCE_URL` — the AppLicense service's base URL.
+* `CURVESTUDIO_LICENCE_PUBLIC_KEY_PEM` — the portal's RS256 public key (PEM); when empty it is
+  fetched once from `{url}/api/verify/public-key`.
+* `CURVESTUDIO_LICENCE_APP_ID` — the app slug the portal knows this product by.
+* `CURVESTUDIO_LICENCE_PLAN_MAP` — JSON mapping the portal's plan codes to plan names here,
+  for example `{"curvestudio-basic": "paid"}`; malformed JSON is refused at start-up naming
+  the variable, and a key whose plan code is not in the map is refused naming the code.
+* `CURVESTUDIO_LICENCE_PORTAL_URL` — where the web profile's Upgrade link points.
+
+Errors carry the licence's own code in `detail.code` beside the mapped status: `BILLING_OFF`
+and `LICENCE_NONE` as 404, `LICENCE_INVALID`, `LICENCE_UNKNOWN_PLAN`, `LICENCE_DEVICE` and
+`LICENCE_EXPIRED` as 422, `LICENCE_UNREACHABLE` as 503.
 
 ## Email verification and password reset
 
