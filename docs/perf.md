@@ -82,6 +82,46 @@ dataset's `scattergl` chart. PNGs under
 pixel-identical (`compare -metric AE` = 0 differing pixels) and the drawn trace types
 are unchanged (`screenshots.json` in each directory).
 
+### Task 1, 25/11/2026 — after the route split
+
+Command: the same `node /home/amith/tmp/cs-verify/perf/bundles.mjs <worktree>/apps/web/dist`
+after `npm ci && npm run build`, on the Task 1 worktree (code state `81eb1f7` plus the
+route-split change). Full output: `bundles-task1.out` next to the script.
+
+| Asset | Raw | Gzip | Loaded |
+| --- | ---: | ---: | --- |
+| `assets/index-*.js` (the entry) | 353,989 | 110,474 | every page, including the public page |
+| `assets/jsx-runtime-*.js` | 8,243 | 3,114 | modulepreloaded by the entry |
+| `assets/rolldown-runtime-*.js` | 726 | 429 | modulepreloaded by the entry |
+| **the public page's JS, total** | **362,958** | **114,017** | |
+| `assets/WorkspacePage-*.js` | 125,737 | 34,110 | lazily, the workspace |
+| `assets/HelpPage-*.js` | 65,508 | 22,073 | lazily, help (page or overlay) |
+| `assets/AdminConsole-*.js` | 75,064 | 21,085 | lazily, the admin console |
+| `assets/AuthenticatedApp-*.js` | 13,315 | 4,526 | lazily, the signed-in shell |
+| `assets/AboutPage-*.js` | 8,988 | 3,406 | lazily, about (page or overlay) |
+| `assets/ProfilePage-*.js` | 9,824 | 3,134 | lazily, the profile overlay |
+| `assets/RegisterPage-*.js` | 3,343 | 1,286 | lazily, sign-up |
+| `assets/ResetPasswordPage-*.js` | 2,531 | 1,041 | lazily, password reset |
+| `assets/ForgotPasswordPage-*.js` | 1,819 | 887 | lazily, password recovery |
+| `assets/VerifyEmailPage-*.js` | 1,780 | 715 | lazily, e-mail verification |
+| `assets/OAuthCallbackPage-*.js` | 1,037 | 615 | lazily, the OAuth callback |
+| all JS together | 6,559,739 | 2,071,275 | |
+
+The split: every page but the public home is `React.lazy` behind a `LazyBoundary`
+(`src/components/States.tsx`), one chunk per page, and the signed-in shell itself — the
+navigation bar with its workspace tabs, the overlays' Modal wiring, the workspace-set
+state — is its own chunk (`src/authenticated/AuthenticatedApp.tsx`), so the anonymous
+home page downloads no workspace code at all. The entry fell from 611.4 KB raw /
+184.3 KB gzip to 354.0 / 110.5, and the public page's total JS (entry plus its two
+modulepreloads) from 184.3 to 114.0 KB gzip: **against the ≤ 100 KB target this is not
+met, 14 KB over**. What remains is library floor, not page code — by the source-map
+attribution of the entry's minified bytes, roughly 57% is react-dom (with react and
+scheduler), ~11% react-router, ~10% the home page itself, ~6% TanStack Query's core
+(mounted by `main.tsx`'s root provider, whose every consumer is behind auth — moving
+that provider behind sign-in is the one remaining in-app lever, worth ~7 KB gzip), the
+rest the API client, error reporter, shell and icons. No planned P6 task removes those
+bytes; the LCP target below is the one this task moves.
+
 ## Web: public page LCP under throttle
 
 Command: `node /home/amith/tmp/cs-verify/perf/web_timings.mjs` (section A of the output
@@ -105,6 +145,36 @@ entry script raw (611 KB, ~0.5 s of the throttle budget alone). It is the correc
 before-figure for Tasks 1–3 (same setup before and after) and a pessimistic stand-in for
 the deployed page; the deployed bundle fetch below carries the edge-compressed number.
 
+### Task 1, 25/11/2026 — LCP after the route split
+
+Command (the harness grew environment switches for the parallel P6 tasks; same
+measurement, same throttle):
+
+```
+CS_REPO=<task1 worktree> CS_RUN=/home/amith/tmp/cs-verify/perf/run-web-task1 \
+CS_PORT=8795 CS_SECTIONS=A,B \
+CS_SHOTS=/home/amith/tmp/cs-verify/perf/screenshots/task1 \
+node /home/amith/tmp/cs-verify/perf/web_timings.mjs
+```
+
+Setup identical to the baseline (section A of the same script: the local API serving the
+built SPA, CDP 10 Mbit/s / 40 ms RTT, one warm-up then 7 runs, fresh context each),
+except port 8795 so a parallel task's run cannot collide. Full output:
+`web_timings-task1.out` and `.err` next to the script; comparison screenshots in
+`screenshots/task1/` (`public.png`, `workspace-fit.png`).
+
+| Figure | Baseline (25/11/2026) | Task 1, 25/11/2026 |
+| --- | ---: | ---: |
+| LCP, median | 1,272 ms | **1,068 ms** (runs 1,064–1,100) — target ≤ 2.0 s, met |
+| LCP element | an `<h2>` heading | an `<h2>` heading |
+| Transferred per load, median | 806,100 bytes over 10 requests | 557,219 bytes over 11 requests |
+
+Machine activity at measurement time: no parallel web build was running (checked by
+process list; load average ≈ 3 on the 12-thread workstation); the P6 Task 2 implementer
+may build concurrently at other moments, which is why the size table above — the
+deterministic figure — is the one to compare on. The uncompressed-serving caveat above
+still applies to both columns equally.
+
 ## Web: the first chart after sign-in, throttled
 
 Same script and throttle (section B). The run signs in through the real form on the public
@@ -117,6 +187,15 @@ starts is drained to completion before the next run.
 | Figure | Value |
 | --- | --- |
 | Submit click → first chart, median | 2,172 ms (runs 2,141–2,211) |
+
+Task 1, 25/11/2026 — observational re-measure on the same setup (section B of the same
+run as the LCP table above): median **2,658 ms** (runs 2,644–2,946). The route split made
+sign-in fetch its chunks in sequence — the signed-in shell, then the workspace page, then
+Plotly — where the monolithic entry needed only Plotly; ~0.5 s of the difference is those
+two extra chunk fetches under the 40 ms-RTT throttle. Task 3's idle prefetch of the
+workspace and chart bundles when a visitor is signed in is the designed remedy; the ≤ 3 s
+target still holds, but the figure is worse than the baseline and is recorded here so
+Task 3 is judged against the honest number.
 
 ## Web: a 100 000-row dataset's plot time
 

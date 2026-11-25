@@ -2,7 +2,8 @@ import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import App, { overlayFor } from "./App";
+import App from "./App";
+import { overlayFor } from "./authenticated/AuthenticatedApp";
 
 const { authState } = vi.hoisted(() => ({
   authState: {
@@ -79,11 +80,11 @@ describe("App shell", () => {
   it("opens Help over the workspace without unmounting it", async () => {
     const user = userEvent.setup();
     renderApp();
-    expect(screen.getByTestId("workspace")).toBeTruthy();
+    expect(await screen.findByTestId("workspace")).toBeTruthy();
 
     await user.click(screen.getByRole("link", { name: "Help" }));
     expect(screen.getByRole("dialog", { name: "Help contents" })).toBeTruthy();
-    expect(screen.getByText("Help body")).toBeTruthy();
+    expect(await screen.findByText("Help body")).toBeTruthy();
     // the main interface is still there, underneath the overlay
     expect(screen.getByTestId("workspace")).toBeTruthy();
 
@@ -95,8 +96,8 @@ describe("App shell", () => {
   it("does the same for About", async () => {
     const user = userEvent.setup();
     renderApp("/about");
-    expect(screen.getByRole("dialog", { name: "About CurveStudio" })).toBeTruthy();
-    expect(screen.getByTestId("workspace")).toBeTruthy();
+    expect(await screen.findByRole("dialog", { name: "About CurveStudio" })).toBeTruthy();
+    expect(await screen.findByTestId("workspace")).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Close" }));
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(screen.getByTestId("workspace")).toBeTruthy();
@@ -105,11 +106,11 @@ describe("App shell", () => {
   it("opens the profile over the workspace without unmounting it", async () => {
     const user = userEvent.setup();
     renderApp("/profile");
-    const dialog = screen.getByRole("dialog", { name: "Your profile" });
+    const dialog = await screen.findByRole("dialog", { name: "Your profile" });
     expect(dialog.className).toContain("modal__panel--sheet");
-    expect(screen.getByText("Profile body")).toBeTruthy();
+    expect(await screen.findByText("Profile body")).toBeTruthy();
     // the main interface is still there, underneath the overlay
-    expect(screen.getByTestId("workspace")).toBeTruthy();
+    expect(await screen.findByTestId("workspace")).toBeTruthy();
     // an overlay is open, so the Workspace link is no longer the current page
     expect(screen.getByRole("link", { name: "Workspace" }).getAttribute("aria-current")).toBeNull();
 
@@ -124,7 +125,7 @@ describe("App shell", () => {
   it("shows the workspace tabs and starts a second workspace", async () => {
     const user = userEvent.setup();
     renderApp();
-    expect(screen.getByRole("tablist", { name: "Workspaces" })).toBeTruthy();
+    expect(await screen.findByRole("tablist", { name: "Workspaces" })).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "New workspace" }));
     expect(screen.getAllByRole("button", { name: /^Workspace \d$/ })).toHaveLength(2);
   });

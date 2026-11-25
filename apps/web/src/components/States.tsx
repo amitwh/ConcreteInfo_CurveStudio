@@ -1,6 +1,6 @@
 /** The loading / empty / error states every async surface uses. */
 
-import type { ReactNode } from "react";
+import { Suspense, type ReactElement, type ReactNode } from "react";
 import { ApiError } from "../api/client";
 
 export function Loading({ label = "Loading…" }: { label?: string }): ReactNode {
@@ -10,6 +10,15 @@ export function Loading({ label = "Loading…" }: { label?: string }): ReactNode
       {label}
     </p>
   );
+}
+
+/**
+ * The Suspense boundary every lazy page loads behind: the app's own spinner state,
+ * labelled with what is opening, so a page whose chunk is still downloading reads as
+ * loading — never as a blank flash.
+ */
+export function LazyBoundary({ label, children }: { label: string; children: ReactNode }): ReactElement {
+  return <Suspense fallback={<Loading label={label} />}>{children}</Suspense>;
 }
 
 export function Empty({ children }: { children: ReactNode }): ReactNode {

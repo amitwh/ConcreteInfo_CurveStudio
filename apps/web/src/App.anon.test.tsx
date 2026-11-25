@@ -81,10 +81,10 @@ describe("App routing for visitors", () => {
     expect(screen.queryByTestId("workspace")).toBeNull();
   });
 
-  it("keeps the workspace at / for an authenticated visitor", () => {
+  it("keeps the workspace at / for an authenticated visitor", async () => {
     authState.status = "authed";
     renderApp("/");
-    expect(screen.getByTestId("workspace")).toBeTruthy();
+    expect(await screen.findByTestId("workspace")).toBeTruthy();
     expect(screen.queryByTestId("home")).toBeNull();
   });
 

@@ -1,44 +1,27 @@
 /**
  * Routes and the application shell.
  *
- * Signed in, everything lives under one splat route so the workspace stays mounted while
- * Help, About or the profile is open — those three open as overlays over the workspace,
- * and their URLs still work for deep links and the back button. The admin console (/admin)
- * is the one exception: a page of its own ahead of the splat, loaded on demand. Signed
- * out, Help and About stay ordinary pages behind a slim brand header (the profile needs a
+ * Signed in, everything lives under one splat route that mounts the signed-in shell
+ * (AuthenticatedApp, its own lazy chunk) so the workspace stays mounted while Help, About
+ * or the profile is open — those three open as overlays over the workspace, and their
+ * URLs still work for deep links and the back button. The admin console (/admin) is the
+ * one exception: a page of its own ahead of the splat, loaded on demand. Signed out,
+ * Help and About stay ordinary pages behind a slim brand header (the profile needs a
  * session, so a visitor who opens its URL lands on the home page).
  *
- * Workspaces (the named tabs under the header) are held here: each remembers the dataset
- * it shows and its analysis mode, so switching tabs returns to exactly where you were.
+ * Every page but the public home is lazy: the home page is all an anonymous visitor
+ * downloads, so it carries none of the workspace's code — neither the workspace page
+ * itself nor the signed-in shell that frames it. Each boundary shows the app's own
+ * loading state (LazyBoundary), so a page whose chunk is still downloading reads as
+ * loading — never as a blank flash.
  */
 
-import { lazy, Suspense, useCallback, useEffect, useState, type ReactElement } from "react";
-import { Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import { lazy, type ReactElement } from "react";
+import { Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { useAuth } from "./api/auth";
-import { AppNav, type Overlay } from "./components/AppNav";
-import { Modal } from "./components/Modal";
-import { Loading } from "./components/States";
+import { LazyBoundary, Loading } from "./components/States";
 import { ThemeProvider } from "./components/ThemeToggle";
-import { AboutPage } from "./pages/AboutPage";
-import { HelpPage } from "./pages/HelpPage";
-import { ForgotPasswordPage } from "./pages/ForgotPasswordPage";
 import { HomePage } from "./pages/HomePage";
-import { OAuthCallbackPage } from "./pages/OAuthCallbackPage";
-import { ProfilePage } from "./pages/ProfilePage";
-import { RegisterPage } from "./pages/RegisterPage";
-import { ResetPasswordPage } from "./pages/ResetPasswordPage";
-import { VerifyEmailPage } from "./pages/VerifyEmailPage";
-import { WorkspacePage } from "./pages/WorkspacePage";
-import {
-  activateWorkspace,
-  activeWorkspace,
-  addWorkspace,
-  loadWorkspaces,
-  removeWorkspace,
-  renameWorkspace,
-  saveWorkspaces,
-  updateWorkspace,
-} from "./workspace/workspaces";
 
 /**
  * The admin console is loaded only when an administrator opens it: none of its code, the
@@ -46,13 +29,30 @@ import {
  */
 const AdminConsole = lazy(() => import("./admin/AdminConsole"));
 
-/** Which overlay the URL asks for (Help, About and the profile open over the workspace). */
-export function overlayFor(pathname: string): Overlay {
-  if (pathname === "/help") return "help";
-  if (pathname === "/about") return "about";
-  if (pathname === "/profile") return "profile";
-  return null;
-}
+/** The signed-in shell: the workspace tab bar, the workspace page and its overlays. */
+const AuthenticatedApp = lazy(() =>
+  import("./authenticated/AuthenticatedApp").then((m) => ({ default: m.AuthenticatedApp })),
+);
+
+/**
+ * The rest of the on-demand pages. Each is one chunk fetched at first use; the pages
+ * export named components, so each loader picks its name out of the module.
+ */
+const HelpPage = lazy(() => import("./pages/HelpPage").then((m) => ({ default: m.HelpPage })));
+const AboutPage = lazy(() => import("./pages/AboutPage").then((m) => ({ default: m.AboutPage })));
+const RegisterPage = lazy(() => import("./pages/RegisterPage").then((m) => ({ default: m.RegisterPage })));
+const VerifyEmailPage = lazy(() =>
+  import("./pages/VerifyEmailPage").then((m) => ({ default: m.VerifyEmailPage })),
+);
+const ForgotPasswordPage = lazy(() =>
+  import("./pages/ForgotPasswordPage").then((m) => ({ default: m.ForgotPasswordPage })),
+);
+const ResetPasswordPage = lazy(() =>
+  import("./pages/ResetPasswordPage").then((m) => ({ default: m.ResetPasswordPage })),
+);
+const OAuthCallbackPage = lazy(() =>
+  import("./pages/OAuthCallbackPage").then((m) => ({ default: m.OAuthCallbackPage })),
+);
 
 /**
  * `/login` is no longer a page of its own. The home card is the only sign-in surface, so
@@ -98,62 +98,6 @@ function PublicHeader(): ReactElement {
   );
 }
 
-export function AuthenticatedApp(): ReactElement {
-  const { user } = useAuth();
-  const navigate = useNavigate();
-  const location = useLocation();
-  const userId = user?.id ?? null;
-  const [workspaceSet, setWorkspaceSet] = useState(() => loadWorkspaces(userId));
-  const overlay = overlayFor(location.pathname);
-  const active = activeWorkspace(workspaceSet);
-
-  useEffect(() => {
-    saveWorkspaces(userId, workspaceSet);
-  }, [userId, workspaceSet]);
-
-  const closeOverlay = useCallback(() => navigate("/"), [navigate]);
-
-  return (
-    <>
-      <AppNav
-        workspaces={workspaceSet.workspaces}
-        activeId={active.id}
-        overlay={overlay}
-        onSelectWorkspace={(id) => setWorkspaceSet((current) => activateWorkspace(current, id))}
-        onAddWorkspace={() => setWorkspaceSet((current) => addWorkspace(current))}
-        onCloseWorkspace={(id) => setWorkspaceSet((current) => removeWorkspace(current, id))}
-        onRenameWorkspace={(id, name) =>
-          setWorkspaceSet((current) => renameWorkspace(current, id, name))
-        }
-      />
-      <WorkspacePage
-        key={active.id}
-        initialDatasetId={active.datasetId}
-        initialMode={active.mode}
-        onSelectionChange={(datasetId) =>
-          setWorkspaceSet((current) => updateWorkspace(current, active.id, { datasetId }))
-        }
-        onModeChange={(mode) => setWorkspaceSet((current) => updateWorkspace(current, active.id, { mode }))}
-      />
-      {overlay === "help" && (
-        <Modal title="Help contents" variant="sheet" onClose={closeOverlay}>
-          <HelpPage />
-        </Modal>
-      )}
-      {overlay === "about" && (
-        <Modal title="About CurveStudio" variant="sheet" onClose={closeOverlay}>
-          <AboutPage />
-        </Modal>
-      )}
-      {overlay === "profile" && (
-        <Modal title="Your profile" variant="sheet" onClose={closeOverlay}>
-          <ProfilePage />
-        </Modal>
-      )}
-    </>
-  );
-}
-
 export default function App(): ReactElement {
   const { status } = useAuth();
   return (
@@ -167,13 +111,20 @@ export default function App(): ReactElement {
             <Route
               path="/admin/*"
               element={
-                <Suspense fallback={<Loading label="Opening the admin console…" />}>
+                <LazyBoundary label="Opening the admin console…">
                   <AdminConsole />
-                </Suspense>
+                </LazyBoundary>
               }
             />
-            {/* One splat route: opening /help, /about or /profile must not remount the workspace. */}
-            <Route path="*" element={<AuthenticatedApp />} />
+            {/* One splat route: the signed-in shell keeps the workspace mounted across overlays. */}
+            <Route
+              path="*"
+              element={
+                <LazyBoundary label="Opening your workspace…">
+                  <AuthenticatedApp />
+                </LazyBoundary>
+              }
+            />
           </Routes>
         ) : (
           <>
@@ -181,13 +132,62 @@ export default function App(): ReactElement {
             <Routes>
               <Route path="/" element={<HomePage />} />
               <Route path="/login" element={<LoginRedirect />} />
-              <Route path="/register" element={<RegisterPage />} />
-              <Route path="/verify-email" element={<VerifyEmailPage />} />
-              <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-              <Route path="/reset-password" element={<ResetPasswordPage />} />
-              <Route path="/oauth/callback" element={<OAuthCallbackPage />} />
-              <Route path="/help" element={<HelpPage />} />
-              <Route path="/about" element={<AboutPage />} />
+              <Route
+                path="/register"
+                element={
+                  <LazyBoundary label="Opening account sign-up…">
+                    <RegisterPage />
+                  </LazyBoundary>
+                }
+              />
+              <Route
+                path="/verify-email"
+                element={
+                  <LazyBoundary label="Opening e-mail verification…">
+                    <VerifyEmailPage />
+                  </LazyBoundary>
+                }
+              />
+              <Route
+                path="/forgot-password"
+                element={
+                  <LazyBoundary label="Opening password recovery…">
+                    <ForgotPasswordPage />
+                  </LazyBoundary>
+                }
+              />
+              <Route
+                path="/reset-password"
+                element={
+                  <LazyBoundary label="Opening password reset…">
+                    <ResetPasswordPage />
+                  </LazyBoundary>
+                }
+              />
+              <Route
+                path="/oauth/callback"
+                element={
+                  <LazyBoundary label="Completing sign-in…">
+                    <OAuthCallbackPage />
+                  </LazyBoundary>
+                }
+              />
+              <Route
+                path="/help"
+                element={
+                  <LazyBoundary label="Opening help…">
+                    <HelpPage />
+                  </LazyBoundary>
+                }
+              />
+              <Route
+                path="/about"
+                element={
+                  <LazyBoundary label="Opening about…">
+                    <AboutPage />
+                  </LazyBoundary>
+                }
+              />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </>
