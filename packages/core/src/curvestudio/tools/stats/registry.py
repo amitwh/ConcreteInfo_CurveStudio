@@ -40,6 +40,7 @@ FAMILIES: tuple[tuple[str, str], ...] = (
     ("relationships", "Relationships between columns"),
     ("counts", "Counts"),
     ("comparison", "Method comparison"),
+    ("measurement", "Measurement and classification"),
     ("power", "Sample size and power"),
 )
 """The families a tool belongs to, each with its title, in the order a person meets them."""
@@ -450,6 +451,7 @@ TOOL_MODULES: tuple[str, ...] = (
     "curvestudio.tools.stats.power",
     "curvestudio.tools.stats.ranks",
     "curvestudio.tools.stats.regression",
+    "curvestudio.tools.stats.roc",
 )
 """A module per tool family, each registering its tool as it is imported."""
 
