@@ -15,7 +15,7 @@ from typing import Any, cast
 from sqlalchemy import Engine, and_, case, delete, false, func, or_, select, text, true, update
 from sqlalchemy.orm import Session
 
-from curvestudio_api import __version__, audit, quotas
+from curvestudio_api import __version__, audit, licences, quotas
 from curvestudio_api.deps import Context
 from curvestudio_api.errors import ApiError, not_found
 from curvestudio_api.migrations import current_revision
@@ -25,6 +25,7 @@ from curvestudio_api.modules.admin.schemas import (
     DEFAULT_PAGE_SIZE,
     AccountCountsOut,
     ActiveUsersOut,
+    AdminLicenceOut,
     AdminUserDetailOut,
     AdminUserOut,
     AdminUserUpdateIn,
@@ -59,7 +60,7 @@ from curvestudio_api.orm import (
     UserDailyActivity,
 )
 from curvestudio_api.quotas import FREE_PLAN_NAME, PLAN_NAME
-from curvestudio_api.schemas import UsageOut
+from curvestudio_api.schemas import LicenceStatus, UsageOut
 from curvestudio_api.settings import Settings
 from curvestudio_api.timeutil import IST, to_ist_iso, utcnow
 
@@ -149,8 +150,25 @@ def _usage_out(db: Session, user_id: uuid.UUID) -> UsageOut:
     )
 
 
+def _licence_out(db: Session, settings: Settings, user: User) -> AdminLicenceOut | None:
+    """The account's licence entitlement for the console, when it holds one; an
+    unconfigured connector is no entitlement and no error."""
+    try:
+        row = licences.status(db, user, settings)
+    except licences.LicenceError:
+        return None
+    if row is None:
+        return None
+    return AdminLicenceOut(
+        status=cast(LicenceStatus, row.status),
+        plan_code=row.plan_code,
+        expires_at=row.expires_at,
+        last_checked_at=row.last_checked_at,
+    )
+
+
 def admin_user_out(db: Session, settings: Settings, user: User) -> AdminUserOut:
-    """The account as the console lists it, with its resolved plan and usage."""
+    """The account as the console lists it, with its resolved plan, usage and licence."""
     return AdminUserOut(
         id=user.id,
         email=user.email,
@@ -164,6 +182,7 @@ def admin_user_out(db: Session, settings: Settings, user: User) -> AdminUserOut:
         last_login_at=user.last_login_at,
         last_active_on=user.last_active_on,
         usage=_usage_out(db, user.id),
+        licence=_licence_out(db, settings, user),
     )
 
 

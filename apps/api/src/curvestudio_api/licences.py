@@ -203,12 +203,17 @@ def verify_token(token: str, settings: Settings, *, device: str) -> Claims:
     )
 
 
-def _require_billing(settings: Settings) -> None:
-    if not (
+def billing_on(settings: Settings) -> bool:
+    """Whether this installation has the licence connector configured."""
+    return bool(
         settings.billing_enabled
         and settings.licence_url.strip()
         and settings.licence_app_id.strip()
-    ):
+    )
+
+
+def _require_billing(settings: Settings) -> None:
+    if not billing_on(settings):
         raise LicenceError(
             "BILLING_OFF", "the licence connector is not configured on this installation"
         )

@@ -9,17 +9,21 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from curvestudio.workflow import ModelInfo, WorkflowError, get_model, list_models
-from curvestudio_api import __version__, audit, quotas
+from curvestudio_api import __version__, audit, licences, quotas
 from curvestudio_api.deps import Ctx, CurrentUser, Db
-from curvestudio_api.errors import ApiError
+from curvestudio_api.errors import STATUS_CODES, ApiError
 from curvestudio_api.logging_setup import get_logger
 from curvestudio_api.migrations import current_revision_is_head
 from curvestudio_api.modules.admin.service import erase_account
-from curvestudio_api.orm import DEFAULT_PREFERENCES, RefreshToken, User
+from curvestudio_api.orm import DEFAULT_PREFERENCES, Entitlement, RefreshToken, User
 from curvestudio_api.routers.auth import _limit, audit_failed_password_check
 from curvestudio_api.schemas import (
     DeleteMeIn,
     HealthOut,
+    LicenceActivatedOut,
+    LicenceActivateIn,
+    LicenceOut,
+    LicenceStatus,
     MeOut,
     MeUpdateIn,
     PasswordChangeIn,
@@ -32,6 +36,7 @@ from curvestudio_api.schemas import (
     password_problem,
 )
 from curvestudio_api.security import hash_password, hash_token, verify_password
+from curvestudio_api.settings import Settings
 from curvestudio_api.timeutil import utcnow
 
 router = APIRouter()
@@ -74,6 +79,52 @@ def _preferences(user: User) -> dict[str, Any]:
     return {**DEFAULT_PREFERENCES, **(user.preferences or {})}
 
 
+_LICENCE_ERROR_STATUS: dict[str, int] = {
+    "BILLING_OFF": 404,
+    "LICENCE_NONE": 404,
+    "LICENCE_INVALID": 422,
+    "LICENCE_UNKNOWN_PLAN": 422,
+    "LICENCE_DEVICE": 422,
+    "LICENCE_EXPIRED": 422,
+    "LICENCE_UNREACHABLE": 503,
+}
+
+
+def _licence_error(exc: licences.LicenceError) -> ApiError:
+    """A licence refusal as the envelope: its code in ``detail``, the HTTP status beside it."""
+    return ApiError(
+        _LICENCE_ERROR_STATUS[exc.code],
+        STATUS_CODES[_LICENCE_ERROR_STATUS[exc.code]],
+        exc.message,
+        {"code": exc.code},
+    )
+
+
+def _licence_out(row: Entitlement, settings: Settings) -> LicenceOut:
+    """The entitlement row as the profile shows it: the portal's plan code beside the plan
+    the installation maps it to."""
+    return LicenceOut(
+        id=row.id,
+        plan_code=row.plan_code,
+        plan=settings.licence_plans.get(row.plan_code, row.plan_code),
+        status=cast(LicenceStatus, row.status),
+        expires_at=row.expires_at,
+        grace_until=row.grace_until,
+        last_checked_at=row.last_checked_at,
+        portal_url=settings.licence_portal_url,
+    )
+
+
+def _me_licence(db: Session, settings: Settings, user: User) -> LicenceOut | None:
+    """The account's licence for ``/me``, or ``None``: an unconfigured connector never turns
+    the profile into an error."""
+    try:
+        row = licences.status(db, user, settings)
+    except licences.LicenceError:
+        return None
+    return None if row is None else _licence_out(row, settings)
+
+
 def _me_out(db: Session, ctx: Ctx, user: User) -> MeOut:
     """The signed-in user, the resolved plan's limits and what the user has used so far."""
     plan = quotas.resolve_plan(db, ctx.settings, user.plan_override)
@@ -100,6 +151,7 @@ def _me_out(db: Session, ctx: Ctx, user: User) -> MeOut:
             ),
         ),
         usage=UsageOut(**asdict(used), autofits_today=quotas.autofit_runs_today(db, user.id)),
+        licence=_me_licence(db, ctx.settings, user),
     )
 
 
@@ -133,6 +185,57 @@ def _revoke_other_sessions(db: Session, user: User, keep_refresh_token: str) -> 
 def me(user: CurrentUser, ctx: Ctx, db: Db) -> MeOut:
     """The signed-in user: profile, preferences, the resolved plan's limits and usage so far."""
     return _me_out(db, ctx, user)
+
+
+@router.get("/me/licence", response_model=LicenceOut, tags=["auth"])
+def get_licence(user: CurrentUser, ctx: Ctx, db: Db) -> LicenceOut:
+    """The account's licence entitlement. 404 ``BILLING_OFF`` while the connector is
+    unconfigured, 404 ``LICENCE_NONE`` while the account holds no entitlement row."""
+    try:
+        row = licences.status(db, user, ctx.settings)
+    except licences.LicenceError as exc:
+        raise _licence_error(exc) from exc
+    if row is None:
+        raise _licence_error(
+            licences.LicenceError("LICENCE_NONE", "no licence is activated for this account")
+        )
+    return _licence_out(row, ctx.settings)
+
+
+@router.post("/me/licence", status_code=201, response_model=LicenceActivatedOut, tags=["auth"])
+def activate_licence(
+    body: LicenceActivateIn, user: CurrentUser, ctx: Ctx, db: Db
+) -> LicenceActivatedOut:
+    """Activate a licence key: the account moves to the plan the key's plan code maps to.
+
+    An account that already holds an active licence has it released first — the audited
+    release path, seat and all — and the answer says so. A refused key leaves the account as
+    it was, with the refusal's code in ``detail``.
+    """
+    try:
+        existing = licences.status(db, user, ctx.settings)
+        replaced = existing is not None and existing.status == licences.ACTIVE
+        if replaced:
+            licences.release(db, ctx.settings, user)
+        row = licences.activate(db, ctx.settings, user, body.key.get_secret_value())
+    except licences.LicenceError as exc:
+        raise _licence_error(exc) from exc
+    return LicenceActivatedOut(
+        **_licence_out(row, ctx.settings).model_dump(),
+        message="the previous licence was released first" if replaced else "",
+    )
+
+
+@router.delete("/me/licence", status_code=204, tags=["auth"])
+def release_licence(user: CurrentUser, ctx: Ctx, db: Db) -> Response:
+    """Release the account's licence: the seat goes back to the portal (best effort) and the
+    account returns to the ``free`` plan, both audited. An account holding none is already
+    released."""
+    try:
+        licences.release(db, ctx.settings, user)
+    except licences.LicenceError as exc:
+        raise _licence_error(exc) from exc
+    return Response(status_code=204)
 
 
 @router.patch("/me", response_model=MeOut, tags=["auth"])

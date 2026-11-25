@@ -1034,6 +1034,41 @@ export interface paths {
         patch: operations["update_me_api_v1_me_patch"];
         trace?: never;
     };
+    "/api/v1/me/licence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Licence
+         * @description The account's licence entitlement. 404 ``BILLING_OFF`` while the connector is
+         *     unconfigured, 404 ``LICENCE_NONE`` while the account holds no entitlement row.
+         */
+        get: operations["get_licence_api_v1_me_licence_get"];
+        put?: never;
+        /**
+         * Activate Licence
+         * @description Activate a licence key: the account moves to the plan the key's plan code maps to.
+         *
+         *     An account that already holds an active licence has it released first — the audited
+         *     release path, seat and all — and the answer says so. A refused key leaves the account as
+         *     it was, with the refusal's code in ``detail``.
+         */
+        post: operations["activate_licence_api_v1_me_licence_post"];
+        /**
+         * Release Licence
+         * @description Release the account's licence: the seat goes back to the portal (best effort) and the
+         *     account returns to the ``free`` plan, both audited. An account holding none is already
+         *     released.
+         */
+        delete: operations["release_licence_api_v1_me_licence_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me/password": {
         parameters: {
             query?: never;
@@ -1260,6 +1295,24 @@ export interface components {
             d7: number;
         };
         /**
+         * AdminLicenceOut
+         * @description The account's licence entitlement as the console shows it (``licences.py``).
+         *     ``plan_code`` is what the portal sold, not a plan name here.
+         */
+        AdminLicenceOut: {
+            /** Expires At */
+            expires_at: string | null;
+            /** Last Checked At */
+            last_checked_at: string | null;
+            /** Plan Code */
+            plan_code: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "active" | "expired" | "released";
+        };
+        /**
          * AdminUserDetailOut
          * @description An account and the last fifty rows of its audit trail, newest first.
          */
@@ -1270,7 +1323,8 @@ export interface components {
         };
         /**
          * AdminUserOut
-         * @description An account as the console lists it. ``plan`` is the resolved plan's name.
+         * @description An account as the console lists it. ``plan`` is the resolved plan's name; ``licence``
+         *     is the entitlement behind it when the account holds one.
          */
         AdminUserOut: {
             /** Created At */
@@ -1290,6 +1344,7 @@ export interface components {
             last_active_on: string | null;
             /** Last Login At */
             last_login_at: string | null;
+            licence?: components["schemas"]["AdminLicenceOut"] | null;
             /** Name */
             name: string;
             /** Plan */
@@ -2879,6 +2934,81 @@ export interface components {
          */
         LatencyWindow: 1 | 7 | 30;
         /**
+         * LicenceActivateIn
+         * @description A licence key bought in the AppLicense portal, pasted into the profile.
+         */
+        LicenceActivateIn: {
+            /**
+             * Key
+             * Format: password
+             */
+            key: string;
+        };
+        /**
+         * LicenceActivatedOut
+         * @description What activating answers: the entitlement, and what the activation had to release.
+         */
+        LicenceActivatedOut: {
+            /** Expires At */
+            expires_at: string | null;
+            /** Grace Until */
+            grace_until: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Last Checked At */
+            last_checked_at: string | null;
+            /**
+             * Message
+             * @default
+             */
+            message: string;
+            /** Plan */
+            plan: string;
+            /** Plan Code */
+            plan_code: string;
+            /** Portal Url */
+            portal_url: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "active" | "expired" | "released";
+        };
+        /**
+         * LicenceOut
+         * @description The account's licence entitlement (``licences.py``). ``plan_code`` is what the portal
+         *     sold (the plan's feature flag) and ``plan`` the CurveStudio plan it maps to;
+         *     ``expires_at`` is ``None`` on a lifetime licence, and ``portal_url`` is where another
+         *     one can be bought (empty when unset).
+         */
+        LicenceOut: {
+            /** Expires At */
+            expires_at: string | null;
+            /** Grace Until */
+            grace_until: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Last Checked At */
+            last_checked_at: string | null;
+            /** Plan */
+            plan: string;
+            /** Plan Code */
+            plan_code: string;
+            /** Portal Url */
+            portal_url: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "active" | "expired" | "released";
+        };
+        /**
          * Line
          * @description A straight reference line from ``(x0, y0)`` to ``(x1, y1)``.
          */
@@ -2919,6 +3049,7 @@ export interface components {
             id: string;
             /** Last Login At */
             last_login_at: string | null;
+            licence?: components["schemas"]["LicenceOut"] | null;
             /** Name */
             name: string;
             plan: components["schemas"]["PlanOut"];
@@ -5919,6 +6050,77 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+        };
+    };
+    get_licence_api_v1_me_licence_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LicenceOut"];
+                };
+            };
+        };
+    };
+    activate_licence_api_v1_me_licence_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LicenceActivateIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LicenceActivatedOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    release_licence_api_v1_me_licence_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

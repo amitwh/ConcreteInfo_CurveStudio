@@ -9,7 +9,7 @@ from typing import Any, Literal, Self
 from pydantic import BaseModel, Field, model_validator
 
 from curvestudio_api.modules.installs.schemas import InstallSummaryOut
-from curvestudio_api.schemas import UsageOut, _Body
+from curvestudio_api.schemas import LicenceStatus, UsageOut, _Body
 from curvestudio_api.timeutil import IstDatetime
 
 DEFAULT_PAGE_SIZE = 25
@@ -29,8 +29,19 @@ class PageOut[T](BaseModel):
     page_size: int = Field(ge=1, le=MAX_PAGE_SIZE)
 
 
+class AdminLicenceOut(BaseModel):
+    """The account's licence entitlement as the console shows it (``licences.py``).
+    ``plan_code`` is what the portal sold, not a plan name here."""
+
+    status: LicenceStatus
+    plan_code: str
+    expires_at: IstDatetime | None
+    last_checked_at: IstDatetime | None
+
+
 class AdminUserOut(BaseModel):
-    """An account as the console lists it. ``plan`` is the resolved plan's name."""
+    """An account as the console lists it. ``plan`` is the resolved plan's name; ``licence``
+    is the entitlement behind it when the account holds one."""
 
     id: uuid.UUID
     email: str
@@ -44,6 +55,7 @@ class AdminUserOut(BaseModel):
     last_login_at: IstDatetime | None
     last_active_on: date | None
     usage: UsageOut
+    licence: AdminLicenceOut | None = None
 
 
 class AdminUserUpdateIn(_Body):

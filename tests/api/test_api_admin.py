@@ -72,6 +72,7 @@ USER_KEYS = {
     "last_login_at",
     "last_active_on",
     "usage",
+    "licence",
 }
 ERROR_KEYS = {
     "id",

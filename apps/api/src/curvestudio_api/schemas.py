@@ -218,12 +218,51 @@ class PreferencesOut(BaseModel):
     report_byline: bool
 
 
+LicenceStatus = Literal["active", "expired", "released"]
+"""Where an entitlement stands: live, lapsed past its grace, or given back."""
+
+
+class LicenceOut(BaseModel):
+    """The account's licence entitlement (``licences.py``). ``plan_code`` is what the portal
+    sold (the plan's feature flag) and ``plan`` the CurveStudio plan it maps to;
+    ``expires_at`` is ``None`` on a lifetime licence, and ``portal_url`` is where another
+    one can be bought (empty when unset)."""
+
+    id: uuid.UUID
+    plan_code: str
+    plan: str
+    status: LicenceStatus
+    expires_at: IstDatetime | None
+    grace_until: IstDatetime | None
+    last_checked_at: IstDatetime | None
+    portal_url: str
+
+
+class LicenceActivateIn(_Body):
+    """A licence key bought in the AppLicense portal, pasted into the profile."""
+
+    key: SecretStr = Field(min_length=1, max_length=200)
+
+    @field_validator("key")
+    @classmethod
+    def _key_text(cls, value: SecretStr) -> SecretStr:
+        return _secret_utf8(value)
+
+
+class LicenceActivatedOut(LicenceOut):
+    """What activating answers: the entitlement, and what the activation had to release."""
+
+    message: str = ""
+
+
 class MeOut(UserOut):
     role: Literal["member", "admin"]
     preferences: PreferencesOut
     last_login_at: IstDatetime | None
     plan: PlanOut
     usage: UsageOut
+    # The account's licence entitlement; ``None`` while billing is off or none was activated.
+    licence: LicenceOut | None = None
 
 
 class HealthOut(BaseModel):

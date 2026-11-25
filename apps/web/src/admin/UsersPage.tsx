@@ -576,10 +576,12 @@ function UserDetail({ id, summary, plans, isSelf, onClose }: UserDetailProps): R
                   {user.plan_override === user.plan
                     ? "(set by an override)"
                     : `(overridden to ${user.plan_override})`}
+                  {" — an override wins until a licence changes it"}
                 </span>
               )}
             </p>
             <Usage user={user} limits={planLimitsFor(plans, user.plan)} />
+            {user.licence != null && <LicenceFacts licence={user.licence} />}
             <dl className="admin-kv">
               <dt>Joined</dt>
               <dd>{fmtDateTime(user.created_at)}</dd>
@@ -632,6 +634,25 @@ function Usage({ user, limits }: { user: AdminUserOut; limits: PlanLimits | unde
       <Meter label="Stored fits" used={fits} limit={limits.max_fits} />
       <Meter label="Auto-fit runs today" used={autofits_today} limit={limits.max_autofits_per_day} />
     </div>
+  );
+}
+
+/**
+ * The licence entitlement behind the plan: what the portal sold, where it stands, when it ends
+ * and when it was last checked. An account with no licence shows nothing here.
+ */
+function LicenceFacts({ licence }: { licence: NonNullable<AdminUserOut["licence"]> }): ReactElement {
+  return (
+    <dl className="admin-kv">
+      <dt>Licence</dt>
+      <dd>{licence.status}</dd>
+      <dt>Licence plan code</dt>
+      <dd>{licence.plan_code}</dd>
+      <dt>Licence expiry</dt>
+      <dd>{licence.expires_at === null ? "Lifetime" : fmtDateTime(licence.expires_at)}</dd>
+      <dt>Licence last check</dt>
+      <dd>{licence.last_checked_at === null ? "Never" : fmtDateTime(licence.last_checked_at)}</dd>
+    </dl>
   );
 }
 

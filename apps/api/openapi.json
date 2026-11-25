@@ -48,6 +48,54 @@
         "title": "ActiveUsersOut",
         "type": "object"
       },
+      "AdminLicenceOut": {
+        "description": "The account's licence entitlement as the console shows it (``licences.py``).\n``plan_code`` is what the portal sold, not a plan name here.",
+        "properties": {
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "last_checked_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Checked At"
+          },
+          "plan_code": {
+            "title": "Plan Code",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "expired",
+              "released"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "plan_code",
+          "expires_at",
+          "last_checked_at"
+        ],
+        "title": "AdminLicenceOut",
+        "type": "object"
+      },
       "AdminUserDetailOut": {
         "description": "An account and the last fifty rows of its audit trail, newest first.",
         "properties": {
@@ -70,7 +118,7 @@
         "type": "object"
       },
       "AdminUserOut": {
-        "description": "An account as the console lists it. ``plan`` is the resolved plan's name.",
+        "description": "An account as the console lists it. ``plan`` is the resolved plan's name; ``licence``\nis the entitlement behind it when the account holds one.",
         "properties": {
           "created_at": {
             "title": "Created At",
@@ -115,6 +163,16 @@
               }
             ],
             "title": "Last Login At"
+          },
+          "licence": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AdminLicenceOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "name": {
             "title": "Name",
@@ -3917,6 +3975,182 @@
         "title": "LatencyWindow",
         "type": "integer"
       },
+      "LicenceActivateIn": {
+        "additionalProperties": false,
+        "description": "A licence key bought in the AppLicense portal, pasted into the profile.",
+        "properties": {
+          "key": {
+            "format": "password",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Key",
+            "type": "string",
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "key"
+        ],
+        "title": "LicenceActivateIn",
+        "type": "object"
+      },
+      "LicenceActivatedOut": {
+        "description": "What activating answers: the entitlement, and what the activation had to release.",
+        "properties": {
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "grace_until": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grace Until"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "last_checked_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Checked At"
+          },
+          "message": {
+            "default": "",
+            "title": "Message",
+            "type": "string"
+          },
+          "plan": {
+            "title": "Plan",
+            "type": "string"
+          },
+          "plan_code": {
+            "title": "Plan Code",
+            "type": "string"
+          },
+          "portal_url": {
+            "title": "Portal Url",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "expired",
+              "released"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "plan_code",
+          "plan",
+          "status",
+          "expires_at",
+          "grace_until",
+          "last_checked_at",
+          "portal_url"
+        ],
+        "title": "LicenceActivatedOut",
+        "type": "object"
+      },
+      "LicenceOut": {
+        "description": "The account's licence entitlement (``licences.py``). ``plan_code`` is what the portal\nsold (the plan's feature flag) and ``plan`` the CurveStudio plan it maps to;\n``expires_at`` is ``None`` on a lifetime licence, and ``portal_url`` is where another\none can be bought (empty when unset).",
+        "properties": {
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "grace_until": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grace Until"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "last_checked_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Checked At"
+          },
+          "plan": {
+            "title": "Plan",
+            "type": "string"
+          },
+          "plan_code": {
+            "title": "Plan Code",
+            "type": "string"
+          },
+          "portal_url": {
+            "title": "Portal Url",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "expired",
+              "released"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "plan_code",
+          "plan",
+          "status",
+          "expires_at",
+          "grace_until",
+          "last_checked_at",
+          "portal_url"
+        ],
+        "title": "LicenceOut",
+        "type": "object"
+      },
       "Line": {
         "additionalProperties": false,
         "description": "A straight reference line from ``(x0, y0)`` to ``(x1, y1)``.",
@@ -4010,6 +4244,16 @@
               }
             ],
             "title": "Last Login At"
+          },
+          "licence": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LicenceOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "name": {
             "title": "Name",
@@ -9868,6 +10112,96 @@
           }
         ],
         "summary": "Update Me",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/me/licence": {
+      "delete": {
+        "description": "Release the account's licence: the seat goes back to the portal (best effort) and the\naccount returns to the ``free`` plan, both audited. An account holding none is already\nreleased.",
+        "operationId": "release_licence_api_v1_me_licence_delete",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Release Licence",
+        "tags": [
+          "auth"
+        ]
+      },
+      "get": {
+        "description": "The account's licence entitlement. 404 ``BILLING_OFF`` while the connector is\nunconfigured, 404 ``LICENCE_NONE`` while the account holds no entitlement row.",
+        "operationId": "get_licence_api_v1_me_licence_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LicenceOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Licence",
+        "tags": [
+          "auth"
+        ]
+      },
+      "post": {
+        "description": "Activate a licence key: the account moves to the plan the key's plan code maps to.\n\nAn account that already holds an active licence has it released first — the audited\nrelease path, seat and all — and the answer says so. A refused key leaves the account as\nit was, with the refusal's code in ``detail``.",
+        "operationId": "activate_licence_api_v1_me_licence_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LicenceActivateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LicenceActivatedOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Activate Licence",
         "tags": [
           "auth"
         ]

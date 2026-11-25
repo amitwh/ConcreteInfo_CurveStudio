@@ -516,6 +516,49 @@ describe("UsersPage — one account's detail", () => {
     expect(accountFacts).toContain("Last active22/11/2026");
   });
 
+  it("shows the licence entitlement behind the plan, and that an override wins until a licence changes it", async () => {
+    const user = userEvent.setup();
+    const LICENCED_ID = "1d1d1d1d-0000-4000-8000-00000000000d";
+    const licenced = account({
+      id: LICENCED_ID,
+      email: "licenced@example.test",
+      name: "Licenced Person",
+      plan: "paid",
+      plan_override: "paid",
+      licence: {
+        status: "active",
+        plan_code: "curvestudio-pro",
+        expires_at: "2026-12-25T10:00:00+05:30",
+        last_checked_at: "2026-11-24T03:00:00+05:30",
+      },
+    });
+    serve({}, [licenced]);
+    renderWithQuery(<UsersPage />);
+    await screen.findByRole("table", { name: "Accounts" });
+    await user.click(
+      within(row("licenced@example.test")).getByRole("button", { name: "Open licenced@example.test" }),
+    );
+    const detail = screen.getByRole("region", { name: "Licenced Person" });
+    expect(await within(detail).findByText(/set by an override/)).toBeTruthy();
+    expect(within(detail).getByText(/an override wins until a licence changes it/)).toBeTruthy();
+    const licenceFacts = facts(detail);
+    expect(licenceFacts).toContain("Licenceactive");
+    expect(licenceFacts).toContain("Licence plan codecurvestudio-pro");
+    expect(licenceFacts).toContain("Licence expiry25/12/2026 10:00");
+    expect(licenceFacts).toContain("Licence last check24/11/2026 03:00");
+  });
+
+  it("shows no licence facts for an account without one", async () => {
+    const user = userEvent.setup();
+    serve();
+    renderWithQuery(<UsersPage />);
+    await screen.findByRole("table", { name: "Accounts" });
+    await user.click(within(row("meera@example.test")).getByRole("button", { name: "Open meera@example.test" }));
+    const detail = screen.getByRole("region", { name: "Meera Nair" });
+    await within(detail).findByRole("progressbar", { name: "Datasets" });
+    expect(within(detail).queryByText("Licence plan code")).toBeNull();
+  });
+
   it("lists the account's audit rows, newest first", async () => {
     const user = userEvent.setup();
     serve();

@@ -101,7 +101,9 @@ def create_app(
     )
     # What the middleware counts per route; the housekeeper empties it into the day's rows.
     stats = RequestStats()
-    housekeeper = Housekeeper(session_factory, settings.housekeeping_interval_s, stats=stats)
+    housekeeper = Housekeeper(
+        session_factory, settings.housekeeping_interval_s, settings=settings, stats=stats
+    )
     context = Context(
         settings=settings,
         engine=engine,
