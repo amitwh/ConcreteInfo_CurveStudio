@@ -42,6 +42,7 @@ FAMILIES: tuple[tuple[str, str], ...] = (
     ("comparison", "Method comparison"),
     ("measurement", "Measurement and classification"),
     ("power", "Sample size and power"),
+    ("evidence", "Evidence synthesis"),
 )
 """The families a tool belongs to, each with its title, in the order a person meets them."""
 
@@ -447,6 +448,7 @@ TOOL_MODULES: tuple[str, ...] = (
     "curvestudio.tools.stats.factor",
     "curvestudio.tools.stats.logistic",
     "curvestudio.tools.stats.means",
+    "curvestudio.tools.stats.meta",
     "curvestudio.tools.stats.pca",
     "curvestudio.tools.stats.power",
     "curvestudio.tools.stats.quality",
