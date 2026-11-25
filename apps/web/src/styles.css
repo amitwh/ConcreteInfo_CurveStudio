@@ -999,6 +999,93 @@ textarea {
   }
 }
 
+/* The whole-workspace empty state: everything but the datasets sidebar. */
+.empty-workspace {
+  grid-column: 2 / -1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  padding: clamp(2.5rem, 8vh, 5rem) 1.5rem;
+  text-align: center;
+}
+
+@media (max-width: 800px) {
+  .empty-workspace {
+    grid-column: 1 / -1;
+  }
+}
+
+.empty-workspace__title {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 650;
+}
+
+.empty-workspace__lead {
+  margin: 0;
+  max-width: 34rem;
+  color: var(--muted);
+}
+
+.empty-workspace__steps {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.8rem;
+  margin-top: 1rem;
+}
+
+.empty-step {
+  all: unset;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+  width: 13rem;
+  padding: 1.15rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  color: inherit;
+  text-align: center;
+  transition: border-color 120ms ease, background-color 120ms ease;
+}
+
+.empty-step:hover {
+  border-color: var(--accent);
+  background: var(--accent-tint);
+}
+
+.empty-step:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.empty-step__icon {
+  display: grid;
+  place-items: center;
+  width: 2.2rem;
+  height: 2.2rem;
+  border-radius: 50%;
+  background: var(--accent-weak);
+  color: var(--accent);
+  margin-bottom: 0.2rem;
+}
+
+.empty-step__title {
+  font-weight: 600;
+  font-size: 0.92rem;
+  color: var(--text);
+}
+
+.empty-step__hint {
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.35;
+}
+
 .datasets-rail {
   display: flex;
   flex-direction: column;

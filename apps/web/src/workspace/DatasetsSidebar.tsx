@@ -5,7 +5,15 @@
  * pickers appear and the same file is re-sent with them.
  */
 
-import { useRef, useState, type ChangeEvent, type DragEvent, type ReactElement } from "react";
+import {
+  useImperativeHandle,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type DragEvent,
+  type ReactElement,
+  type Ref,
+} from "react";
 import { ClipboardPaste, Database, PanelLeftClose, PanelLeftOpen, Trash2, Upload } from "lucide-react";
 import {
   ApiError,
@@ -28,6 +36,16 @@ export interface DatasetsSidebarProps {
   onDeleted: (id: string) => void;
   collapsed: boolean;
   onToggleCollapse: () => void;
+  /** The workspace's empty state triggers the sidebar's existing actions through this. */
+  ref?: Ref<DatasetsSidebarHandle>;
+}
+
+/** The existing upload and paste actions, offered to the workspace's empty state. */
+export interface DatasetsSidebarHandle {
+  /** Open the operating system's file picker (the "Choose file" action). */
+  openUpload: () => void;
+  /** Open the paste-data dialog. */
+  openPaste: () => void;
 }
 
 const ACCEPT = ".csv,.tsv,.txt,.xlsx,.json";
@@ -64,6 +82,7 @@ export function DatasetsSidebar({
   onDeleted,
   collapsed,
   onToggleCollapse,
+  ref,
 }: DatasetsSidebarProps): ReactElement {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -77,6 +96,15 @@ export function DatasetsSidebar({
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<unknown>(null);
   const [pasteOpen, setPasteOpen] = useState(false);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      openUpload: () => fileInputRef.current?.click(),
+      openPaste: () => setPasteOpen(true),
+    }),
+    [],
+  );
 
   const upload = async (file: File, columns?: Partial<ColumnChoice>): Promise<void> => {
     setUploadError(null);
@@ -167,20 +195,47 @@ export function DatasetsSidebar({
     }
   };
 
+  // The hidden picker and the paste dialog are shared by both shapes below (the narrow
+  // rail and the full panel): mounted either way, so the imperative handle's actions
+  // work even while the rail is collapsed.
+  const pickerAndPaste = (
+    <>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept={ACCEPT}
+        onChange={onPick}
+        hidden
+        aria-hidden="true"
+        tabIndex={-1}
+      />
+      {pasteOpen && (
+        <SpreadsheetPaste
+          busy={uploading}
+          onClose={() => setPasteOpen(false)}
+          onImport={onPasted}
+        />
+      )}
+    </>
+  );
+
   if (collapsed) {
     return (
-      <section className="panel datasets-rail" aria-label="Datasets">
-        <button
-          type="button"
-          className="panel-collapse"
-          aria-label="Expand datasets"
-          title="Expand datasets"
-          onClick={onToggleCollapse}
-        >
-          <PanelLeftOpen className="icon" aria-hidden="true" focusable="false" />
-        </button>
-        <span className="rail-count" title={`${datasets.length} datasets`}>{datasets.length}</span>
-      </section>
+      <>
+        <section className="panel datasets-rail" aria-label="Datasets">
+          <button
+            type="button"
+            className="panel-collapse"
+            aria-label="Expand datasets"
+            title="Expand datasets"
+            onClick={onToggleCollapse}
+          >
+            <PanelLeftOpen className="icon" aria-hidden="true" focusable="false" />
+          </button>
+          <span className="rail-count" title={`${datasets.length} datasets`}>{datasets.length}</span>
+        </section>
+        {pickerAndPaste}
+      </>
     );
   }
 
@@ -225,15 +280,6 @@ export function DatasetsSidebar({
             csv · tsv · txt · xlsx · json — up to {Math.floor(MAX_UPLOAD_BYTES / MB)} MB
           </span>
         </button>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept={ACCEPT}
-          onChange={onPick}
-          hidden
-          aria-hidden="true"
-          tabIndex={-1}
-        />
         <div className="upload-card__actions">
           <button
             type="button"
@@ -256,13 +302,7 @@ export function DatasetsSidebar({
         </div>
       </div>
 
-      {pasteOpen && (
-        <SpreadsheetPaste
-          busy={uploading}
-          onClose={() => setPasteOpen(false)}
-          onImport={onPasted}
-        />
-      )}
+      {pickerAndPaste}
 
       {uploading && (
         <div className="upload-progress" role="status">

@@ -1,5 +1,6 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
 import { AuthProvider } from "../api/auth";
 import { ApiError, api } from "../api/client";
@@ -34,7 +35,9 @@ function renderPage(initialMode: "manual" | "stats" | null = null) {
     <QueryClientProvider client={new QueryClient()}>
       <ThemeProvider>
         <AuthProvider>
-          <WorkspacePage initialMode={initialMode} />
+          <MemoryRouter>
+            <WorkspacePage initialMode={initialMode} />
+          </MemoryRouter>
         </AuthProvider>
       </ThemeProvider>
     </QueryClientProvider>,
@@ -267,9 +270,15 @@ let openAsExistingFit = false;
 /** When true the dataset list also holds the 1M-row dataset (newest first). */
 let bigListed = false;
 
+/** When true the account has no datasets at all — the whole-workspace empty state. */
+let noDatasets = false;
+
 /** Every route WorkspacePage hits on mount, on selection and while opening a row. */
 function route(path: string, options?: RequestInit): Promise<unknown> {
-  if (path === "/datasets") return Promise.resolve(bigListed ? [DATASET_BIG, DATASET] : [DATASET]);
+  if (path === "/datasets") {
+    if (noDatasets) return Promise.resolve([]);
+    return Promise.resolve(bigListed ? [DATASET_BIG, DATASET] : [DATASET]);
+  }
   if (path === "/models") return Promise.resolve([]);
   if (path === "/datasets/ds-1?points=20000") return Promise.resolve(DETAIL);
   if (path === "/datasets/ds-2?points=20000" || path === "/datasets/ds-2?points=1000000") {
@@ -308,6 +317,7 @@ let request: MockInstance;
 beforeEach(() => {
   openAsExistingFit = false;
   bigListed = false;
+  noDatasets = false;
   statRunFails = null;
   storedStatistics = [];
   request = vi.spyOn(api, "request").mockImplementation(
@@ -653,5 +663,106 @@ describe("WorkspacePage — the chart's sample request", () => {
     await flush();
 
     expect(request).toHaveBeenCalledWith("/datasets/ds-2?points=1000000");
+  });
+});
+
+describe("WorkspacePage — the empty workspace (design item 7)", () => {
+  /** An account with no datasets: the whole-workspace empty state. */
+  function renderEmpty(): ReturnType<typeof renderPage> {
+    noDatasets = true;
+    return renderPage();
+  }
+
+  it("shows the three next steps instead of the everyday workspace", async () => {
+    renderEmpty();
+    await flush();
+
+    const region = screen.getByRole("region", { name: "Get started" });
+    expect(within(region).getByRole("button", { name: /^Upload a file/ })).toBeTruthy();
+    expect(within(region).getByRole("button", { name: /^Paste data/ })).toBeTruthy();
+    expect(within(region).getByRole("link", { name: /^Read the quick start/ })).toBeTruthy();
+
+    // The everyday workspace — the side panel, the chart area's own empty paragraph —
+    // stays out of sight until the account has a dataset.
+    expect(screen.queryByText("Auto-fit options")).toBeNull();
+    expect(screen.queryByText(/Upload a dataset and every model is tried/)).toBeNull();
+  });
+
+  it("links the quick start to the shipped help anchor", async () => {
+    renderEmpty();
+    await flush();
+
+    const link = screen.getByRole("link", { name: /^Read the quick start/ });
+    expect(link.getAttribute("href")).toBe("/help#getting-started");
+  });
+
+  it("does not flash the empty state while the list is loading", () => {
+    renderEmpty();
+
+    expect(screen.queryByRole("region", { name: "Get started" })).toBeNull();
+    expect(screen.getByText("Loading datasets…")).toBeTruthy();
+  });
+
+  it("does not show the empty state once the account has a dataset", async () => {
+    renderPage();
+    await flush();
+
+    expect(screen.queryByRole("region", { name: "Get started" })).toBeNull();
+    expect(screen.getByTitle("growth.csv")).toBeTruthy();
+  });
+
+  it("does not show the empty state when the list fails to load", async () => {
+    request.mockImplementation(
+      (async (path: string) =>
+        String(path) === "/datasets"
+          ? Promise.reject(new Error("list failed"))
+          : route(String(path))) as unknown as typeof api.request,
+    );
+    renderPage();
+    await flush();
+
+    // A failed list must not read as an empty account.
+    expect(screen.queryByRole("region", { name: "Get started" })).toBeNull();
+  });
+
+  it("opens the sidebar's existing file picker from the empty state", async () => {
+    renderEmpty();
+    await flush();
+
+    const picker = vi.spyOn(HTMLInputElement.prototype, "click");
+    fireEvent.click(
+      within(screen.getByRole("region", { name: "Get started" })).getByRole("button", {
+        name: /^Upload a file/,
+      }),
+    );
+    expect(picker).toHaveBeenCalledTimes(1);
+    picker.mockRestore();
+  });
+
+  it("opens the sidebar's existing paste dialog from the empty state", async () => {
+    renderEmpty();
+    await flush();
+
+    fireEvent.click(
+      within(screen.getByRole("region", { name: "Get started" })).getByRole("button", {
+        name: /^Paste data/,
+      }),
+    );
+    expect(screen.getByRole("dialog")).toBeTruthy();
+  });
+
+  it("opens the file picker even when the datasets rail is collapsed", async () => {
+    localStorage.setItem("curvestudio:datasetsCollapsed", "1");
+    try {
+      renderEmpty();
+      await flush();
+
+      const picker = vi.spyOn(HTMLInputElement.prototype, "click");
+      fireEvent.click(screen.getByRole("button", { name: /^Upload a file/ }));
+      expect(picker).toHaveBeenCalledTimes(1);
+      picker.mockRestore();
+    } finally {
+      localStorage.removeItem("curvestudio:datasetsCollapsed");
+    }
   });
 });
