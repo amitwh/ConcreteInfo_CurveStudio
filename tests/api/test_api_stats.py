@@ -441,7 +441,7 @@ def test_group_labels_match_the_core_accessor(shared_client: TestClient, tmp_pat
 def test_migration_0015_round_trip(tmp_path: Path) -> None:
     engine: Engine = create_app(make_settings(tmp_path)).state.ctx.engine
     upgrade_to_head(engine)
-    assert current_revision(engine) == "0015"
+    assert current_revision(engine) == "0016"
     assert "stat_results" in inspect(engine).get_table_names()
 
     command.downgrade(_config(engine), "0014")
@@ -449,7 +449,7 @@ def test_migration_0015_round_trip(tmp_path: Path) -> None:
     assert "stat_results" not in inspect(engine).get_table_names()
 
     upgrade_to_head(engine)
-    assert current_revision(engine) == "0015"
+    assert current_revision(engine) == "0016"
     assert "stat_results" in inspect(engine).get_table_names()
     columns = {column["name"]: column for column in inspect(engine).get_columns("stat_results")}
     assert set(columns) == {

@@ -1,7 +1,9 @@
 """Settings read from the environment (prefix ``CURVESTUDIO_``); secrets never have defaults."""
 
+import json
+from functools import cached_property
 from pathlib import Path
-from typing import Annotated, Literal, Self
+from typing import Annotated, Literal, Self, cast
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -62,6 +64,14 @@ class Settings(BaseSettings):
     current_release: str = ""
     registration_enabled: bool = True
     billing_enabled: bool = False
+    # The AppLicense connector (``licences.py``). Empty licence_url or licence_app_id means the
+    # connector is off; setting both turns on billing_enabled as well (see the validator below).
+    licence_url: str = ""
+    licence_public_key_pem: SecretStr | None = None
+    licence_app_id: str = ""
+    # JSON object mapping the portal's plan codes (a plan's feature flags) to plan names here.
+    licence_plan_map: str = ""
+    licence_portal_url: str = ""
     web_dist: Path | None = None
     # Public address of the web app, used in the links of transactional email.
     app_url: str = "http://localhost:5173"
@@ -121,10 +131,12 @@ class Settings(BaseSettings):
                 return "postgresql+psycopg://" + value[len(prefix) :]
         return value
 
-    @field_validator("jwt_private_key_pem", "jwt_public_key_pem", mode="before")
+    @field_validator(
+        "jwt_private_key_pem", "jwt_public_key_pem", "licence_public_key_pem", mode="before"
+    )
     @classmethod
     def _empty_key_is_unset(cls, value: object) -> object:
-        """``CURVESTUDIO_JWT_..._PEM=`` (as in ``.env.example``) means not set."""
+        """``CURVESTUDIO_JWT_..._PEM=`` / ``CURVESTUDIO_LICENCE_PUBLIC_KEY_PEM=`` mean not set."""
         if isinstance(value, str) and not value.strip():
             return None
         return value
@@ -175,6 +187,50 @@ class Settings(BaseSettings):
                 "kept) must be below CURVESTUDIO_AUTOFIT_TIMEOUT_S (when the job is killed)"
             )
         return self
+
+    @model_validator(mode="after")
+    def _licence_settings_turn_billing_on(self) -> Self:
+        """A configured connector means billing is on, whatever the switch says."""
+        if self.licence_url.strip() and self.licence_app_id.strip() and not self.billing_enabled:
+            object.__setattr__(self, "billing_enabled", True)
+        return self
+
+    @cached_property
+    def licence_plans(self) -> dict[str, str]:
+        """The portal's plan codes mapped to this installation's plan names.
+
+        Raises:
+            ValueError: when ``CURVESTUDIO_LICENCE_PLAN_MAP`` is not a JSON object of
+                ``"portal-code": "plan-name"`` strings.
+        """
+        text = self.licence_plan_map.strip()
+        if not text:
+            return {}
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                "CURVESTUDIO_LICENCE_PLAN_MAP is not valid JSON "
+                f"({exc.msg} at column {exc.colno}); expected an object such as "
+                '{"curvestudio-basic": "paid"}'
+            ) from exc
+        if not isinstance(parsed, dict):
+            raise ValueError(
+                "CURVESTUDIO_LICENCE_PLAN_MAP must be a JSON object mapping portal plan codes "
+                "to plan names"
+            )
+        mapping = cast(dict[object, object], parsed)
+        for code, name in mapping.items():
+            if not isinstance(code, str) or not code.strip():
+                raise ValueError(
+                    f"CURVESTUDIO_LICENCE_PLAN_MAP has a key that is not a plan code: {code!r}"
+                )
+            if not isinstance(name, str) or not name.strip():
+                raise ValueError(
+                    "CURVESTUDIO_LICENCE_PLAN_MAP maps the plan code "
+                    f"{code!r} to no plan name: {name!r}"
+                )
+        return cast(dict[str, str], parsed)
 
     @model_validator(mode="after")
     def _keys(self) -> Self:

@@ -404,7 +404,7 @@ def test_migration_0013_round_trip(tmp_path: Path) -> None:
     nothing else."""
     engine: Engine = create_app(make_settings(tmp_path)).state.ctx.engine
     upgrade_to_head(engine)
-    assert current_revision(engine) == "0015"
+    assert current_revision(engine) == "0016"
     assert {"table", "table_columns"} <= dataset_columns(engine)
 
     command.downgrade(_config(engine), "0012")
@@ -417,7 +417,7 @@ def test_migration_0013_round_trip(tmp_path: Path) -> None:
         dataset_id = add_dataset_of_an_older_schema(db, user)
 
     upgrade_to_head(engine)
-    assert current_revision(engine) == "0015"
+    assert current_revision(engine) == "0016"
     column = next(c for c in inspect(engine).get_columns("datasets") if c["name"] == "table")
     assert column["nullable"] is True
     with Session(engine) as db:  # the blobs are deferred columns: read them while it is open
@@ -432,7 +432,7 @@ def test_migration_0014_round_trip(tmp_path: Path) -> None:
     downgrade takes the column away and nothing else."""
     engine: Engine = create_app(make_settings(tmp_path)).state.ctx.engine
     upgrade_to_head(engine)
-    assert current_revision(engine) == "0015"
+    assert current_revision(engine) == "0016"
     assert "table_columns" in dataset_columns(engine)
 
     command.downgrade(_config(engine), "0013")
@@ -445,7 +445,7 @@ def test_migration_0014_round_trip(tmp_path: Path) -> None:
         dataset_id = add_dataset_of_an_older_schema(db, user, table=b"g\na\nb\n")
 
     upgrade_to_head(engine)
-    assert current_revision(engine) == "0015"
+    assert current_revision(engine) == "0016"
     column = next(
         c for c in inspect(engine).get_columns("datasets") if c["name"] == "table_columns"
     )

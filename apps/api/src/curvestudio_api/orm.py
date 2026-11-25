@@ -280,6 +280,30 @@ class AuditLog(Base):
     created_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utcnow)
 
 
+class Entitlement(_Timestamps, Base):
+    """One account's licence bought in the AppLicense portal (``licences.py``).
+
+    ``status`` is ``active``, ``expired`` or ``released``; an account holds at most one row.
+    ``token`` is the licence JWT the portal verified, kept to re-check and to release the seat.
+    """
+
+    __tablename__ = "entitlements"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=_uuid)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), unique=True
+    )
+    licence_id: Mapped[str] = mapped_column(String(100))
+    # The portal's plan code (the plan's feature flag), not a plan name here.
+    plan_code: Mapped[str] = mapped_column(String(100))
+    status: Mapped[str] = mapped_column(String(20))
+    # NULL on a lifetime licence, whose token carries no expiry of its own.
+    expires_at: Mapped[datetime | None] = mapped_column(UtcDateTime, default=None)
+    grace_until: Mapped[datetime | None] = mapped_column(UtcDateTime, default=None)
+    last_checked_at: Mapped[datetime | None] = mapped_column(UtcDateTime, default=None)
+    token: Mapped[str] = mapped_column(Text, deferred=True)
+
+
 class Plan(_Timestamps, Base):
     __tablename__ = "plans"
 
