@@ -7,6 +7,7 @@ import os
 import subprocess
 import sys
 import time
+import uuid
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -92,11 +93,9 @@ def group_members(pgid: int) -> list[int]:
     return found
 
 
-def job_process_pid(job_id: str) -> int | None:
-    for child in multiprocessing.active_children():
-        if child.name == f"curvestudio-job-{job_id}":
-            return child.pid
-    return None
+def job_process_pid(client: TestClient, job_id: str) -> int | None:
+    """The pid of the process running the job: the child its warm worker forked."""
+    return client.app.state.ctx.jobs.child_pid_of(uuid.UUID(job_id))  # type: ignore[attr-defined]
 
 
 # -- progress --------------------------------------------------------------------------------------
@@ -166,7 +165,7 @@ def test_cancelling_a_run_leaves_no_worker_processes_behind(
     dataset = upload(client, headers, linear_csv(40)).json()
     job_id = start(client, headers, dataset["id"], **POOL_RUN)
 
-    pid = wait_until(lambda: job_process_pid(job_id), 60, "the job process")
+    pid = wait_until(lambda: job_process_pid(client, job_id), 60, "the job process")
     assert pid is not None
     # the job process leads its own group, so everything it starts is in it
     members = wait_until(
@@ -179,30 +178,31 @@ def test_cancelling_a_run_leaves_no_worker_processes_behind(
     wait_until(lambda: not group_members(pid), 15, "the whole process group to die")
     assert not alive(pid) and not any(alive(m) for m in members)
     assert multiprocessing.parent_process() is None  # (we are the API process in this test)
-    assert job_process_pid(job_id) is None
+    assert job_process_pid(client, job_id) is None
     listed = client.get(f"{API}/datasets/{dataset['id']}/autofits", headers=headers).json()
     assert listed == []  # a cancelled run stores nothing
     assert poll_job(client, headers, job_id)["status"] == "cancelled"
 
 
 @LINUX_ONLY
-def test_a_job_process_and_its_children_die_when_the_api_process_is_killed(
+def test_a_warm_worker_its_job_and_grandchildren_die_when_the_api_process_is_killed(
     tmp_path: Path,
 ) -> None:
     pid_file = tmp_path / "child.pid"
     script = tmp_path / "parent.py"
     script.write_text(
-        "import multiprocessing, os, signal, sys, time\n"
+        "import multiprocessing, os, signal, sys, time, uuid\n"
         "import api_job_workers\n"
-        "from curvestudio_api.worker import job_process_main\n"
+        "from curvestudio_api.worker_pool import send_ticket, warm_worker_main\n"
         "if __name__ == '__main__':\n"
         "    ctx = multiprocessing.get_context('spawn')\n"
-        "    receiver, sender = ctx.Pipe(duplex=False)\n"
-        "    worker = api_job_workers.child_spawning_worker\n"
-        "    job = ctx.Process(target=job_process_main, daemon=False, args=(\n"
-        "        sender, worker, {'pid_file': sys.argv[1]}, False))\n"
-        "    job.start()\n"
-        "    print(job.pid, flush=True)\n"
+        "    ours, theirs = ctx.Pipe(duplex=True)\n"
+        "    worker = ctx.Process(target=warm_worker_main, args=(theirs,), daemon=False)\n"
+        "    worker.start()\n"
+        "    theirs.close()  # the worker holds the only far end\n"
+        "    assert send_ticket(ours, api_job_workers.child_spawning_worker,\n"
+        "                       {'pid_file': sys.argv[1]}, False, uuid.uuid4())\n"
+        "    print(worker.pid, flush=True)\n"
         "    while not (os.path.exists(sys.argv[1]) and open(sys.argv[1]).read()):\n"
         "        time.sleep(0.05)\n"
         "    print('ready', flush=True)\n"
@@ -215,19 +215,19 @@ def test_a_job_process_and_its_children_die_when_the_api_process_is_killed(
         env=env,
         text=True,
     )
-    job_pid = 0
-    child_pid = 0
+    worker_pid = 0
+    grandchild_pid = 0
     try:
         assert parent.stdout is not None
-        job_pid = int(parent.stdout.readline())
+        worker_pid = int(parent.stdout.readline())
         assert parent.stdout.readline().strip() == "ready"
-        child_pid = int(pid_file.read_text())
+        grandchild_pid = int(pid_file.read_text())
         parent.wait(timeout=10)
         assert parent.returncode == -9  # it was killed, it did not exit cleanly
-        wait_until(lambda: not alive(job_pid), 15, "the orphaned job process to exit")
-        wait_until(lambda: not alive(child_pid), 15, "its child to be killed too")
+        wait_until(lambda: not alive(worker_pid), 15, "the orphaned warm worker to exit")
+        wait_until(lambda: not alive(grandchild_pid), 15, "its job's child to be killed too")
     finally:
-        for pid in (job_pid, child_pid):
+        for pid in (worker_pid, grandchild_pid):
             if pid and alive(pid):
                 os.kill(pid, 9)
         parent.kill()

@@ -5,6 +5,14 @@ All notable changes are listed here. Dates are IST. Format: [Keep a Changelog](h
 ## [Unreleased]
 
 ### Changed
+- **Server jobs run in a warm worker pool**: each worker imports the fitting stack once
+  and then forks a fresh, throwaway process per job, so a job no longer pays an
+  interpreter start-up while its isolation stays exactly per-job — the worker never runs
+  job code, the per-job timeout, result cap and kill guarantee are unchanged, and two
+  different jobs through one worker are proven byte-identical to fresh processes by
+  test. A worker is recycled after `CURVESTUDIO_JOB_WORKER_MAX_JOBS` jobs or above
+  `CURVESTUDIO_JOB_WORKER_MEMORY_MB` of its own resident size; upload parsing keeps its
+  own fresh, self-capped child.
 - **The public surface presents CurveStudio as a scientific, research and statistical
   tool**: the home page states who it is for, carries a research-requirements table,
   links the owner's other open-source projects and commercial software, and drops the

@@ -82,7 +82,9 @@ def test_cancel_kills_only_that_jobs_process(
     assert client.post(f"{API}/jobs/{job_a}/cancel", headers=a).json()["status"] == "cancelled"
     time.sleep(1.5)
     assert get_job(client, b, job_b)["status"] == "running"
-    assert len(multiprocessing.active_children()) == 1  # job_b's process only; a's was reaped
+    # only warm workers remain — job_a's forked child was killed and reaped by its worker
+    # (one worker if the cancel beat the child's hello and replaced it, two if not)
+    assert {p.name for p in multiprocessing.active_children()} <= {"curvestudio-job-worker"}
 
 
 def test_no_zombie_processes_after_timeouts_crashes_and_cancels(
@@ -97,7 +99,9 @@ def test_no_zombie_processes_after_timeouts_crashes_and_cancels(
     jobs = [submit(client, headers, dataset["id"]) for _ in range(3)]
     for job_id in jobs:
         assert wait_for(client, headers, job_id, ("failed",))["error_code"] == "TIMEOUT"
-    deadline = time.monotonic() + 5
+    # a timed-out job recycles its worker, so every process exits on its own; nothing is
+    # left unreaped (a live warm worker would be named, a zombie would not answer at all)
+    deadline = time.monotonic() + 10
     while multiprocessing.active_children() and time.monotonic() < deadline:
         time.sleep(0.1)
     assert multiprocessing.active_children() == []

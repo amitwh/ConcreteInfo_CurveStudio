@@ -33,17 +33,21 @@ paths. The OpenAPI document is `apps/api/openapi.json`; regenerate it with
 
 ## Deployment notes
 
-* **One API process per database.** Jobs run in a `spawn` process pool owned by that process;
-  the rate limiter is in memory; jobs left `queued`/`running` by a previous process are failed
-  (`SERVER_RESTART`) at start-up. Scale up with `CURVESTUDIO_JOB_WORKERS`, not with more
-  uvicorn workers.
+* **One API process per database.** Jobs run in a warm worker pool owned by that process (each
+  worker a `spawn` process that forks a fresh child per job); the rate limiter is in memory;
+  jobs left `queued`/`running` by a previous process are failed (`SERVER_RESTART`) at start-up.
+  Scale up with `CURVESTUDIO_JOB_WORKERS`, not with more uvicorn workers.
 * Behind a reverse proxy set `CURVESTUDIO_TRUSTED_PROXY_HOPS` to the number of proxies (default
   1). The client address used for rate limits is the Nth entry from the right of
   `X-Forwarded-For`, so a client cannot choose its own address by sending the header itself;
   with `0` the header is ignored. Do not expose the API directly with the default of 1.
-* Every fit job runs in its own `spawn` process and every upload is parsed in its own short-lived
+* Every fit job runs in its own process — forked from a warm worker that has already imported
+  the stack, so a job pays no interpreter start-up while its address space stays fresh (the
+  worker never runs job code) — and every upload is parsed in its own short-lived, self-capped
   process (time, memory and concurrency limits), so one user's cancel, timeout, crash or heavy
-  file cannot disturb another's work. Jobs are scheduled round-robin across users.
+  file cannot disturb another's work. A worker is recycled after
+  `CURVESTUDIO_JOB_WORKER_MAX_JOBS` jobs or above `CURVESTUDIO_JOB_WORKER_MEMORY_MB` of its
+  own resident size. Jobs are scheduled round-robin across users.
 * Quotas (datasets, dataset bytes, stored fits) come from the `self-hosted` row of `plans` and can
   be overridden with `CURVESTUDIO_QUOTA_*`; `GET /me` shows limits and usage. `DELETE /me` erases an
   account (its audit rows keep no user id).

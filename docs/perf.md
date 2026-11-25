@@ -476,6 +476,60 @@ This is the per-job cost Task 5's warm pool removes: at ~1.5 s of pure process s
 an Auto-fit that needs 16 s wall carries nearly a tenth of it before any mathematics, and
 a queue of small fits would pay it per job.
 
+## Server: warm job workers (Task 5, 25/11/2026)
+
+Each `CURVESTUDIO_JOB_WORKERS` slot is now a warm worker (`apps/api/.../worker_pool.py`):
+a `spawn` process that imports the whole fitting stack once and then forks a throwaway
+child per job. The worker never runs job code, so a job's process is as fresh as the
+one-spawn-per-job it replaces — proven by test (`tests/api/test_api_jobs_warm_pool.py`): a
+fit and a cross-validation through ONE worker are byte-identical to the same jobs in
+fresh `spawn` processes (canonical JSON; the one blanked field is the bundle's
+provenance wall-clock stamp), and a cancelled job's environment, working directory,
+module globals and files do not reach the next job in that worker. The kill machinery
+keeps its strength: the child leads its own process group, so a timeout or a cancel is
+one `killpg` — an Auto-fit run's engine pool dies with the job — a timed-out job's worker
+is replaced, a cancel in the fork's hello window is routed through the child's own
+announced pid (tested with the scheduler's tick blocked), and a hard-killed API process
+takes worker, child and grandchildren with it (`PR_SET_PDEATHSIG` plus the parent
+watches; tested). A worker recycles after **50 jobs** or above **384 MB** of its own
+resident size — `CURVESTUDIO_JOB_WORKER_MAX_JOBS` / `CURVESTUDIO_JOB_WORKER_MEMORY_MB`:
+a job's memory never touches the worker (each job dies with its child), so the limits
+bound the worker's slow drift, not job size; the measured post-import resident size is
+**202.3 MB** (VmSize 1,192 MB), giving the default ≈1.9× headroom, and 50 jobs bounds
+any leak to a spawn's cost every fifty jobs. The upload parser keeps its fresh,
+self-capped child, exactly as design step 11 requires.
+
+Command: `bash /home/amith/tmp/cs-verify/perf/task5_docker_replica.sh <before|after>` —
+the same constrained replica as Task 0 (`docker run --cpus=2 --memory=2g --init`, the
+production image, its own health check; torn down after). `before` builds exactly
+`579ce27` (`git archive`, no working-tree changes); `after` builds the Task 5 tree. Both
+passes ran back-to-back on the otherwise-idle workstation, minutes apart. The scripts:
+`server_replica_task5.mjs` (the Task 0 Auto-fit/import measurements), the new
+`task5_fit_wall.mjs` (1 warm-up + 15 small fits — `POST /datasets/{id}/fits`, polynomial
+degree 1 on `decay.csv`, polled to job success; the surface the per-job spawn used to
+dominate) and `warm_worker_probe.py` (a warm worker's spawn cost, its per-job dispatch
+cost and its resident size, replacing Task 0's one-shot `worker_spawn_probe.py`).
+
+| Figure (2-CPU/2-GB replica) | Before (`579ce27`) | After (Task 5) |
+| --- | ---: | ---: |
+| small fit, POST → job succeeded, median | 1,636 ms (runs 1,571–1,734) | **71 ms** (runs 70–73) |
+| small fit, p95 | 1,678 ms | 73 ms |
+| Auto-fit 100 points, median | 16,774 ms (runs 16,018–17,515) | **14,912 ms** (runs 14,495–15,296) |
+| Auto-fit 100 points, p95 | 17,401 ms | 15,063 ms |
+| 100 000-row CSV import, median | 2,294 ms (runs 2,245–2,320) | 2,239 ms (runs 2,212–2,317) |
+| per-job process start (probe) | 1,581 ms spawn → hello | **5 ms** warm dispatch → hello (median; a worker's first spawn still 1,633 ms) |
+
+The per-job spawn is gone where it was the whole story: a small fit drops 1,636 → 71 ms
+(23×) and a warm worker hands a job to its forked child in 5 ms, against the 1.58 s a
+fresh process needed. Against the plan's targets, honestly: **the Auto-fit 3 s / 6 s
+target is not met** (14.9 s / 15.1 s) — the ~1.9 s this task removed was the job
+process; what remains is the search itself (174 candidates on 2 CPUs) plus the engine
+pool each run starts inside the job (`discovery/pool.py`, ~2 s of interpreter starts per
+run, three workers) — design step 10, Task 6's warm Auto-fit pool, is that lever. The
+**2 s import target is not met either** (2.24 s, within noise of before): the parser's
+fresh, self-capped child is deliberately untouched (step 11 is Task 6's warm parent for
+it). Both are recorded as not started on their next lever, not as failures of this one.
+
 ## Server: the deployed service, from outside
 
 Command: `bash /home/amith/tmp/cs-verify/perf/deployed_probe.sh` — read-only GETs only,

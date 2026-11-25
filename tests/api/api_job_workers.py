@@ -4,6 +4,8 @@ import os
 import time
 from typing import Any
 
+import api_job_workers_scratch as scratch
+
 from curvestudio_api.audit_worker import run_cross_validation_job
 from curvestudio_api.worker import run_fit_job
 
@@ -140,3 +142,78 @@ def big_audit_result_worker(**_arguments: Any) -> dict[str, Any]:
     """A cross-validation result larger than a fit's bundle: too large under a limit a fit
     passes."""
     return {"ok": True, "cv": {"padding": "x" * 500_000}}
+
+
+# -- the warm pool: keyed workers, pollution, probes and hard kills -------------------------------
+
+
+_TEST_DIR = "CURVESTUDIO_WARM_POOL_TEST_DIR"
+
+
+def hang_or_fit_worker(**arguments: Any) -> dict[str, Any]:
+    """Hangs forever on the dataset whose x column is ``sleepy``; every other dataset gets a
+    real fit, so one app can time a job out and then prove the next one runs clean."""
+    if arguments["x_name"] == "sleepy":
+        time.sleep(600)
+        return {"ok": False, "code": "NEVER", "message": "unreachable"}
+    return run_fit_job(**arguments)
+
+
+def bomb_or_fit_worker(**arguments: Any) -> dict[str, Any]:
+    """On the dataset whose x column is ``boom``: touch a large allocation, then die the way
+    the OOM killer does — SIGKILL, no result. Every other dataset gets a real fit."""
+    if arguments["x_name"] == "boom":
+        import os
+        import signal
+
+        ballast = bytearray(256 * 1024 * 1024)
+        for page in range(0, len(ballast), 4096):
+            ballast[page] = 1
+        os.kill(os.getpid(), signal.SIGKILL)
+        return {"ok": False, "code": "NEVER", "message": "unreachable"}
+    return run_fit_job(**arguments)
+
+
+def dirty_or_probe_worker(**arguments: Any) -> dict[str, Any]:
+    """One worker, three behaviours by the dataset's x column, so a single app can pollute,
+    cancel, and probe its warm worker:
+
+    * ``dirty`` — leave every kind of mess a job could (an environment variable, a
+      working-directory change, a module global, a stray file, a spawned grandchild), then
+      hang like a stuck fit. None of the process state may survive the cancel into the
+      next job (the file on disk does, exactly as it would from any process).
+    * ``probe`` — report the process state a job inherits: the leak variable, the working
+      directory, the scratch module's global, and whether the stray file is on disk. A
+      fresh process sees the same state the next job of the warm worker must.
+    * anything else — a real fit.
+    """
+    import os
+    import pathlib
+    import subprocess
+    import sys
+
+    which = arguments["x_name"]
+    if which == "dirty":
+        where = pathlib.Path(os.environ[_TEST_DIR])
+        os.environ["CURVESTUDIO_JOB_LEAK"] = "left by a cancelled job"
+        os.chdir(where)
+        (where / "left-by-a-cancelled-job.txt").write_text("stray")
+        scratch.MARK = "left by a cancelled job"
+        child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(600)"])
+        (where / "grandchild.pid").write_text(str(child.pid))
+        time.sleep(600)
+        return {"ok": False, "code": "NEVER", "message": "unreachable"}
+    if which == "probe":
+        where = pathlib.Path(os.environ[_TEST_DIR])
+        return {
+            "ok": True,
+            "bundle": {
+                # a shape the store path accepts; the payload is the probe itself
+                "result": {"status": "converged"},
+                "leak": os.environ.get("CURVESTUDIO_JOB_LEAK"),
+                "cwd": os.getcwd(),
+                "scratch": scratch.MARK,
+                "stray": (where / "left-by-a-cancelled-job.txt").exists(),
+            },
+        }
+    return run_fit_job(**arguments)

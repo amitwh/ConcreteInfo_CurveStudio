@@ -98,6 +98,8 @@ def create_app(
         simulate_worker=simulate_worker,
         advise_worker=advise_worker,
         autofit_timeout_s=settings.autofit_timeout_s,
+        worker_max_jobs=settings.job_worker_max_jobs,
+        worker_memory_mb=settings.job_worker_memory_mb,
     )
     # What the middleware counts per route; the housekeeper empties it into the day's rows.
     stats = RequestStats()

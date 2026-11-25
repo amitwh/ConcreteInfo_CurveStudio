@@ -257,14 +257,24 @@ def test_queued_jobs_run_in_order_within_the_worker_limit(
     headers = signup(client)
     dataset = upload(client, headers, linear_csv()).json()
     jobs = [submit(client, headers, dataset["id"]) for _ in range(3)]
-    deadline = time.monotonic() + 20
-    peak = 0
+    deadline = time.monotonic() + 30
+    states: list[str] = []
     while time.monotonic() < deadline:
         states = [client.get(f"{API}/jobs/{j}", headers=headers).json()["status"] for j in jobs]
-        peak = max(peak, states.count("running"))
         if all(s == "succeeded" for s in states):
             break
         time.sleep(0.05)
     else:
         raise AssertionError(f"jobs did not finish: {states}")
+    # the exact concurrency, from each job's own started_at → finished_at interval (polling
+    # three separate requests smears the moment and can over-count a handover)
+    with client.app.state.ctx.session_factory() as db:  # type: ignore[attr-defined]
+        spans = [
+            (job.started_at, job.finished_at)
+            for job in db.scalars(select(Job).where(Job.id.in_([uuid.UUID(j) for j in jobs])))
+        ]
+    assert all(start is not None and end is not None for start, end in spans)
+    peak = 0
+    for moment, _ in spans:
+        peak = max(peak, sum(1 for start, end in spans if start <= moment < end))
     assert peak <= workers

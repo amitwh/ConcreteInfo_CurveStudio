@@ -366,7 +366,9 @@ def test_delete_me_stops_running_jobs(
     assert client.request("DELETE", f"{API}/me", headers=headers, json=typed).status_code == 204
     import multiprocessing
 
+    # the user's job is stopped; the warm worker it ran on stays (one, the app's job_workers
+    # is 1), and nothing else lingers
     deadline = time.monotonic() + 10
-    while multiprocessing.active_children() and time.monotonic() < deadline:
+    while len(multiprocessing.active_children()) > 1 and time.monotonic() < deadline:
         time.sleep(0.1)
-    assert multiprocessing.active_children() == []
+    assert {p.name for p in multiprocessing.active_children()} <= {"curvestudio-job-worker"}

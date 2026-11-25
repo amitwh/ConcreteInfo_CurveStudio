@@ -43,6 +43,8 @@ class Settings(BaseSettings):
     job_grace_s: float = Field(default=10.0, ge=0)
     job_queue_max: int = Field(default=500, ge=1)
     job_max_result_bytes: int = Field(default=250_000_000, ge=1_000)
+    job_worker_max_jobs: int = Field(default=50, ge=1)
+    job_worker_memory_mb: int = Field(default=384, ge=64)
     autofit_timeout_s: float = Field(default=180.0, gt=0)
     autofit_budget_s: float = Field(default=120.0, gt=0)
     autofit_workers: int = Field(default=3, ge=1)

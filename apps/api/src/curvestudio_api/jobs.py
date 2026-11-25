@@ -1,16 +1,23 @@
-"""Fit jobs: one ``spawn`` process per job, a fair queue, a scheduler thread.
+"""Fit jobs: a warm worker pool (one process per job all the same), a fair queue, a
+scheduler thread.
 
 The event loop never waits on a fit. Request handlers write a ``queued`` job row and hand a
-:class:`Task` to the :class:`JobManager`; its scheduler thread starts at most ``workers`` job
-processes at a time, picking the next job round-robin across users, and records outcomes.
+:class:`Task` to the :class:`JobManager`; its scheduler thread runs at most ``workers`` jobs
+at a time, picking the next job round-robin across users, and records outcomes.
 
-Each job has its own process, so stopping one (cancel, timeout) or losing one (crash) never
-touches another job or another tenant:
+Each job still has its own process: a warm worker (:mod:`curvestudio_api.worker_pool`)
+imports the stack once and then forks a pristine child per job, so a job no longer pays an
+interpreter start, while stopping one (cancel, timeout) or losing one (crash) still never
+touches another job or another tenant — everything a job does dies with its child, and the
+worker itself never runs job code:
 
 * a job that overruns ``timeout_s + grace_s`` wall-clock seconds, counted from when its process
-  is up, is killed and marked ``failed`` / ``TIMEOUT`` (``timeout_s`` is longer for ``autofit``);
+  is up, is killed, its worker recycled, and the job marked ``failed`` / ``TIMEOUT``
+  (``timeout_s`` is longer for ``autofit``);
 * a process that dies without a result marks its job ``failed`` / ``WORKER_CRASHED``;
 * a result larger than ``max_result_bytes`` marks it ``failed`` / ``RESULT_TOO_LARGE``;
+* a worker is recycled without ceremony after ``worker_max_jobs`` jobs or above
+  ``worker_memory_mb`` of its own resident size (its slot is refilled on demand);
 * jobs left ``queued``/``running`` by a previous API process are marked ``failed`` /
   ``SERVER_RESTART`` at start-up.
 
@@ -19,12 +26,13 @@ own worker pool), ``open_row`` (refit one Auto-fit row into a stored fit), ``aud
 (cross-validate a stored fit; the result is stored on that fit), and the three fit-centric
 tools — ``discern`` (the model discernibility report), ``simulate`` (the experiment
 feasibility simulator) and ``advise`` (the next-measurement advisor), each storing its result
-as a ``stat_results`` row and pointing the job at it. A job process leads its own process
-group; stopping a job kills the group, so the pool dies with it.
+as a ``stat_results`` row and pointing the job at it. A job child leads its own process
+group; stopping a job kills the group, so the engine's pool dies with it.
 
 State lives in one process: run a single API process per database (see the README).
 """
 
+import contextlib
 import json
 import os
 import signal
@@ -54,7 +62,16 @@ from curvestudio_api.logging_setup import get_logger, log_fields
 from curvestudio_api.modules.errors.capture import bind_error_capture_sink
 from curvestudio_api.orm import Autofit, Dataset, Fit, Job, StatResult
 from curvestudio_api.timeutil import utcnow
-from curvestudio_api.worker import PROGRESS, STARTED, JobWorker, job_process_main, run_fit_job
+from curvestudio_api.worker import PROGRESS, JobWorker, run_fit_job
+from curvestudio_api.worker_pool import (
+    EXITED,
+    RETIRE,
+    WORKER_FUNCTIONS,
+    child_pid_of_hello,
+    parse_exited,
+    send_ticket,
+    warm_worker_main,
+)
 
 _log = get_logger("jobs")
 
@@ -153,14 +170,33 @@ class FairQueue:
 class _Flight:
     task: Task
     dispatched: float
-    process: BaseProcess | None = None
-    connection: Connection | None = None
+    worker: _WorkerProc | None = None
+    child_pid: int | None = None
     running_since: float | None = None
     killed: bool = False
 
 
+@dataclass
+class _WorkerProc:
+    """One slot of the warm pool: a process that forks a child per job.
+
+    ``job_id`` is the job whose ticket it holds (``None`` between jobs). ``recycle`` is set
+    when an ``EXITED`` report crossed a recycle limit while the worker was busy: it is
+    retired at the next result instead, so a ticket is never lost to a retirement.
+    """
+
+    process: BaseProcess | None = None
+    connection: Connection | None = None
+    job_id: uuid.UUID | None = None
+    jobs_done: int = 0
+    rss_kb: int = 0
+    retired: bool = False
+    retired_at: float | None = None
+    recycle: bool = False
+
+
 class JobManager:
-    """Owns the queue, the job processes and the scheduler thread."""
+    """Owns the queue, the warm worker pool and the scheduler thread."""
 
     def __init__(
         self,
@@ -180,6 +216,8 @@ class JobManager:
         advise_worker: JobWorker = run_advice_job,
         autofit_timeout_s: float | None = None,
         poll_s: float = 0.05,
+        worker_max_jobs: int = 50,
+        worker_memory_mb: int = 384,
     ) -> None:
         self._sessions = session_factory
         self._workers = workers
@@ -188,6 +226,7 @@ class JobManager:
         self._max_result_bytes = max_result_bytes
         self._queue_max = queue_max
         self._workers_by_kind = {
+            **WORKER_FUNCTIONS,
             "fit": worker,
             "autofit": autofit_worker,
             "open_row": open_row_worker,
@@ -198,13 +237,18 @@ class JobManager:
         }
         self._autofit_timeout_s = autofit_timeout_s if autofit_timeout_s is not None else timeout_s
         self._poll_s = poll_s
+        self._worker_max_jobs = worker_max_jobs
+        self._worker_memory_kb = worker_memory_mb * 1024
         self._lock = threading.RLock()
         self._wake = threading.Event()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._queue = FairQueue()
         self._flights: dict[uuid.UUID, _Flight] = {}
+        self._pool: list[_WorkerProc] = []
         self._context = get_context("spawn")
+        self.spawned_workers = 0
+        """Warm workers started so far (for tests and diagnostics)."""
 
     # -- lifecycle -----------------------------------------------------------------------------
 
@@ -216,16 +260,21 @@ class JobManager:
         self._thread.start()
 
     def stop(self) -> None:
-        """Stop the scheduler and kill every job process. Unfinished jobs fail at next start."""
+        """Stop the scheduler and kill every worker and job process. Unfinished jobs fail at
+        the next start."""
         self._stop.set()
         self._wake.set()
         if self._thread is not None:
             self._thread.join(timeout=10)
             self._thread = None
         with self._lock:
-            for flight in list(self._flights.values()):
-                self._flights.pop(flight.task.job_id, None)
-                self._kill(flight)
+            flights = list(self._flights.values())
+            self._flights.clear()
+            pool, self._pool = self._pool[:], []
+        for flight in flights:
+            self._kill(flight)  # each job child, and the pool it started
+        for worker in pool:
+            self._drop(worker)
 
     def is_running(self) -> bool:
         """Whether the scheduler thread is alive."""
@@ -237,8 +286,14 @@ class JobManager:
             return len(self._queue)
 
     def worker_count(self) -> int:
-        """How many job processes may run at once."""
+        """How many jobs may run at once (one warm worker each)."""
         return self._workers
+
+    def child_pid_of(self, job_id: uuid.UUID) -> int | None:
+        """The process id a running job's child announced, for tests and diagnostics."""
+        with self._lock:
+            flight = self._flights.get(job_id)
+            return flight.child_pid if flight is not None else None
 
     def queue_max(self) -> int:
         """How many jobs may wait in the queue."""
@@ -272,13 +327,17 @@ class JobManager:
     def cancel(self, job_id: uuid.UUID) -> str:
         """Cancel a queued or running job and return its status afterwards.
 
-        Only that job's own process is killed. A job that already finished keeps its status.
+        Only that job's own process is killed; the warm worker it ran on never executed job
+        code, so it is freed at once for the next one. A finished job keeps its status.
         """
         with self._lock:
             self._queue.remove(job_id)
             changed = self._finish(job_id, "cancelled", from_=ACTIVE)
             flight = self._flights.pop(job_id, None) if changed else None
             if flight is not None:
+                worker = flight.worker
+                if worker is not None and worker.job_id == job_id:
+                    worker.job_id = None
                 self._kill(flight)
         return self._status_of(job_id)
 
@@ -316,10 +375,17 @@ class JobManager:
             self._wake.clear()
 
     def _dispatch(self) -> None:
-        """Start queued jobs while there are free slots."""
+        """Start queued jobs while there are free slots: an idle warm worker, or room to
+        grow the pool by one."""
         while True:
             with self._lock:
-                if len(self._queue) == 0 or len(self._flights) >= self._workers:
+                if len(self._queue) == 0:
+                    return
+                usable = any(
+                    w.job_id is None and not w.retired and w.connection is not None
+                    for w in self._pool
+                )
+                if not usable and len(self._pool) >= self._workers:
                     return
                 task = self._queue.pop()
                 if not self._mark_running(task.job_id):
@@ -329,36 +395,87 @@ class JobManager:
             self._start(flight)
 
     def _start(self, flight: _Flight) -> None:
-        """Load the data and start the job's process. Runs without the manager lock: starting a
-        spawned process with a large payload can take a while."""
+        """Load the data and hand the job to a warm worker. Runs without the manager lock:
+        pickling a large payload, or starting a worker, can take a while."""
         task = flight.task
         arguments = self._arguments_for(task)
         if arguments is None:
             with self._lock:
                 self._flights.pop(task.job_id, None)
             return
-        receiver, sender = self._context.Pipe(duplex=False)
-        is_autofit = task.kind == "autofit"
+        worker = self._acquire_worker()
+        if worker is None:
+            _log.error("no job worker could be started", extra=log_fields(job=str(task.job_id)))
+            with self._lock:
+                self._flights.pop(task.job_id, None)
+            self._finish(
+                task.job_id,
+                "failed",
+                from_=("running",),
+                error_code="WORKER_CRASHED",
+                error_message="the worker process died while fitting; the job did not complete",
+            )
+            return
+        with self._lock:
+            flight.worker = worker
+            worker.job_id = task.job_id
+        connection = worker.connection
+        sent = connection is not None and send_ticket(
+            connection,
+            self._workers_by_kind[task.kind],
+            arguments,
+            task.kind == "autofit",
+            task.job_id,
+        )
+        with self._lock:
+            if sent and self._flights.get(task.job_id) is flight and not flight.killed:
+                return
+        if not sent:  # the worker died between acquisition and the ticket
+            with self._lock:
+                worker.job_id = None
+            self._drop(worker)
+            with self._lock:
+                self._flights.pop(task.job_id, None)
+            self._finish(
+                task.job_id,
+                "failed",
+                from_=("running",),
+                error_code="WORKER_CRASHED",
+                error_message="the worker process died while fitting; the job did not complete",
+            )
+            return
+        self._kill(flight)  # cancelled while it was starting
+
+    def _acquire_worker(self) -> _WorkerProc | None:
+        """An idle warm worker, or a freshly started one when the pool has room."""
+        with self._lock:
+            for worker in self._pool:
+                if worker.job_id is None and not worker.retired and worker.connection is not None:
+                    return worker
+            if len(self._pool) >= self._workers:
+                return None
+        ours, theirs = self._context.Pipe(duplex=True)
         process = self._context.Process(
-            target=job_process_main,
-            args=(sender, self._workers_by_kind[task.kind], arguments, is_autofit),
-            name=f"curvestudio-job-{task.job_id}",
-            # An Auto-fit job starts a worker pool of its own, which a daemon process may not.
-            # It ends with its parent anyway (see worker._exit_with_parent).
-            daemon=not is_autofit,
+            target=warm_worker_main,
+            args=(theirs,),
+            name="curvestudio-job-worker",
+            # A job child may start an Auto-fit pool of its own, which a daemon process may
+            # not; the worker and its children end with this process anyway.
+            daemon=False,
         )
         try:
             process.start()
+        except OSError:
+            _log.exception("could not start a job worker")
+            ours.close()
+            return None
         finally:
-            sender.close()  # the child holds the only writer, so its death reads as EOF
+            theirs.close()  # the worker holds the only far end, so its death reads as EOF
+        worker = _WorkerProc(process=process, connection=ours)
         with self._lock:
-            if self._flights.get(task.job_id) is flight and not flight.killed:
-                flight.process, flight.connection = process, receiver
-                return
-        process.kill()  # cancelled while it was starting
-        process.join(REAP_TIMEOUT_S)
-        process.close()
-        receiver.close()
+            self._pool.append(worker)
+            self.spawned_workers += 1
+        return worker
 
     def _timeout_for(self, kind: str) -> float:
         return self._autofit_timeout_s if kind == "autofit" else self._timeout_s
@@ -381,45 +498,155 @@ class JobManager:
                     error_message=f"{what} did not finish within {timeout_s:g} s",
                 ):
                     self._flights.pop(flight.task.job_id, None)
+                    worker = flight.worker
+                    if worker is not None and worker.job_id == flight.task.job_id:
+                        worker.job_id = None
                     self._kill(flight)
+                    # A run that had to be stopped is exactly the misbehaving kind: its
+                    # worker is replaced, so the next job starts from a fresh process.
+                    if worker is not None and flight.child_pid is not None:
+                        self._retire(worker)
 
     def _collect(self) -> None:
         """Pick up results and deaths. Reading and parsing happen without the manager lock."""
         with self._lock:
-            flights = [f for f in self._flights.values() if f.process is not None]
-        for flight in flights:
-            outcome = self._poll(flight)
-            if outcome is None:
-                continue
-            with self._lock:
-                if self._flights.get(flight.task.job_id) is not flight:
-                    continue  # cancelled or timed out meanwhile
-                del self._flights[flight.task.job_id]
-            self._finalise(flight, outcome)
-            self._wake.set()
+            workers = list(self._pool)
+        for worker in workers:
+            self._drain(worker)
+        self._reap_pool()
 
-    def _poll(self, flight: _Flight) -> tuple[str, Any] | None:
-        connection, process = flight.connection, flight.process
-        assert connection is not None and process is not None
+    def _drain(self, worker: _WorkerProc) -> None:
+        """Read everything a worker's pipe holds, attributing each message to the job the
+        worker is running."""
+        connection = worker.connection
+        if connection is None:
+            return
         try:
             while connection.poll(0):
                 data = connection.recv_bytes(maxlength=self._max_result_bytes)
-                if data == STARTED:
-                    flight.running_since = time.monotonic()
-                    continue
-                if data.startswith(PROGRESS):
-                    self._store_progress(flight.task.job_id, data[len(PROGRESS) :])
-                    continue
-                return "result", data
-            if not process.is_alive() and not connection.poll(0):
-                return "crashed", process.exitcode
+                self._handle(worker, data)
         except EOFError:
-            return "crashed", process.exitcode
+            self._worker_died(worker)
         except OSError, ValueError:
-            if flight.killed:
-                return None  # closed under us by cancel/timeout
-            return "too_large", None
-        return None
+            # A message over the result cap leaves its payload half-read — the worker's
+            # pipe can carry no second job — or the pipe broke. Either way the worker goes.
+            flight = self._flight_on(worker)
+            if flight is not None and not flight.killed:
+                self._finish_flight(worker, flight, ("too_large", None))
+            self._drop(worker)
+
+    def _handle(self, worker: _WorkerProc, data: bytes) -> None:
+        """One message off a worker's pipe: a hello, a progress snapshot, a result, or the
+        worker's report that its child is gone."""
+        if data.startswith(EXITED):
+            self._worker_reported(worker, data)
+            return
+        flight = self._flight_on(worker)
+        if flight is None:
+            return  # a message from a job that was cancelled or timed out meanwhile
+        if (pid := child_pid_of_hello(data)) is not None:
+            flight.child_pid = pid
+            flight.running_since = time.monotonic()
+        elif data.startswith(PROGRESS):
+            self._store_progress(flight.task.job_id, data[len(PROGRESS) :])
+        else:
+            self._finish_flight(worker, flight, ("result", data))
+
+    def _worker_reported(self, worker: _WorkerProc, data: bytes) -> None:
+        """A worker reaped its job's child: record the counters, fail the job if the child
+        died without a result, and recycle the worker when it is over a limit."""
+        report = parse_exited(data)
+        if report is None:
+            return
+        status, jobs_done, rss_kb, job_bytes = report
+        worker.jobs_done, worker.rss_kb = jobs_done, rss_kb
+        flight = self._flight_on(worker)
+        if flight is not None and flight.task.job_id.bytes == job_bytes:
+            self._finish_flight(worker, flight, ("crashed", status))
+        over = jobs_done >= self._worker_max_jobs or (
+            self._worker_memory_kb > 0 and rss_kb > self._worker_memory_kb
+        )
+        if over and not worker.retired:
+            with self._lock:
+                if worker.job_id is None:
+                    self._retire(worker)
+                else:  # a ticket is out: retire the worker when it comes back
+                    worker.recycle = True
+
+    def _flight_on(self, worker: _WorkerProc) -> _Flight | None:
+        """The flight this worker's current messages belong to, if it still has one."""
+        with self._lock:
+            if worker.job_id is None:
+                return None
+            flight = self._flights.get(worker.job_id)
+            return flight if flight is not None and flight.worker is worker else None
+
+    def _finish_flight(
+        self, worker: _WorkerProc, flight: _Flight, outcome: tuple[str, Any]
+    ) -> None:
+        """Detach a finished flight from its worker and record the job's outcome."""
+        with self._lock:
+            if self._flights.get(flight.task.job_id) is not flight:
+                return  # cancelled or timed out meanwhile
+            del self._flights[flight.task.job_id]
+            if worker.job_id == flight.task.job_id:
+                worker.job_id = None
+        self._finalise(flight, outcome)
+        self._wake.set()
+        with self._lock:
+            if worker.recycle and not worker.retired and worker.job_id is None:
+                self._retire(worker)
+
+    def _worker_died(self, worker: _WorkerProc) -> None:
+        """A worker's pipe closed: a job it was running is failed (nothing of it can still
+        report), and the worker leaves the pool for a fresh one."""
+        flight = self._flight_on(worker)
+        if flight is not None:
+            exitcode = worker.process.exitcode if worker.process is not None else None
+            self._finish_flight(worker, flight, ("crashed", exitcode))
+        self._drop(worker)
+
+    def _reap_pool(self) -> None:
+        """Drop workers that have gone, and retire ones that were asked but refused."""
+        with self._lock:
+            workers = list(self._pool)
+        for worker in workers:
+            process = worker.process
+            quiet = worker.connection is None or not worker.connection.poll(0)
+            if process is not None and not process.is_alive() and quiet:
+                self._worker_died(worker)
+            elif (
+                worker.retired
+                and worker.retired_at is not None
+                and time.monotonic() - worker.retired_at > REAP_TIMEOUT_S
+            ):
+                self._drop(worker)
+
+    def _retire(self, worker: _WorkerProc) -> None:
+        """Ask an idle worker to stop; its slot is refilled when a job next needs it."""
+        worker.retired = True
+        worker.retired_at = time.monotonic()
+        connection = worker.connection
+        if connection is not None:
+            with contextlib.suppress(OSError, ValueError):
+                connection.send((RETIRE,))
+
+    def _drop(self, worker: _WorkerProc) -> None:
+        """Remove a worker from the pool, stopping it and closing its pipe (idempotent)."""
+        with self._lock:
+            if worker in self._pool:
+                self._pool.remove(worker)
+        process, connection = worker.process, worker.connection
+        worker.process = worker.connection = None
+        if process is not None:
+            try:
+                _kill_group(process)
+                process.join(REAP_TIMEOUT_S)
+                process.close()
+            except ValueError:
+                pass  # already closed
+        if connection is not None:
+            connection.close()
 
     def _finalise(self, flight: _Flight, outcome: tuple[str, Any]) -> None:
         task = flight.task
@@ -497,25 +724,52 @@ class JobManager:
         finally:
             self._kill(flight)
 
-    @staticmethod
-    def _kill(flight: _Flight) -> None:
-        """Stop and reap one job's process and everything it started (idempotent).
+    def _kill(self, flight: _Flight) -> None:
+        """Stop one job's process and everything it started (idempotent).
 
-        A job process leads its own process group (see ``worker.job_process_main``), so one
-        ``killpg`` also ends an Auto-fit run's worker pool. Other jobs are never touched.
+        The job child leads its own process group (see ``worker_pool``), so one ``killpg``
+        also ends an Auto-fit run's worker pool; its warm worker, which never ran job code,
+        stays. A job whose child has not announced itself yet gets the same treatment a
+        starting process used to: the child cannot be named, so the worker is stopped and
+        replaced — safe because a child runs no job code before its hello, so nothing it
+        started can exist either (any hello already written is picked up here first).
         """
         flight.killed = True
-        process, connection = flight.process, flight.connection
-        flight.process = flight.connection = None
-        if process is not None:
-            try:
-                _kill_group(process)
-                process.join(REAP_TIMEOUT_S)
-                process.close()
-            except ValueError:
-                pass  # already closed
-        if connection is not None:
-            connection.close()
+        pid = flight.child_pid
+        if pid is None and flight.worker is not None:
+            pid = self._pending_hello(flight.worker)
+            flight.child_pid = pid
+        if pid is not None:
+            _kill_pid_group(pid)
+            return
+        worker = flight.worker
+        flight.worker = None
+        if worker is not None:
+            if worker.job_id == flight.task.job_id:
+                worker.job_id = None
+            self._drop(worker)
+
+    def _pending_hello(self, worker: _WorkerProc) -> int | None:
+        """A job child's hello that was written but not read yet (the scheduler's next tick
+        would have picked it up).
+
+        Messages that are not the hello belong to jobs already finished or cancelled —
+        their flights are gone — so they are drained and dropped. Reading stops when the
+        pipe is empty: a child whose hello is not in it has run no job code, and so has
+        nothing living that depends on being killed by name.
+        """
+        connection = worker.connection
+        if connection is None:
+            return None
+        try:
+            while connection.poll(0):
+                data = connection.recv_bytes(maxlength=self._max_result_bytes)
+                pid = child_pid_of_hello(data)
+                if pid is not None:
+                    return pid
+        except EOFError, OSError, ValueError:
+            pass  # the worker is going or gone; its death takes the pre-hello child too
+        return None
 
     # -- database ------------------------------------------------------------------------------
 
@@ -891,3 +1145,16 @@ def _kill_group(process: BaseProcess) -> None:
             pass  # no such group (not started leading it yet, or it is gone)
     if process.is_alive():
         process.kill()
+
+
+def _kill_pid_group(pid: int) -> None:
+    """SIGKILL the process group ``pid`` leads — a running job's child and everything it
+    started (an Auto-fit run's own pool included). The group outlives its leader, so this
+    reaches stragglers even when the child itself is already gone."""
+    kill_group = getattr(os, "killpg", None)
+    if kill_group is None:
+        with contextlib.suppress(ProcessLookupError):
+            os.kill(pid, signal.SIGKILL)
+        return
+    with contextlib.suppress(ProcessLookupError):
+        kill_group(pid, signal.SIGKILL)
