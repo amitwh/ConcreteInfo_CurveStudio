@@ -129,6 +129,15 @@ All notable changes are listed here. Dates are IST. Format: [Keep a Changelog](h
   Advanced models. The home page lists all four, the help explains each one and grows three
   sections, one for each new family, and the same tools run on the web app, the desktop app
   and the command line.
+- **Three tools that start from a fit**: the model discernibility report asks whether the
+  leading models can be told apart by these data, the experiment feasibility simulator
+  measures parameter recovery, convergence, interval coverage and power for a planned
+  design, and the next-measurement advisor recommends where further observations buy the
+  most. They open from a fit's **More tools** tab in the web and desktop apps, and run as
+  `curvestudio discern`, `curvestudio simulate` and `curvestudio advise`. They are not in
+  the Statistics catalogue, because they read a fit rather than a dataset's columns. The
+  help explains each one in a new section 12, and the home page names them under the
+  statistics section without adding them to the catalogue.
 
 ### Fixed
 - **The OAuth callback log names the sign-in provider's error code** (Microsoft's AADSTS

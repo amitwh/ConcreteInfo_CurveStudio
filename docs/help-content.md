@@ -255,7 +255,104 @@ the fit did not record. Nothing is guessed, and there is no DOI to cite yet.
 The audit is a screen for the common ways a fit misleads; it does not replace looking at the
 residuals and knowing the measurement.
 
-## 12. Statistics tools
+## 12. Tools that start from a fit
+
+Three tools ask questions a fit alone cannot answer: whether these data can tell the leading
+models apart, whether a planned experiment could resolve its parameters, and where to measure
+next. They start from a fit or an Auto-fit row, not from a dataset's columns, so they are not
+in the Statistics catalogue and are not picked there. Open a fit and choose its **More tools**
+tab — the desktop app's results window and, on the web, the fit's **More tools** tab — or run
+`curvestudio discern`, `curvestudio simulate` and `curvestudio advise` from the command line.
+Each returns the same shape of result as the statistics tools: assumptions, warnings, tables
+and plots, an interpretation, a methods fragment and the row counts, with estimates where the
+tool reports them.
+
+### Model discernibility
+
+Reads an Auto-fit ranking and the data it was made on. It takes every model within 2 AICc of
+the best, refits each one deterministically, and compares the fitted curves over the data's own
+x range (200 grid points by default; the request can cap how many of the leading group are
+refitted, 12 by default). Two models are **predictively indistinguishable** when their curves
+differ by no more than the simpler model's prediction-interval half-width at every grid point;
+models are grouped when no pair in a group can be told apart. For two models in different
+groups, the report gives the x ranges where the difference exceeds that interval, and how many
+extra points a power approximation says would separate them. Where the core supports it — a
+non-polynomial model, covariance on at most 2,000 points and at most 8 parameters — a
+profile-likelihood check names a parameter the data cannot pin down.
+
+The **Models** table lists the leading group in ranked order, with each model's AICc, its
+distance from the best, whether it was refitted and any model it draws the same curve as.
+**Predictive groups** gives each group's largest curve difference and the interval it was
+judged against. **Parameters not identifiable** names the parameter whose profile did not close
+and why. **What would separate the groups** gives the range and the extra points pair by pair,
+and **The simplest model that can be defended** picks the leading group's row with the fewest
+parameters that is neither degenerate nor redundant with a simpler model. The plot draws the
+assessed curves on the grid, up to six of them; the rest are in the tables. A row that cannot
+be refitted is listed with its reason, and a number that cannot be computed is an empty cell
+with a warning beside it.
+
+What it assumes and cannot establish: the 2 AICc cut-off is a convention, not a test, and the
+extra-points figure is a two-sample power approximation for one extra parameter on the grid.
+It assumes the simpler model's residual standard deviation is the noise and the curve
+difference is the effect to detect, so it is not a guarantee that further observations would
+separate the models. Predictions are compared only inside the data's x range; nothing is said
+about extrapolation. The report also cannot say whether any model is physically right — only
+whether these data prefer one over another. The report needs a ranking, so open a row from an
+Auto-fit result; a fit opened from a dataset has none, and the action says so.
+
+### Experiment feasibility
+
+Asks the question before any data exist. Given a model, its true parameter values, a design of
+x locations with replicates, a noise model and a seed, the simulator draws dataset after dataset
+and fits each one. The **Parameter recovery** table gives every parameter's true value, mean
+estimate, bias, empirical standard error, mean reported standard error and the share of fits
+whose interval covered the truth. **Design** repeats the design it simulated and says when its
+range extends beyond the model's documented example range. **Power** appears when a difference
+is stated and gives the share of fits whose two-sided test at 5 % detected it. The box plot
+shows the spread of every estimate. A run draws 2 to 5,000 datasets (200 by default), with an
+evenly spaced design of at most 200 points and at most 100 replicates per point; the same
+request and seed give byte-identical results.
+
+The two noise models are a constant standard deviation (**sd**, added to every point) and a
+coefficient of variation (**cv**, which multiplies the mean by `1 + N(0, cv)` and fits with
+inverse-variance weights so the fit's noise model matches the draw). Fits that do not converge
+are not pooled; more than 5 % of them, or a coverage more than 3 percentage points from the
+nominal level, earns a warning, as does a cancelled run.
+
+What it assumes and cannot establish: every number is a measurement over the simulated
+datasets, never a promise about the real experiment. The coverage is only as good as the noise
+model and the fit it uses; if the real instrument's error is not the one stated, the coverage
+and power say nothing about the real study. The simulator cannot test whether the model form is
+right, and a design point outside the model's documented range is extrapolation.
+
+### Where to measure next
+
+Reads a fitted model's information matrix and asks where further observations would sharpen the
+estimates most. The covariance of the estimates is `sigma^2 pinv(M)` with `M = J' W J`; a new
+observation at x adds `j j'` to the matrix, and `replicates` observations at x add
+`replicates * j j'`. The candidates are evenly spaced over the requested range — the data's own
+range unless the request extends it — and a greedy, deterministic exchange takes, at each step,
+the candidate that most improves the design: the largest determinant of the augmented
+information matrix in logs (D-optimality), or the smallest variance of the named parameter.
+Each step recommends one location and carries its replicates with it, so a request for three
+points makes three steps. A request may ask for 1 to 20 points, 10 to 1,000 candidates and 1 to
+20 replicates.
+
+**Recommended points** gives each step's x, its replicates and every parameter's standard error
+after that step. **Narrowing** gives each parameter's standard error before and after, with the
+percentage it fell, and **Prediction band narrowing** draws the pointwise prediction interval's
+half-width over the candidate range before and after. The estimates repeat the after-step
+standard errors and the mean half-width before and after. Warnings say when the range extends
+beyond the data, when every recommended point lies at an end of a range that rests on few data,
+and when the run was cancelled or the candidates ran out.
+
+What it assumes and cannot establish: the model form is taken as correct and the fitted
+covariance as the true one. The design says where to measure if both hold; it cannot test
+either. If the model form is wrong, or the fitted covariance is not representative, the
+recommended points need not be the best ones. A range that extends beyond the data is
+extrapolation, and the predicted standard error is extrapolated with it.
+
+## 13. Statistics tools
 
 The **Statistics page** on the desktop and the **Statistics mode** on the web run the same
 twenty-nine tools, in eleven families, on a dataset's columns. Pick a tool from the catalogue,
@@ -297,7 +394,7 @@ Points outside **Tukey's fences** are flagged in their own table and kept in eve
 a summary describes the data it was given and does not decide which points to believe. No tool
 removes a point for being unusual.
 
-## 13. Summarising columns
+## 14. Summarising columns
 
 The **Summarise** family describes one column: where its values sit and how far they spread.
 Both tools read a single numeric column, and the rows the column cannot use are counted and
@@ -321,7 +418,7 @@ tests are reading; leave **Bins** empty and the Freedman–Diaconis rule picks t
 small p-value is evidence that the values are not normal; a large one is not evidence that
 they are.
 
-## 14. Comparing means
+## 15. Comparing means
 
 The **Compare means** family asks whether groups share a mean, by the t test and the analysis
 of variance. Every test reports the difference or the effect size with an interval beside its
@@ -362,7 +459,7 @@ correlated — so Mauchly's test checks it, and the Greenhouse–Geisser and Huy
 corrections scale the degrees of freedom when it is doubtful. Generalised eta squared is the
 effect size.
 
-## 15. Rank-based comparisons
+## 16. Rank-based comparisons
 
 The **Rank-based comparisons** family reads the order of the values, never their size, so an
 outlier moves a rank no further than the next value would. None of them assumes the values
@@ -408,7 +505,7 @@ None of these tests whether the groups share a shape; read the box plot for that
 p-value is evidence that they differ in their typical value, and it does not prove by how
 much or why.
 
-## 16. Relationships between columns
+## 17. Relationships between columns
 
 The **Relationships between columns** family asks whether one column moves with another: the
 correlation coefficient for a pair, a regression line for a model, the components or factors
@@ -491,7 +588,7 @@ fit that did not converge says so. A predictor that does not vary, or is exactly
 the others, is refused. An odds ratio measures association in these rows; it does not show that
 a predictor causes the outcome.
 
-## 17. Counts
+## 18. Counts
 
 The **Counts** family tabulates two label columns and tests whether they are associated.
 
@@ -516,7 +613,7 @@ the paired rows leave empty is dropped with a warning.
 A small p-value is evidence of an association (or of a change), not proof of its cause, and a
 large one is not evidence that the columns are independent.
 
-## 18. Comparing two methods
+## 19. Comparing two methods
 
 The **Method comparison** family asks whether two methods that measure the same quantity agree
 closely enough to be used interchangeably. All three tools pair **Method A**'s readings with
@@ -556,7 +653,7 @@ For all three, a slope away from one or an intercept away from zero is read at a
 against the line of identity. Agreement between two methods is evidence about these samples,
 not proof that the methods may be used interchangeably in every range.
 
-## 19. Measurement and classification
+## 20. Measurement and classification
 
 The **Measurement and classification** family reads a measurement against a standard: how well
 a score separates two classes, how consistently a set of items measures one thing, and whether
@@ -616,7 +713,7 @@ percentage of values outside the limits, after Shapiro-Wilk's W test checks norm
 capability index needs a stable, normal process: it describes the process the data came from
 only while the chart shows it in control and the values are close enough to normal.
 
-## 20. Sample size and power
+## 21. Sample size and power
 
 The **Sample size and power** family needs no data. It answers one of two questions about a
 design: how many observations per group a target power needs, or what power a given number of
@@ -639,7 +736,7 @@ becomes useful.
 Every number is a statement about the design and significance level you stated. It is not a
 p-value, and it does not prove that the study will find an effect or that the effect is real.
 
-## 21. Advanced models
+## 22. Advanced models
 
 The **Advanced models** family fits models for data whose structure one line cannot hold:
 measurements that share a group effect, and time until an event that some rows never reach.
@@ -689,7 +786,7 @@ the hazards stay proportional, so read a coefficient the check finds changing as
 over the follow-up. A survival curve describes these rows; it does not predict any one
 person's time.
 
-## 22. Evidence synthesis
+## 23. Evidence synthesis
 
 The **Evidence synthesis** family combines the results of several studies into one estimate and
 says how much the studies disagree.
@@ -716,7 +813,7 @@ neither establishes that small studies reporting nothing are absent. A high I sq
 studies disagree more than chance explains, and the random-effects pool averages that
 disagreement rather than resolving it.
 
-## 23. Bayesian tests
+## 24. Bayesian tests
 
 The **Bayesian tests** family answers the questions the t tests ask in the currency of evidence:
 how much more likely the data are under an alternative than under a null, and what the
@@ -741,7 +838,7 @@ with it. A credible interval is a statement about the effect given these data an
 and the null region is a choice of what counts as no practical effect, not a fact found in the
 data.
 
-## 24. About, licence, projects and policy
+## 25. About, licence, projects and policy
 
 CurveStudio is built by **ConcreteInfo** — <https://www.concreteinfo.in> · amit@concreteinfo.in.
 The About window and the About page list the other tools we build and maintain, in two groups —

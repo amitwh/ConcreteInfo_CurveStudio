@@ -711,6 +711,124 @@ export const HELP_SECTIONS: HelpSection[] = [
     ],
   },
   {
+    id: "tools-that-start-from-a-fit",
+    title: "Tools that start from a fit",
+    blocks: [
+      {
+        kind: "p",
+        content: [
+          "Three tools ask questions a fit alone cannot answer: whether these data can tell the leading models apart, whether a planned experiment could resolve its parameters, and where to measure next. They start from a fit or an Auto-fit row, not from a dataset's columns, so they are not in the Statistics catalogue and are not picked there. Open a fit and choose its ",
+          strong("More tools"),
+          " tab — the desktop app's results window and, on the web, the fit's ",
+          strong("More tools"),
+          " tab — or run ",
+          code("curvestudio discern"),
+          ", ",
+          code("curvestudio simulate"),
+          " and ",
+          code("curvestudio advise"),
+          " from the command line. Each returns the same shape of result as the statistics tools: assumptions, warnings, tables and plots, an interpretation, a methods fragment and the row counts, with estimates where the tool reports them.",
+        ],
+      },
+      { kind: "h3", text: "Model discernibility" },
+      {
+        kind: "p",
+        content: [
+          "Reads an Auto-fit ranking and the data it was made on. It takes every model within 2 AICc of the best, refits each one deterministically, and compares the fitted curves over the data's own x range (200 grid points by default; the request can cap how many of the leading group are refitted, 12 by default). Two models are ",
+          strong("predictively indistinguishable"),
+          " when their curves differ by no more than the simpler model's prediction-interval half-width at every grid point; models are grouped when no pair in a group can be told apart. For two models in different groups, the report gives the x ranges where the difference exceeds that interval, and how many extra points a power approximation says would separate them. Where the core supports it — a non-polynomial model, covariance on at most 2,000 points and at most 8 parameters — a profile-likelihood check names a parameter the data cannot pin down.",
+        ],
+      },
+      {
+        kind: "p",
+        content: [
+          "The ",
+          strong("Models"),
+          " table lists the leading group in ranked order, with each model's AICc, its distance from the best, whether it was refitted and any model it draws the same curve as. ",
+          strong("Predictive groups"),
+          " gives each group's largest curve difference and the interval it was judged against. ",
+          strong("Parameters not identifiable"),
+          " names the parameter whose profile did not close and why. ",
+          strong("What would separate the groups"),
+          " gives the range and the extra points pair by pair, and ",
+          strong("The simplest model that can be defended"),
+          " picks the leading group's row with the fewest parameters that is neither degenerate nor redundant with a simpler model. The plot draws the assessed curves on the grid, up to six of them; the rest are in the tables. A row that cannot be refitted is listed with its reason, and a number that cannot be computed is an empty cell with a warning beside it.",
+        ],
+      },
+      {
+        kind: "p",
+        content: [
+          "What it assumes and cannot establish: the 2 AICc cut-off is a convention, not a test, and the extra-points figure is a two-sample power approximation for one extra parameter on the grid. It assumes the simpler model's residual standard deviation is the noise and the curve difference is the effect to detect, so it is not a guarantee that further observations would separate the models. Predictions are compared only inside the data's x range; nothing is said about extrapolation. The report also cannot say whether any model is physically right — only whether these data prefer one over another. The report needs a ranking, so open a row from an Auto-fit result; a fit opened from a dataset has none, and the action says so.",
+        ],
+      },
+      { kind: "h3", text: "Experiment feasibility" },
+      {
+        kind: "p",
+        content: [
+          "Asks the question before any data exist. Given a model, its true parameter values, a design of x locations with replicates, a noise model and a seed, the simulator draws dataset after dataset and fits each one. The ",
+          strong("Parameter recovery"),
+          " table gives every parameter's true value, mean estimate, bias, empirical standard error, mean reported standard error and the share of fits whose interval covered the truth. ",
+          strong("Design"),
+          " repeats the design it simulated and says when its range extends beyond the model's documented example range. ",
+          strong("Power"),
+          " appears when a difference is stated and gives the share of fits whose two-sided test at 5 % detected it. The box plot shows the spread of every estimate. A run draws 2 to 5,000 datasets (200 by default), with an evenly spaced design of at most 200 points and at most 100 replicates per point; the same request and seed give byte-identical results.",
+        ],
+      },
+      {
+        kind: "p",
+        content: [
+          "The two noise models are a constant standard deviation (",
+          strong("sd"),
+          ", added to every point) and a coefficient of variation (",
+          strong("cv"),
+          ", which multiplies the mean by ",
+          code("1 + N(0, cv)"),
+          " and fits with inverse-variance weights so the fit's noise model matches the draw). Fits that do not converge are not pooled; more than 5 % of them, or a coverage more than 3 percentage points from the nominal level, earns a warning, as does a cancelled run.",
+        ],
+      },
+      {
+        kind: "p",
+        content: [
+          "What it assumes and cannot establish: every number is a measurement over the simulated datasets, never a promise about the real experiment. The coverage is only as good as the noise model and the fit it uses; if the real instrument's error is not the one stated, the coverage and power say nothing about the real study. The simulator cannot test whether the model form is right, and a design point outside the model's documented range is extrapolation.",
+        ],
+      },
+      { kind: "h3", text: "Where to measure next" },
+      {
+        kind: "p",
+        content: [
+          "Reads a fitted model's information matrix and asks where further observations would sharpen the estimates most. The covariance of the estimates is ",
+          code("sigma^2 pinv(M)"),
+          " with ",
+          code("M = J' W J"),
+          "; a new observation at x adds ",
+          code("j j'"),
+          " to the matrix, and ",
+          code("replicates"),
+          " observations at x add ",
+          code("replicates * j j'"),
+          ". The candidates are evenly spaced over the requested range — the data's own range unless the request extends it — and a greedy, deterministic exchange takes, at each step, the candidate that most improves the design: the largest determinant of the augmented information matrix in logs (D-optimality), or the smallest variance of the named parameter. Each step recommends one location and carries its replicates with it, so a request for three points makes three steps. A request may ask for 1 to 20 points, 10 to 1,000 candidates and 1 to 20 replicates.",
+        ],
+      },
+      {
+        kind: "p",
+        content: [
+          strong("Recommended points"),
+          " gives each step's x, its replicates and every parameter's standard error after that step. ",
+          strong("Narrowing"),
+          " gives each parameter's standard error before and after, with the percentage it fell, and ",
+          strong("Prediction band narrowing"),
+          " draws the pointwise prediction interval's half-width over the candidate range before and after. The estimates repeat the after-step standard errors and the mean half-width before and after. Warnings say when the range extends beyond the data, when every recommended point lies at an end of a range that rests on few data, and when the run was cancelled or the candidates ran out.",
+        ],
+      },
+      {
+        kind: "p",
+        content: [
+          "What it assumes and cannot establish: the model form is taken as correct and the fitted covariance as the true one. The design says where to measure if both hold; it cannot test either. If the model form is wrong, or the fitted covariance is not representative, the recommended points need not be the best ones. A range that extends beyond the data is extrapolation, and the predicted standard error is extrapolated with it.",
+        ],
+      },
+    ],
+  },
+  {
     id: "statistics-tools",
     title: "Statistics tools",
     blocks: [

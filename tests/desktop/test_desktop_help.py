@@ -2,7 +2,7 @@
 
 The canonical help text lives in ``docs/help-content.md``; it is copied verbatim into
 the desktop package so the frozen application can render it. These tests pin that copy
-to the source, the twenty-four sections in order, the Markdown rendering (tables, lists,
+to the source, the twenty-five sections in order, the Markdown rendering (tables, lists,
 bold, inline code), search, the menu/shortcut wiring, the About contract (logo, links,
 runtime versions, credits), the shared list of other ConcreteInfo projects and
 the Lucide icon mapping.
@@ -119,23 +119,24 @@ def test_help_content_ships_the_canonical_document_verbatim() -> None:
     assert help_markdown() == CANONICAL_HELP.read_text(encoding="utf-8")
 
 
-def test_help_dialog_lists_the_twenty_four_canonical_sections_in_order(qtbot, settings) -> None:
+def test_help_dialog_lists_the_twenty_five_canonical_sections_in_order(qtbot, settings) -> None:
     from curvestudio_desktop.views.help_dialog import HelpDialog
 
     dialog = HelpDialog(settings=settings)
     qtbot.addWidget(dialog)
     titles = dialog.sections()
-    assert len(titles) == 24
+    assert len(titles) == 25
     assert titles == canonical_section_titles()
-    assert [dialog.section_list.item(i).text() for i in range(24)] == list(titles)
+    assert [dialog.section_list.item(i).text() for i in range(25)] == list(titles)
     assert titles[0] == "1. Getting started"
     assert titles[10] == "11. Fit audit and methods text"
-    assert titles[11] == "12. Statistics tools"
-    assert titles[19] == "20. Sample size and power"
-    assert titles[20] == "21. Advanced models"
-    assert titles[21] == "22. Evidence synthesis"
-    assert titles[22] == "23. Bayesian tests"
-    assert titles[-1] == "24. About, licence, projects and policy"
+    assert titles[11] == "12. Tools that start from a fit"
+    assert titles[12] == "13. Statistics tools"
+    assert titles[20] == "21. Sample size and power"
+    assert titles[21] == "22. Advanced models"
+    assert titles[22] == "23. Evidence synthesis"
+    assert titles[23] == "24. Bayesian tests"
+    assert titles[-1] == "25. About, licence, projects and policy"
 
 
 def test_markdown_renders_tables_lists_bold_links_and_inline_code() -> None:
@@ -160,7 +161,7 @@ def test_markdown_renders_tables_lists_bold_links_and_inline_code() -> None:
     steps = markdown_to_html(sections["1. Getting started"].body)
     assert "<ol>" in steps and steps.count("<li>") >= 5
 
-    about = markdown_to_html(sections["24. About, licence, projects and policy"].body)
+    about = markdown_to_html(sections["25. About, licence, projects and policy"].body)
     assert '<a href="https://www.concreteinfo.in">' in about
     assert "<em>" in about or "<strong>" in about
 
@@ -228,7 +229,7 @@ def test_search_filters_the_section_list_and_jumps_to_the_first_body_match(qtbot
     assert all(
         not dialog.section_list.item(i).isHidden() for i in range(dialog.section_list.count())
     )
-    assert len(dialog.sections()) == 24
+    assert len(dialog.sections()) == 25
 
 
 def test_an_empty_search_result_says_so(qtbot, settings) -> None:
@@ -491,9 +492,9 @@ def test_about_carries_the_disclaimer_and_the_policy(qtbot) -> None:
 # -- example datasets --------------------------------------------------------------------------
 
 
-def test_help_section_24_names_all_three_example_datasets() -> None:
+def test_help_section_25_names_all_three_example_datasets() -> None:
     body = CANONICAL_HELP.read_text(encoding="utf-8").split(
-        "## 24. About, licence, projects and policy", 1
+        "## 25. About, licence, projects and policy", 1
     )[1]
     for filename in ("example.csv", "example-decay.csv", "example-kinetics.csv"):
         assert f"`{filename}`" in body, filename

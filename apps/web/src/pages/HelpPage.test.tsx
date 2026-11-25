@@ -16,6 +16,7 @@ const SECTION_TITLES = [
   "Keyboard shortcuts (desktop)",
   "Troubleshooting",
   "Fit audit and methods text",
+  "Tools that start from a fit",
   "Statistics tools",
   "Summarising columns",
   "Comparing means",
@@ -51,7 +52,7 @@ function atAddress(address: string, body: () => void): void {
 }
 
 describe("HelpPage", () => {
-  it("renders all twenty-four section headings in order", () => {
+  it("renders all twenty-five section headings in order", () => {
     renderHelp();
     const headings = screen.getAllByRole("heading", { level: 2 });
     expect(headings.map((heading) => heading.textContent)).toEqual(SECTION_TITLES);
@@ -64,6 +65,7 @@ describe("HelpPage", () => {
       "auto-fit",
       "keyboard-shortcuts",
       "fit-audit-and-methods-text",
+      "tools-that-start-from-a-fit",
       "statistics-tools",
       "summarising-columns",
       "comparing-means",
@@ -102,6 +104,19 @@ describe("HelpPage", () => {
       expect(section?.textContent).toContain("A verdict is evidence, not proof");
       expect(section?.textContent).toContain("curvestudio methods --style markdown");
     });
+  });
+
+  it("explains the three fit tools and where they start", () => {
+    renderHelp();
+    const section = document.getElementById("tools-that-start-from-a-fit");
+    expect(section).not.toBeNull();
+    expect(section?.querySelector("h2")?.textContent).toBe("Tools that start from a fit");
+    expect(
+      Array.from(section?.querySelectorAll("h3") ?? []).map((heading) => heading.textContent),
+    ).toEqual(["Model discernibility", "Experiment feasibility", "Where to measure next"]);
+    expect(section?.textContent).toContain("More tools");
+    expect(section?.textContent).toContain("curvestudio discern");
+    expect(section?.textContent).toContain("a convention, not a test");
   });
 
   it("says the web service keeps a dataset as the whole table that was uploaded", () => {

@@ -102,3 +102,14 @@ No product was found to offer any of the five capabilities in its own right, so 
 - It may say, with the date, that these capabilities were looked for in the nine products above, in their public documentation, and were not found there in their own right; and what was found instead.
 - It may not say "available nowhere else" or "unique" without the qualification above: a product that was not checked, or a capability that was not found, is not proof of absence.
 - When a later batch ships one of the other three capabilities, its line on the home page repeats this check for that capability first, and carries the qualification for the feasibility simulator if Prism's Monte Carlo analysis has not changed.
+
+## The three fit tools, shipped (2026-11-25)
+
+The model discernibility report, the experiment feasibility simulator and the next-measurement advisor are now available in the app, from a fit's **More tools** tab and from the command line. Their capabilities are columns 3 to 5 of the check above, and that check already records their state:
+
+- **What was looked for:** a report on whether the data can tell the leading models apart (column 3), a simulator of a planned design that refits simulated data (column 4), and a recommendation of where to measure next for a curve fit (column 5).
+- **Where:** the public documentation of the same nine products, read in full on 2026-11-24; the per-product findings name the pages and the quotes.
+- **What was found:** no cell reads "Has". The nearest neighbours are pairwise or ranked AICc, AIC and F-test comparisons in CurveExpert, Origin and Prism; Origin's Monte Carlo and Bootstrap apps and Prism's Simulate XY Data with Monte Carlo analysis, neither of which reports bias or interval coverage for a curve fit; and Origin's factor-based DOE app and JASP's Quality Control design worksheets, neither for a curve fit.
+- **Not checked, as recorded above:** LabPlot's fuller fit-dialog page could not be reached, SciDAVis's results log is documented only by a screenshot, and Origin and QtiPlot state no version on the pages read.
+
+The home page describes where the three run and says nothing about what other products offer. No "available nowhere else" or "unique" claim is published for them, and none should be until the check is complete and the feasibility simulator's Prism qualification is settled.

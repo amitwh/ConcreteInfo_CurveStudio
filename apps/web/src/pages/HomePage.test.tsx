@@ -577,6 +577,25 @@ describe("HomePage", () => {
     expect(toolTitles).toHaveLength(29);
   });
 
+  it("says three more tools start from a fit, outside the catalogue", () => {
+    renderHome();
+    const section = document.getElementById("statistics");
+    expect(section).not.toBeNull();
+    const scoped = within(section as HTMLElement);
+
+    // The three fit-centric tools are described beside the catalogue sentence, not listed
+    // as picker tools: the count above stays the catalogue's exact twenty-nine.
+    const sentence = scoped.getByText(
+      "Three more tools start from a fit: a model discernibility report, an experiment " +
+        "feasibility simulator and a next-measurement advisor — in the web app, the desktop " +
+        "app and the command line.",
+    );
+    expect(sentence).toBeTruthy();
+    for (const tool of ["Model discernibility", "Experiment feasibility", "Next-measurement"]) {
+      expect(scoped.queryByText(tool)).toBeNull();
+    }
+  });
+
   it("claims no absence in the Statistics section: what was not found is not proof", () => {
     renderHome();
     const text = (document.getElementById("statistics")?.textContent ?? "").toLowerCase();

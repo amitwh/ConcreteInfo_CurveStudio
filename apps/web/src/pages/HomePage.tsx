@@ -359,6 +359,13 @@ const STATISTICS_TOOLS_SENTENCE =
   "its alternative under a stated prior, and model grouped or time-to-event data — in the " +
   "web app, the desktop app and the command line.";
 
+/** Three fit-centric tools that are not in the catalogue, because they start from a fit
+ *  rather than a dataset's columns. Pinned verbatim by `HomePage.test.tsx`. */
+const FIT_TOOLS_SENTENCE =
+  "Three more tools start from a fit: a model discernibility report, an experiment " +
+  "feasibility simulator and a next-measurement advisor — in the web app, the desktop app " +
+  "and the command line.";
+
 /* ---- "Fits you can reproduce" gallery ------------------------------------------------ */
 
 interface FitModel {
@@ -1187,6 +1194,7 @@ export function HomePage(): ReactElement {
                 </li>
               ))}
             </ul>
+            <p className="hp-note">{FIT_TOOLS_SENTENCE}</p>
             <p className="hp-note">
               <span>{PRIOR_ART_SENTENCE}</span>{" "}
               <a href={PRIOR_ART_URL} target="_blank" rel="noopener noreferrer">
