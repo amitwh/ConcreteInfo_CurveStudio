@@ -735,6 +735,187 @@ describe("api.text (a body that is a document, not JSON)", () => {
   });
 });
 
+describe("api.download (an export: a body that is a file, not JSON)", () => {
+  const EXPORT = "/fits/f1/export?format=csv";
+  const UNAUTHORIZED = { error: "UNAUTHORIZED", message: "expired", detail: {} };
+
+  /** A downloaded document; a body can be read once, so each call gets its own. */
+  function fileResponse(body: string): Response {
+    return new Response(body, {
+      status: 200,
+      headers: {
+        "content-type": "text/csv",
+        "content-disposition": 'attachment; filename="fit.csv"',
+      },
+    });
+  }
+
+  /** The Authorization header of every request that reached `path`, in order. */
+  function bearersSentTo(path: string): Array<string | null> {
+    return fetchMock.mock.calls
+      .filter(([url]) => String(url) === `${API_BASE}${path}`)
+      .map(([, init]) => bearer(init));
+  }
+
+  it("refreshes once on a 401 and retries with the new token", async () => {
+    api.setTokens("a1", "r1");
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/auth/refresh")) {
+        return jsonResponse(200, {
+          access_token: "a2",
+          refresh_token: "r2",
+          expires_in: 900,
+          token_type: "bearer",
+        });
+      }
+      if (bearer(init) === "Bearer a2") return fileResponse("x,y\n1,2\n");
+      return jsonResponse(401, UNAUTHORIZED);
+    });
+
+    const out = await api.download(EXPORT);
+
+    expect(await out.blob.text()).toBe("x,y\n1,2\n");
+    expect(out.filename).toBe("fit.csv");
+    // The second attempt carried the renewed token: one refusal, one renewal, one retry.
+    expect(bearersSentTo(EXPORT)).toEqual(["Bearer a1", "Bearer a2"]);
+    expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/auth/refresh"))).toHaveLength(1);
+  });
+
+  it("throws when the retried download is refused again", async () => {
+    api.setTokens("a1", "r1");
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      if (String(input).endsWith("/auth/refresh")) {
+        return jsonResponse(200, {
+          access_token: "a2",
+          refresh_token: "r2",
+          expires_in: 900,
+          token_type: "bearer",
+        });
+      }
+      return jsonResponse(401, UNAUTHORIZED);
+    });
+
+    const err = await api.download(EXPORT).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).status).toBe(401);
+    // One retry, not a loop of them.
+    expect(bearersSentTo(EXPORT)).toEqual(["Bearer a1", "Bearer a2"]);
+  });
+
+  it("passes an abort through unchanged and never retries it", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    fetchMock.mockImplementation((_input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.signal?.aborted) {
+        return Promise.reject(new DOMException("aborted", "AbortError"));
+      }
+      return Promise.resolve(fileResponse("x,y\n"));
+    });
+
+    const err = await api.download(EXPORT, { signal: controller.signal }).catch((e: unknown) => e);
+
+    expect(err).not.toBeInstanceOf(ApiError);
+    expect((err as DOMException).name).toBe("AbortError");
+    expect(bearersSentTo(EXPORT)).toHaveLength(1);
+  });
+});
+
+describe("the proactive refresh (the token's lifetime is remembered)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** The refresh route's answer, as the server issues one for its nth pair. */
+  const pair = (n: number): unknown => ({
+    access_token: `a${n}`,
+    refresh_token: `r${n}`,
+    expires_in: 900,
+    token_type: "bearer",
+  });
+
+  /** How many renewals have been asked for so far (the in-flight one included). */
+  const refreshCount = (): number =>
+    fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/auth/refresh")).length;
+
+  it("refreshes shortly before the token ends, once, and adopts the rotated pair", async () => {
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      if (String(input).endsWith("/auth/refresh")) return jsonResponse(200, pair(2));
+      return jsonResponse(200, []);
+    });
+    api.setTokens("a1", "r1", 900);
+
+    // The lead window (60 s) has not opened yet: nothing asked.
+    await vi.advanceTimersByTimeAsync(900_000 - 60_000 - 1);
+    expect(refreshCount()).toBe(0);
+
+    // Inside the window (60 s lead, up to 5 s jitter) and still before the token ends.
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(refreshCount()).toBe(1);
+    expect(api.refreshToken).toBe("r2");
+  });
+
+  it("replaces its timer when tokens are set again, rather than stacking a second", async () => {
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      if (String(input).endsWith("/auth/refresh")) return jsonResponse(200, pair(2));
+      return jsonResponse(200, []);
+    });
+    api.setTokens("a1", "r1", 900);
+    api.setTokens("a1", "r1", 900); // the pair re-adopted before the timer fired
+
+    await vi.advanceTimersByTimeAsync(900_000);
+    // Two stacked timers would both fire inside one lifetime; one replaced timer does not.
+    expect(refreshCount()).toBe(1);
+  });
+
+  it("sign-out cancels the timer", async () => {
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      if (String(input).endsWith("/auth/refresh")) return jsonResponse(200, pair(2));
+      return jsonResponse(200, []); // the server's answer to /auth/logout
+    });
+    api.setTokens("a1", "r1", 900);
+
+    await api.logout();
+    await vi.advanceTimersByTimeAsync(900_000);
+    expect(refreshCount()).toBe(0);
+  });
+
+  it("a failed proactive refresh does not loop; the next request still refreshes", async () => {
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/auth/refresh")) {
+        if (refreshCount() === 1) throw new TypeError("fetch failed"); // network trouble, not a logout
+        return jsonResponse(200, pair(2));
+      }
+      if (bearer(init) === "Bearer a2") return jsonResponse(200, []);
+      return jsonResponse(401, { error: "UNAUTHORIZED", message: "expired", detail: {} });
+    });
+    api.setTokens("a1", "r1", 900);
+
+    await vi.advanceTimersByTimeAsync(900_000); // the proactive attempt met network trouble
+    expect(refreshCount()).toBe(1);
+    expect(api.refreshToken).toBe("r1"); // the session survived it
+
+    await vi.advanceTimersByTimeAsync(600_000); // far past the expiry: no loop
+    expect(refreshCount()).toBe(1);
+
+    const datasets = await api.request("/datasets"); // the request-driven path still refreshes
+    expect(datasets).toEqual([]);
+    expect(refreshCount()).toBe(2);
+    expect(api.refreshToken).toBe("r2");
+  });
+
+  it("a page arriving with only a refresh token schedules nothing", async () => {
+    localStorage.setItem("curvestudio.refresh", "r1");
+    await vi.advanceTimersByTimeAsync(3_600_000);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
 describe("the fit audit endpoints (the audit, and the cross-validation job)", () => {
   const CONVERGED_CHECK = {
     id: "converged",

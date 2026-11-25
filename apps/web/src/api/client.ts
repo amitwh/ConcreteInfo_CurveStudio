@@ -8,6 +8,9 @@
  * refresh token; the deployment's strict CSP (`script-src 'self'`, no CDN, no inline
  * scripts) is what makes that acceptable, and refresh-token rotation + reuse detection
  * on the server limits the blast radius of a stolen token.
+ *
+ * The token's lifetime is remembered too: the client renews on its own shortly before
+ * the access token ends, so a long session never trips on an expired token.
  */
 
 import type { ServerErrorLike } from "../lib/errorReporter";
@@ -20,6 +23,14 @@ export { API_BASE };
 export const MAX_UPLOAD_BYTES = 20_000_000;
 
 const REFRESH_KEY = "curvestudio.refresh";
+
+/** Renew this long before the access token ends. */
+const REFRESH_LEAD_MS = 60_000;
+/** A little randomness, so many tabs do not renew in the same instant. */
+const REFRESH_JITTER_MS = 5_000;
+/** Never sooner than this, however short the token's life: a life shorter than the lead
+ *  must not become a renewal loop. */
+const MIN_REFRESH_DELAY_MS = 1_000;
 
 export type Schemas = components["schemas"];
 export type TokenOut = Schemas["TokenOut"];
@@ -205,6 +216,8 @@ class ApiClient {
 
   private accessToken: string | null = null;
   private refreshInFlight: Promise<boolean> | null = null;
+  /** The waiting renewal: armed while a token's lifetime is known, cancelled with the session. */
+  private refreshTimer: ReturnType<typeof setTimeout> | null = null;
 
   get hasRefreshToken(): boolean {
     return this.refreshToken !== null;
@@ -215,22 +228,31 @@ class ApiClient {
     return localStorage.getItem(REFRESH_KEY);
   }
 
-  setTokens(access: string, refresh: string): void {
+  /**
+   * Store a pair. `expiresInSeconds` — the sign-in or renewal answer's `expires_in` —
+   * arms the waiting renewal; without it (a pair whose lifetime is unknown) any waiting
+   * renewal from an earlier session is cancelled rather than left to fire.
+   */
+  setTokens(access: string, refresh: string, expiresInSeconds?: number): void {
     this.accessToken = access;
     localStorage.setItem(REFRESH_KEY, refresh);
+    if (expiresInSeconds === undefined) this.cancelScheduledRefresh();
+    else this.scheduleRefresh(expiresInSeconds);
   }
 
   /** Adopt a token pair issued by any auth flow (password sign-in, OAuth exchange). */
   adoptTokens(tokens: TokenOut): void {
-    this.setTokens(tokens.access_token, tokens.refresh_token);
+    this.setTokens(tokens.access_token, tokens.refresh_token, tokens.expires_in);
   }
 
   clearTokens(): void {
     this.accessToken = null;
     localStorage.removeItem(REFRESH_KEY);
+    this.cancelScheduledRefresh();
   }
 
-  /** Test-only: detach listeners and forget tokens and any refresh still in flight, between tests. */
+  /** Test-only: detach listeners and forget tokens, any refresh still in flight and the
+   *  waiting renewal, between tests. */
   resetForTests(): void {
     this.clearTokens();
     this.onAuthFailure = null;
@@ -288,12 +310,37 @@ class ApiClient {
         this.onAuthFailure?.();
         return false;
       }
-      this.setTokens(tokens.access_token, tokens.refresh_token);
+      this.setTokens(tokens.access_token, tokens.refresh_token, tokens.expires_in);
       return true;
     } catch {
       // Network trouble is not a logout: keep the token, let the caller surface the 401.
       return false;
     }
+  }
+
+  /**
+   * Renew shortly before the access token ends: its lifetime, less a lead window and a
+   * little jitter, becomes one timer, replaced with every pair. The renewal goes through
+   * `refreshNow`, so it is single-flight with any request-driven refresh, and its answer
+   * arms the next period. One that fails arms nothing — the next request's 401 takes
+   * over — so an unreachable server is not polled in a loop.
+   */
+  private scheduleRefresh(expiresInSeconds: number): void {
+    this.cancelScheduledRefresh();
+    const delay = Math.max(
+      expiresInSeconds * 1000 - REFRESH_LEAD_MS + Math.random() * REFRESH_JITTER_MS,
+      MIN_REFRESH_DELAY_MS,
+    );
+    this.refreshTimer = setTimeout(() => {
+      this.refreshTimer = null;
+      void this.refreshNow();
+    }, delay);
+  }
+
+  private cancelScheduledRefresh(): void {
+    if (this.refreshTimer === null) return;
+    clearTimeout(this.refreshTimer);
+    this.refreshTimer = null;
   }
 
   async request<T>(path: string, init?: RequestInit, options?: RequestOptions): Promise<T> {
@@ -358,7 +405,7 @@ class ApiClient {
     );
     // The session starts here, not at the next refresh: store the pair immediately so
     // the very next request (GET /me) is authenticated.
-    this.setTokens(tokens.access_token, tokens.refresh_token);
+    this.setTokens(tokens.access_token, tokens.refresh_token, tokens.expires_in);
     return tokens;
   }
 
@@ -596,27 +643,20 @@ class ApiClient {
     return send(false);
   }
 
-  /** Download a file (fit export) as a Blob with the bearer token attached. */
-  async download(path: string): Promise<{ blob: Blob; filename: string | null }> {
-    const headers = new Headers();
-    if (this.accessToken !== null) headers.set("Authorization", `Bearer ${this.accessToken}`);
-    let response: Response;
-    try {
-      response = await fetch(`${API_BASE}${path}`, { headers });
-    } catch (error) {
-      if (isAbortError(error)) throw error;
-      throw networkError();
-    }
-    this.noteServerError(
-      response.status,
-      response.url,
-      response.headers.get("x-request-id"),
-      path,
-    );
-    if (!response.ok) throw await toApiError(response);
-    const disposition = response.headers.get("content-disposition");
-    const match = disposition?.match(/filename="?([^";]+)"?/);
-    return { blob: await response.blob(), filename: match?.[1] ?? null };
+  /**
+   * Download a file (fit export) as a Blob: the bearer token, the one refresh on a 401
+   * and the same errors as every other request, for a body that is a document rather
+   * than JSON. The filename is the one the server names in content-disposition.
+   */
+  async download(
+    path: string,
+    init?: RequestInit,
+  ): Promise<{ blob: Blob; filename: string | null }> {
+    return this.send(path, init, true, async (response) => {
+      const disposition = response.headers.get("content-disposition");
+      const match = disposition?.match(/filename="?([^";]+)"?/);
+      return { blob: await response.blob(), filename: match?.[1] ?? null };
+    });
   }
 
   /** The audit of a stored fit: each check with its verdict, evidence and next step. */
