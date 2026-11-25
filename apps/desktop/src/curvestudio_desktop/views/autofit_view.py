@@ -126,6 +126,13 @@ class AutoFitView(QWidget):
     openRequested = Signal(str)
     """A row's full result was requested (double-click, Enter, button): its candidate id."""
 
+    discernRequested = Signal(str)
+    """A row's discernibility report was requested: its candidate id.
+
+    The owner opens the row (refitting it exactly as the run fitted it) and shows the
+    details window's More tools tab; the report itself is the user's to run there.
+    """
+
     top3Changed = Signal(bool)
     """The "Show top 3" option changed (the shell persists it and redraws the plot)."""
 
@@ -215,8 +222,15 @@ class AutoFitView(QWidget):
         self.open_button = QPushButton("Open full results")
         self.open_button.setToolTip("Refit the selected row and open its details window")
         self.open_button.clicked.connect(self._open_selected)
+        self.discern_button = QPushButton("Discernibility report")
+        self.discern_button.setObjectName("autofitDiscernButton")
+        self.discern_button.setToolTip(
+            "Refit the selected row and open its More tools tab, where the report runs"
+        )
+        self.discern_button.clicked.connect(self._emit_discern)
         action_row.addWidget(self.top3_check)
         action_row.addStretch(1)
+        action_row.addWidget(self.discern_button)
         action_row.addWidget(self.open_button)
         layout.addLayout(action_row)
         self.table = RankingTableView()
@@ -406,6 +420,11 @@ class AutoFitView(QWidget):
 
     def _open_selected(self) -> None:
         self._emit_open()
+
+    def _emit_discern(self) -> None:
+        row = self.table.selected_row()
+        if row is not None:
+            self.discernRequested.emit(row.model_id)
 
     def current_candidate(self) -> str | None:
         row = self.table.selected_row()

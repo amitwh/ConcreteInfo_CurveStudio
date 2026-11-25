@@ -56,6 +56,7 @@ from curvestudio_desktop.views.data_table import DatasetTableModel, DataTableDoc
 from curvestudio_desktop.views.details_dialog import DetailsDialog
 from curvestudio_desktop.views.dock_shell import DockTitleBar
 from curvestudio_desktop.views.fit_summary import model_identity
+from curvestudio_desktop.views.fit_tools_view import MORE_TOOLS_TITLE
 from curvestudio_desktop.views.icons import app_icon, icon
 from curvestudio_desktop.views.import_dialog import ClipboardImportDialog, ImportDialog
 from curvestudio_desktop.views.plot_view import OverlayCurve, PlotView
@@ -120,6 +121,8 @@ class MainWindow(QMainWindow):
         self._running_job: JobHandle | None = None
         self._busy_cursor = False
         self._suppress_autostart = False
+        self._discern_pending = False
+        """An Auto-fit row's discernibility report was asked for: open its tab when it lands."""
         self.layout_restored = False
         self._theme_preference = theme_preference(self._settings)
         self._collapsed: dict[str, bool] = {}
@@ -142,6 +145,7 @@ class MainWindow(QMainWindow):
             settings=self._settings,
             predict_fn=self.analysis.predict,
             cross_validate_fn=self._cross_validate,
+            jobs=self.jobs,
         )
         # one reusable, non-modal help window per main window
         self.help_dialog: HelpDialog | None = None
@@ -649,6 +653,7 @@ class MainWindow(QMainWindow):
         panel = self.analysis_panel
         panel.autofit_view.rowSelected.connect(self._plot_candidate)
         panel.autofit_view.openRequested.connect(self._open_candidate)
+        panel.autofit_view.discernRequested.connect(self._open_discernibility)
         panel.autofit_view.top3Changed.connect(self._on_show_top3_changed)
         panel.stats_view.plot_selected.connect(self._on_stats_plot_selected)
         panel.summary.openDetailsRequested.connect(self.open_details)
@@ -782,6 +787,7 @@ class MainWindow(QMainWindow):
     def _refresh_analysis_views(self) -> None:
         """Point the analysis dock at the active dataset: stored run, empty state, auto-start."""
         panel = self.analysis_panel
+        self._discern_pending = False
         self.analysis.clear_current_fit()
         panel.summary.clear()
         self.details_dialog.clear()
@@ -854,6 +860,9 @@ class MainWindow(QMainWindow):
         )
         panel.manual_view.clear_banner()
         self._refresh_export_actions()
+        if self._discern_pending:
+            self._discern_pending = False
+            self.details_dialog.select_tab(MORE_TOOLS_TITLE)
         # a fit the user asked for opens the details window; restoring one does not
         if not meta_dict.get("restored", False):
             self.details_dialog.reveal()
@@ -874,6 +883,7 @@ class MainWindow(QMainWindow):
             self.plot_view.set_equation(name, fitted)
 
     def _on_fit_failed(self, message: str) -> None:
+        self._discern_pending = False
         self.analysis_panel.manual_view.show_failure(message)
         self._refresh_export_actions()
 
@@ -1069,6 +1079,21 @@ class MainWindow(QMainWindow):
         result = None if dataset_id is None else self.analysis.autofit_for_display(dataset_id)
         if dataset_id is None or result is None:
             return
+        self.analysis.open_candidate(dataset_id, result, candidate_id)
+
+    def _open_discernibility(self, candidate_id: str) -> None:
+        """Open the selected row and show it on the details window's More tools tab."""
+        bundle = self.analysis.current_bundle
+        if bundle is not None and bundle.result.model_id == candidate_id:
+            self.details_dialog.select_tab(MORE_TOOLS_TITLE)
+            self.details_dialog.reveal()
+            return
+        dataset_id = self.selection.active_id
+        result = None if dataset_id is None else self.analysis.autofit_for_display(dataset_id)
+        if dataset_id is None or result is None:
+            self.statusBar().showMessage("Select a ranked row to open its discernibility report")
+            return
+        self._discern_pending = True
         self.analysis.open_candidate(dataset_id, result, candidate_id)
 
     # -- details window ----------------------------------------------------------------------

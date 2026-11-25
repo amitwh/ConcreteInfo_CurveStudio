@@ -32,7 +32,7 @@ def test_analysis_dock_has_a_summary_and_the_details_window_has_the_result_tabs(
     window = make_window()
     qtbot.addWidget(window)
     panel = window.analysis_panel
-    # the dock slims to a summary; the six result views live in the details window
+    # the dock slims to a summary; the result views live in the details window
     assert panel.summary.hint_visible()
     tabs = window.details_dialog.results
     assert tabs.tab_titles() == [
@@ -42,6 +42,7 @@ def test_analysis_dock_has_a_summary_and_the_details_window_has_the_result_tabs(
         "Fit audit",
         "Equation",
         "Predict",
+        "More tools",
     ]
     for index in range(tabs.count()):
         assert tabs.tab_text_at(index).strip() == "No fit yet"

@@ -1,7 +1,7 @@
 """The details window: non-modal, reusable, geometry-persistent and wired to the ranking.
 
-The dock keeps the ranking and a headline summary; the full six-view result opens in a
-single details window per main window. These tests cover the window's own contract and
+The dock keeps the ranking and a headline summary; the full result opens in a single details
+window per main window. These tests cover the window's own contract and
 the two paths that feed it: a ranked row (refit then open) and a manual fit.
 """
 
@@ -17,7 +17,15 @@ from curvestudio.workflow import format_equation
 from curvestudio_desktop.views.details_dialog import GEOMETRY_KEY, MINIMUM_SIZE, TITLE
 from curvestudio_desktop.views.main_window import MainWindow
 
-TAB_TITLES = ["Parameters", "Statistics", "Diagnostics", "Fit audit", "Equation", "Predict"]
+TAB_TITLES = [
+    "Parameters",
+    "Statistics",
+    "Diagnostics",
+    "Fit audit",
+    "Equation",
+    "Predict",
+    "More tools",
+]
 USER_EQUATION = (
     "y = 0.680918 + 2.37953*x + 0.0900383*x**2 + 0.0127839*x**3 "
     "+ (-0.000548964)*x**4 + 1.07529e-05*x**5"
@@ -40,7 +48,7 @@ def autofit_window(make_window, qtbot, write_file):
     window.details_dialog.close()
 
 
-def test_details_window_is_non_modal_resizable_and_has_the_six_views(
+def test_details_window_is_non_modal_resizable_and_has_the_result_views(
     autofit_window,
 ) -> None:
     dialog = autofit_window.details_dialog

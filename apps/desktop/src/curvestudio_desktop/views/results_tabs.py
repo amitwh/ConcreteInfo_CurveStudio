@@ -1,5 +1,5 @@
-"""ResultsTabs: the six result tabs every fit fills (Parameters, Statistics, Diagnostics, Fit
-audit, Equation, Predict).
+"""ResultsTabs: the seven result tabs every fit fills (Parameters, Statistics, Diagnostics,
+Fit audit, Equation, Predict, More tools).
 
 The widget is deliberately self-contained: the analysis dock no longer shows it, the
 details window hosts it, and any other home could add it without re-implementing a tab.
@@ -15,6 +15,9 @@ histogram); an undefined panel says ``n/a`` instead of drawing empty axes. The F
 ``curvestudio.tools``; for a fit that did not converge it shows that failure's audit in
 place of the "No fit" empty state the other tabs fall back to. The Equation tab also offers
 the fit's methods text — paragraph, equation and table — for the clipboard in three styles.
+The More tools tab runs the three fit-centric tools (discernibility, feasibility, next
+measurement) through the window's job runner; its details are in
+:mod:`~curvestudio_desktop.views.fit_tools_view`.
 """
 
 from collections.abc import Callable
@@ -52,8 +55,10 @@ from curvestudio.workflow import (
     WorkflowError,
     format_equation,
 )
+from curvestudio_desktop.jobs import JobRunner
 from curvestudio_desktop.theme import mono_font
 from curvestudio_desktop.views.fit_audit_view import CrossValidateCaller, FitAuditView
+from curvestudio_desktop.views.fit_tools_view import MORE_TOOLS_TITLE, FitToolsView
 from curvestudio_reporting.csv_report import statistics_rows
 
 EMPTY_TEXT = "No fit yet"
@@ -218,6 +223,7 @@ class ResultsTabs(QWidget):
         "Fit audit",
         "Equation",
         "Predict",
+        MORE_TOOLS_TITLE,
     )
 
     def __init__(
@@ -226,10 +232,12 @@ class ResultsTabs(QWidget):
         *,
         predict_fn: PredictCaller | None = None,
         cross_validate_fn: CrossValidateCaller | None = None,
+        jobs: JobRunner | None = None,
     ) -> None:
         super().__init__(parent)
         self._predict_fn = predict_fn
         self._cross_validate_fn = cross_validate_fn
+        self._jobs = jobs
         self._bundle: FitBundle | None = None
         self._spec: FitSpec | None = None
         self._ranking: AutoFitResult | None = None
@@ -248,6 +256,7 @@ class ResultsTabs(QWidget):
         self._build_audit()
         self._build_equation()
         self._build_predict()
+        self._build_more_tools()
         for title, tab in zip(self.TAB_TITLES, self._tabs_of, strict=True):
             holder = QWidget()
             holder.setLayout(tab)
@@ -368,6 +377,11 @@ class ResultsTabs(QWidget):
         self._predict_tab = _Tab(content)
         self._tabs_of.append(self._predict_tab)
 
+    def _build_more_tools(self) -> None:
+        self._tools = FitToolsView(self._jobs)
+        self._more_tools_tab = _Tab(self._tools)
+        self._tabs_of.append(self._more_tools_tab)
+
     # -- D1 compatibility (tests read the empty state through these) ------------------------
 
     def tab_titles(self) -> list[str]:
@@ -375,6 +389,22 @@ class ResultsTabs(QWidget):
 
     def tab_text_at(self, index: int) -> str:
         return self._tabs_of[index].placeholder_text()
+
+    def select_tab(self, title: str) -> bool:
+        """Show the tab called ``title``; ``False`` when this widget has no such tab."""
+        if title not in self.TAB_TITLES:
+            return False
+        self._tabs.setCurrentIndex(self.TAB_TITLES.index(title))
+        return True
+
+    def current_tab_title(self) -> str:
+        """The title of the tab on screen ('' when there is none)."""
+        index = self._tabs.currentIndex()
+        return "" if index < 0 else self._tabs.tabText(index)
+
+    def more_tools(self) -> FitToolsView:
+        """The More tools panel (the three fit-centric actions)."""
+        return self._tools
 
     def count(self) -> int:
         return self._tabs.count()
@@ -401,6 +431,7 @@ class ResultsTabs(QWidget):
             plot.clear()
         self._diag_note.setText("")
         self._audit.clear()
+        self._tools.clear()
 
     def show_bundle(
         self,
@@ -438,12 +469,21 @@ class ResultsTabs(QWidget):
         self._fill_diagnostics(bundle)
         self._fill_equation(bundle)
         self._fill_audit(bundle)
+        self._fill_more_tools(bundle)
         self._reset_predict()
 
     def _fill_audit(self, bundle: FitBundle) -> None:
         """Audit the fit in place; the tab shows it, where the others show their empty state."""
         self._audit.show_audit(bundle, self._spec, self._ranking)
         self._audit_tab.show_content(True)
+
+    def _fill_more_tools(self, bundle: FitBundle) -> None:
+        """Point the three actions at the shown fit and the run it was opened from."""
+        spec = self._spec
+        if spec is None:
+            return
+        self._tools.set_fit(bundle, spec, ranking=self._ranking)
+        self._more_tools_tab.show_content(True)
 
     def _fill_parameters(self, bundle: FitBundle) -> None:
         estimates = bundle.result.parameters
