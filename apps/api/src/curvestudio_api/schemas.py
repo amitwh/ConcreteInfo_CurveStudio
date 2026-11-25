@@ -329,11 +329,12 @@ class ProgressOut(BaseModel):
 
 class JobOut(BaseModel):
     """A job. ``result_ref`` is set when the job succeeds: the fit it stored (``fit``,
-    ``open_row``), the Auto-fit run (``autofit``) or, for a cross-validation (``audit``), the
-    dataset it ran on: its result is stored on the fit, which is then ``result_id``."""
+    ``open_row``), the Auto-fit run (``autofit``), the statistical result (``discern``,
+    ``simulate``, ``advise``) or, for a cross-validation (``audit``), the dataset it ran on:
+    its result is stored on the fit, which is then ``result_id``."""
 
     id: uuid.UUID
-    kind: Literal["fit", "autofit", "open_row", "audit"]
+    kind: Literal["fit", "autofit", "open_row", "audit", "discern", "simulate", "advise"]
     status: Literal["queued", "running", "succeeded", "failed", "cancelled"]
     dataset_id: uuid.UUID
     spec: dict[str, Any]

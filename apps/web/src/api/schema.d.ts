@@ -731,6 +731,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/fits/{fit_id}/advisor": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Advise Fit
+         * @description Queue the next-measurement advice for a stored fit. The body is optional (``points``,
+         *     ``candidates``, ``low``, ``high``, ``replicates``, ``objective``, ``parameter``, ``level``).
+         *     The result is stored as a statistical result. One advice of a fit runs at a time (409 with
+         *     the running job's ``job_id``); no quota.
+         */
+        post: operations["advise_fit_api_v1_fits__fit_id__advisor_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/fits/{fit_id}/audit": {
         parameters: {
             query?: never;
@@ -778,6 +801,31 @@ export interface paths {
          *     refuse it by.
          */
         post: operations["cross_validate_fit_api_v1_fits__fit_id__audit_cross_validation_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/fits/{fit_id}/discernibility": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Discern Fit
+         * @description Queue the model discernibility report of a stored fit, on the Auto-fit result it was
+         *     opened from. The result is stored as a statistical result: follow the job, then read it at
+         *     ``GET /stats/results/{result_id}``. The body is optional (``level``, ``grid_points``,
+         *     ``max_models``, ``profile``). A fit that was not opened from an Auto-fit result fails the
+         *     job with ``NO_RANKING``. One report of a fit runs at a time: a second request while one is
+         *     queued or running is a 409 whose ``detail.job_id`` names the job to follow. No quota.
+         */
+        post: operations["discern_fit_api_v1_fits__fit_id__discernibility_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -842,6 +890,29 @@ export interface paths {
          * @description ŷ at the given x (up to 100 000) from a converged fit, with an optional 95 % band.
          */
         post: operations["predict_fit_api_v1_fits__fit_id__predict_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/fits/{fit_id}/simulate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Simulate Fit
+         * @description Queue a feasibility simulation under a stored fit's specification: the truth, the
+         *     design, the noise, the run count, the seed and the optional differences to measure power
+         *     for. The result is stored as a statistical result. One simulation of a fit runs at a time
+         *     (409 with the running job's ``job_id``); no quota.
+         */
+        post: operations["simulate_fit_api_v1_fits__fit_id__simulate_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1244,6 +1315,52 @@ export interface components {
             plan_override?: string | null;
             /** Role */
             role?: ("member" | "admin") | null;
+        };
+        /**
+         * AdvisorRequest
+         * @description What to ask the advisor: how many points, over which range, for which parameter.
+         *
+         *     ``points`` is 1 to 20 and ``candidates`` 10 to 1,000 (the exchange tries every candidate
+         *     at every step); ``replicates`` is 1 to 20 rows at one location. ``low`` and ``high``
+         *     replace the data's own range on the sides they are given. ``objective`` is ``d_optimal``
+         *     (maximise the determinant of the information matrix) or ``parameter`` (minimise the named
+         *     ``parameter``'s variance, which is then required); ``parameter`` is ignored under
+         *     ``d_optimal``. ``level`` is the confidence level of the prediction band. The values are
+         *     checked by :func:`advise`, which raises ``INVALID_OPTION`` for anything out of range.
+         */
+        AdvisorRequest: {
+            /**
+             * Candidates
+             * @default 400
+             */
+            candidates: number;
+            /** High */
+            high?: number | null;
+            /**
+             * Level
+             * @default 0.95
+             */
+            level: number;
+            /** Low */
+            low?: number | null;
+            /**
+             * Objective
+             * @default d_optimal
+             * @enum {string}
+             */
+            objective: "d_optimal" | "parameter";
+            /** Parameter */
+            parameter?: string | null;
+            /**
+             * Points
+             * @default 3
+             */
+            points: number;
+            /**
+             * Replicates
+             * @default 1
+             */
+            replicates: number;
         };
         /**
          * AuditCheck
@@ -1959,6 +2076,29 @@ export interface components {
             confirm: string;
         };
         /**
+         * DesignSpec
+         * @description Where to measure and how often: explicit locations, or an evenly spaced range.
+         *
+         *     Give exactly one of ``locations`` and the ``low``/``high``/``count`` trio. A location is
+         *     repeated ``replicates`` times in every simulated dataset. The values are checked by
+         *     :func:`simulate`, which raises ``INVALID_OPTION`` for anything a design cannot be.
+         */
+        DesignSpec: {
+            /** Count */
+            count?: number | null;
+            /** High */
+            high?: number | null;
+            /** Locations */
+            locations?: number[] | null;
+            /** Low */
+            low?: number | null;
+            /**
+             * Replicates
+             * @default 1
+             */
+            replicates: number;
+        };
+        /**
          * DiagnosticTest
          * @description One statistical test applied to the residuals of a fit.
          *
@@ -2004,6 +2144,37 @@ export interface components {
         DiagnosticsReport: {
             /** Tests */
             tests: components["schemas"]["DiagnosticTest"][];
+        };
+        /**
+         * DiscernibilityRequest
+         * @description What the report is asked for.
+         *
+         *     ``level`` is the confidence level of the prediction intervals and the profile intervals.
+         *     ``grid_points`` is how many x values the curves are compared on. ``max_models`` caps
+         *     how many models of the leading group are refitted and compared; the rest are listed
+         *     and counted. ``profile`` turns the profile-likelihood check on or off.
+         */
+        DiscernibilityRequest: {
+            /**
+             * Grid Points
+             * @default 200
+             */
+            grid_points: number;
+            /**
+             * Level
+             * @default 0.95
+             */
+            level: number;
+            /**
+             * Max Models
+             * @default 12
+             */
+            max_models: number;
+            /**
+             * Profile
+             * @default true
+             */
+            profile: boolean;
         };
         /** EmailVerificationOut */
         EmailVerificationOut: {
@@ -2643,8 +2814,9 @@ export interface components {
         /**
          * JobOut
          * @description A job. ``result_ref`` is set when the job succeeds: the fit it stored (``fit``,
-         *     ``open_row``), the Auto-fit run (``autofit``) or, for a cross-validation (``audit``), the
-         *     dataset it ran on: its result is stored on the fit, which is then ``result_id``.
+         *     ``open_row``), the Auto-fit run (``autofit``), the statistical result (``discern``,
+         *     ``simulate``, ``advise``) or, for a cross-validation (``audit``), the dataset it ran on:
+         *     its result is stored on the fit, which is then ``result_id``.
          */
         JobOut: {
             /** Created At */
@@ -2669,7 +2841,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "fit" | "autofit" | "open_row" | "audit";
+            kind: "fit" | "autofit" | "open_row" | "audit" | "discern" | "simulate" | "advise";
             progress?: components["schemas"]["ProgressOut"] | null;
             /** Result Id */
             result_id?: string | null;
@@ -2849,6 +3021,24 @@ export interface components {
             count: number;
             /** Name */
             name: string;
+        };
+        /**
+         * NoiseSpec
+         * @description The noise added to the model's mean: a constant SD, or a coefficient of variation.
+         *
+         *     ``sd`` adds ``N(0, value)`` to every point, so the noise does not scale with the curve.
+         *     ``cv`` multiplies the mean by ``1 + N(0, value)`` and fits with weights
+         *     ``1 / (value * mean)**2`` (inverse variances), so the fit's noise model matches the draw.
+         */
+        NoiseSpec: {
+            /**
+             * Kind
+             * @default sd
+             * @enum {string}
+             */
+            kind: "sd" | "cv";
+            /** Value */
+            value: number;
         };
         /** OAuthExchangeIn */
         OAuthExchangeIn: {
@@ -3547,6 +3737,41 @@ export interface components {
             n_parameters: number;
             /** Name */
             name: string;
+        };
+        /**
+         * SimulationRequest
+         * @description A complete simulation: the truth, the design, the noise and the number of runs.
+         *
+         *     ``truth`` must name exactly the model's parameters. ``runs`` is 2 to 5,000 (more is
+         *     ``TOO_MANY_ROWS``). ``difference`` asks for the simulated power against the stated
+         *     difference for the parameters it names; it is ``None`` when power is not wanted.
+         */
+        SimulationRequest: {
+            design: components["schemas"]["DesignSpec"];
+            /** Difference */
+            difference?: {
+                [key: string]: number;
+            } | null;
+            /**
+             * Level
+             * @default 0.95
+             */
+            level: number;
+            noise: components["schemas"]["NoiseSpec"];
+            /**
+             * Runs
+             * @default 200
+             */
+            runs: number;
+            /**
+             * Seed
+             * @default 0
+             */
+            seed: number;
+            /** Truth */
+            truth: {
+                [key: string]: number;
+            };
         };
         /**
          * StatResultOut
@@ -5230,6 +5455,41 @@ export interface operations {
             };
         };
     };
+    advise_fit_api_v1_fits__fit_id__advisor_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                fit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["AdvisorRequest"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobCreatedOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_fit_audit_api_v1_fits__fit_id__audit_get: {
         parameters: {
             query?: never;
@@ -5273,6 +5533,41 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["CrossValidationIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobCreatedOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    discern_fit_api_v1_fits__fit_id__discernibility_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                fit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["DiscernibilityRequest"] | null;
             };
         };
         responses: {
@@ -5382,6 +5677,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Prediction"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    simulate_fit_api_v1_fits__fit_id__simulate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                fit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SimulationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobCreatedOut"];
                 };
             };
             /** @description Validation Error */

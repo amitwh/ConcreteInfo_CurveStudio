@@ -3,7 +3,7 @@
 import json
 import uuid
 from collections.abc import Callable
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Query, Response
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -21,6 +21,9 @@ from curvestudio.tools import (
     audit_fit,
     methods_text,
 )
+from curvestudio.tools.advisor import AdvisorRequest
+from curvestudio.tools.discernibility import DiscernibilityRequest
+from curvestudio.tools.feasibility import SimulationRequest
 from curvestudio.workflow import FitBundle, FitSpec, Prediction, WorkflowError, predict
 from curvestudio_api import audit, quotas
 from curvestudio_api.deps import Context, Ctx, CurrentUser, Db, own_dataset, own_fit, own_job
@@ -407,3 +410,120 @@ def cross_validate_fit(
         )
     )
     return JobCreatedOut(job_id=job.id)
+
+
+# -- the fit-centric tools -------------------------------------------------------------------------
+
+FIT_TOOL_RUNNING = {
+    "discern": ("discernibility report", "DISCERNIBILITY_RUNNING"),
+    "simulate": ("feasibility simulation", "SIMULATION_RUNNING"),
+    "advise": ("next-measurement advice", "ADVISOR_RUNNING"),
+}
+"""What each fit-tool job is called in a conflict, and the ``detail.code`` a second request is
+answered with while one is queued or running."""
+
+
+def _active_fit_tool(db: Session, user: User, fit: Fit, kind: str) -> Job | None:
+    """The user's queued or running job of ``kind`` for ``fit``, when there is one."""
+    jobs = db.scalars(
+        select(Job).where(Job.user_id == user.id, Job.kind == kind, Job.status.in_(ACTIVE))
+    )
+    wanted = str(fit.id)
+    return next((job for job in jobs if job.spec.get("fit_id") == wanted), None)
+
+
+def _queue_fit_tool(
+    db: Session,
+    ctx: Context,
+    user: User,
+    fit: Fit,
+    kind: str,
+    options: dict[str, Any],
+) -> JobCreatedOut:
+    """Queue one fit-tool job, unless one of its kind is already queued or running for the fit.
+
+    The job uses no quota: it is derived from a stored fit. Its dataset is the fit's, and its
+    result is stored as a ``stat_results`` row the finished job points at.
+    """
+    name, code = FIT_TOOL_RUNNING[kind]
+    active = _active_fit_tool(db, user, fit, kind)
+    if active is not None:
+        raise ApiError(
+            409,
+            "CONFLICT",
+            f"a {name} of this fit is already queued or running",
+            {"code": code, "job_id": str(active.id)},
+        )
+    admit_job(db, ctx, user, check_quota=lambda: None)  # the job uses no quota
+    job = Job(
+        id=uuid.uuid4(),
+        user_id=user.id,
+        dataset_id=fit.dataset_id,
+        kind=kind,
+        status="queued",
+        spec={"fit_id": str(fit.id), **options},
+    )
+    db.add(job)
+    db.commit()
+    ctx.jobs.submit(
+        Task(
+            job_id=job.id,
+            user_id=user.id,
+            dataset_id=fit.dataset_id,
+            request_id=request_id_var.get(),
+            kind=kind,
+        )
+    )
+    return JobCreatedOut(job_id=job.id)
+
+
+@router.post("/fits/{fit_id}/discernibility", status_code=202, response_model=JobCreatedOut)
+def discern_fit(
+    fit_id: uuid.UUID,
+    user: CurrentUser,
+    ctx: Ctx,
+    db: Db,
+    body: DiscernibilityRequest | None = None,
+) -> JobCreatedOut:
+    """Queue the model discernibility report of a stored fit, on the Auto-fit result it was
+    opened from. The result is stored as a statistical result: follow the job, then read it at
+    ``GET /stats/results/{result_id}``. The body is optional (``level``, ``grid_points``,
+    ``max_models``, ``profile``). A fit that was not opened from an Auto-fit result fails the
+    job with ``NO_RANKING``. One report of a fit runs at a time: a second request while one is
+    queued or running is a 409 whose ``detail.job_id`` names the job to follow. No quota."""
+    fit = own_fit(db, user, fit_id)
+    options = (body or DiscernibilityRequest()).model_dump(mode="json")
+    return _queue_fit_tool(db, ctx, user, fit, "discern", options)
+
+
+@router.post("/fits/{fit_id}/simulate", status_code=202, response_model=JobCreatedOut)
+def simulate_fit(
+    fit_id: uuid.UUID,
+    body: SimulationRequest,
+    user: CurrentUser,
+    ctx: Ctx,
+    db: Db,
+) -> JobCreatedOut:
+    """Queue a feasibility simulation under a stored fit's specification: the truth, the
+    design, the noise, the run count, the seed and the optional differences to measure power
+    for. The result is stored as a statistical result. One simulation of a fit runs at a time
+    (409 with the running job's ``job_id``); no quota."""
+    fit = own_fit(db, user, fit_id)
+    return _queue_fit_tool(db, ctx, user, fit, "simulate", body.model_dump(mode="json"))
+
+
+@router.post("/fits/{fit_id}/advisor", status_code=202, response_model=JobCreatedOut)
+def advise_fit(
+    fit_id: uuid.UUID,
+    user: CurrentUser,
+    ctx: Ctx,
+    db: Db,
+    body: AdvisorRequest | None = None,
+) -> JobCreatedOut:
+    """Queue the next-measurement advice for a stored fit. The body is optional (``points``,
+    ``candidates``, ``low``, ``high``, ``replicates``, ``objective``, ``parameter``, ``level``).
+    The result is stored as a statistical result. One advice of a fit runs at a time (409 with
+    the running job's ``job_id``); no quota."""
+    fit = own_fit(db, user, fit_id)
+    options = (body or AdvisorRequest()).model_dump(mode="json")
+    return _queue_fit_tool(db, ctx, user, fit, "advise", options)

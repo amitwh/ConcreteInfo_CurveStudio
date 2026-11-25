@@ -15,9 +15,12 @@ touches another job or another tenant:
   ``SERVER_RESTART`` at start-up.
 
 Job kinds: ``fit`` (one fit), ``autofit`` (a search over many models, with progress and its
-own worker pool), ``open_row`` (refit one Auto-fit row into a stored fit) and ``audit``
-(cross-validate a stored fit; the result is stored on that fit). A job process leads its own
-process group; stopping a job kills the group, so the pool dies with it.
+own worker pool), ``open_row`` (refit one Auto-fit row into a stored fit), ``audit``
+(cross-validate a stored fit; the result is stored on that fit), and the three fit-centric
+tools — ``discern`` (the model discernibility report), ``simulate`` (the experiment
+feasibility simulator) and ``advise`` (the next-measurement advisor), each storing its result
+as a ``stat_results`` row and pointing the job at it. A job process leads its own process
+group; stopping a job kills the group, so the pool dies with it.
 
 State lives in one process: run a single API process per database (see the README).
 """
@@ -42,9 +45,14 @@ from curvestudio_api import audit
 from curvestudio_api.audit_worker import run_cross_validation_job
 from curvestudio_api.autofit_worker import run_autofit_job, run_open_row_job
 from curvestudio_api.db import SessionFactory
+from curvestudio_api.fit_tools_worker import (
+    run_advice_job,
+    run_discernibility_job,
+    run_simulation_job,
+)
 from curvestudio_api.logging_setup import get_logger, log_fields
 from curvestudio_api.modules.errors.capture import bind_error_capture_sink
-from curvestudio_api.orm import Autofit, Dataset, Fit, Job
+from curvestudio_api.orm import Autofit, Dataset, Fit, Job, StatResult
 from curvestudio_api.timeutil import utcnow
 from curvestudio_api.worker import PROGRESS, STARTED, JobWorker, job_process_main, run_fit_job
 
@@ -54,10 +62,26 @@ ACTIVE = ("queued", "running")
 STARTUP_LIMIT_S = 120.0
 """How long a job process may take to come up before its job is given up on."""
 REAP_TIMEOUT_S = 5.0
-NAMED = {"autofit": "the Auto-fit run", "audit": "the cross-validation"}
+NAMED = {
+    "autofit": "the Auto-fit run",
+    "audit": "the cross-validation",
+    "discern": "the discernibility report",
+    "simulate": "the feasibility simulation",
+    "advise": "the next-measurement advice",
+}
 """How a job's timeout message names it, by kind. A job of any other kind is "the fit"."""
+FIT_TOOL_KINDS = {"discern": "discernibility", "simulate": "feasibility", "advise": "advisor"}
+"""The fitting tools' job kinds and the ``stat_results.tool`` each stores its result under."""
+FIT_TOOL_NAMES = {
+    "discern": "discernibility report",
+    "simulate": "feasibility simulation",
+    "advise": "next-measurement advice",
+}
+"""How each fit-tool kind names itself inside a message."""
 FIT_DELETED = "FIT_DELETED"
-"""A cross-validation whose fit was deleted: its result has nowhere to go."""
+"""A fit-tool job whose fit was deleted: its result has nowhere to go."""
+NO_RANKING = "NO_RANKING"
+"""A discernibility report whose fit was not opened from an Auto-fit result."""
 
 
 @dataclass
@@ -151,6 +175,9 @@ class JobManager:
         autofit_worker: JobWorker = run_autofit_job,
         open_row_worker: JobWorker = run_open_row_job,
         audit_worker: JobWorker = run_cross_validation_job,
+        discern_worker: JobWorker = run_discernibility_job,
+        simulate_worker: JobWorker = run_simulation_job,
+        advise_worker: JobWorker = run_advice_job,
         autofit_timeout_s: float | None = None,
         poll_s: float = 0.05,
     ) -> None:
@@ -165,6 +192,9 @@ class JobManager:
             "autofit": autofit_worker,
             "open_row": open_row_worker,
             "audit": audit_worker,
+            "discern": discern_worker,
+            "simulate": simulate_worker,
+            "advise": advise_worker,
         }
         self._autofit_timeout_s = autofit_timeout_s if autofit_timeout_s is not None else timeout_s
         self._poll_s = poll_s
@@ -394,10 +424,16 @@ class JobManager:
     def _finalise(self, flight: _Flight, outcome: tuple[str, Any]) -> None:
         task = flight.task
         kind, value = outcome
-        # The messages that would say "the fit" name a cross-validation, as its timeout message
+        # The messages that would say "the fit" name the kind they ran, as its timeout message
         # does; every other kind keeps the fit's wording.
         is_audit = task.kind == "audit"
-        what = "the cross-validation" if is_audit else "the fit"
+        fit_tool = task.kind in FIT_TOOL_KINDS
+        if fit_tool:
+            what = f"the {FIT_TOOL_NAMES[task.kind]}"
+        elif is_audit:
+            what = "the cross-validation"
+        else:
+            what = "the fit"
         try:
             if kind == "result":
                 result = json.loads(value)
@@ -408,6 +444,8 @@ class JobManager:
                         self._store_opened_row(task, result["bundle"])
                     elif task.kind == "audit":
                         self._store_cross_validation(task, result["cv"])
+                    elif fit_tool:
+                        self._store_fit_tool(task, result["result"])
                     else:
                         self._store_fit(task, result["bundle"])
                 else:
@@ -419,7 +457,10 @@ class JobManager:
                         error_message=str(result["message"]),
                     )
             elif kind == "too_large":
-                remedy = "use fewer folds" if is_audit else "fit fewer rows"
+                if fit_tool:
+                    remedy = "use smaller options"
+                else:
+                    remedy = "use fewer folds" if is_audit else "fit fewer rows"
                 self._finish(
                     task.job_id,
                     "failed",
@@ -431,7 +472,10 @@ class JobManager:
                 )
             else:
                 _log.error("job process died", extra=log_fields(job=str(task.job_id), exit=value))
-                doing = "cross-validating" if is_audit else "fitting"
+                if fit_tool:
+                    doing = f"running the {FIT_TOOL_NAMES[task.kind]}"
+                else:
+                    doing = "cross-validating" if is_audit else "fitting"
                 self._finish(
                     task.job_id,
                     "failed",
@@ -479,10 +523,13 @@ class JobManager:
         """The worker's keyword arguments, loaded now so queued jobs hold no dataset bytes.
 
         A job whose dataset has vanished is failed and ``None`` is returned; so is a
-        cross-validation whose fit has.
+        cross-validation or a fit-tool job whose fit has. A discernibility report also reads
+        the Auto-fit result its fit was opened from, and a fit without one fails the job.
         """
         arguments: dict[str, Any] | None = None
         fit_gone = False
+        no_ranking = False
+        reads_fit = task.kind == "audit" or task.kind in FIT_TOOL_KINDS
         with self._sessions() as db:
             job = db.get(Job, task.job_id)
             dataset = db.get(Dataset, task.dataset_id)
@@ -494,19 +541,44 @@ class JobManager:
                     "fingerprint": dataset.fingerprint,
                     "spec": job.spec,
                 }
-                if task.kind == "audit":  # it also reads the fit its result is stored on
+                if reads_fit:  # it also reads the fit it runs on
                     fit = db.get(Fit, uuid.UUID(job.spec["fit_id"]))
                     fit_gone = fit is None
                     if fit is not None:
                         arguments["bundle"] = fit.bundle
                         arguments["fit_spec"] = fit.spec
+                        if task.kind == "discern":
+                            no_ranking = True
+                            if fit.autofit_id is not None:
+                                ranking = db.scalar(
+                                    select(Autofit.result).where(Autofit.id == fit.autofit_id)
+                                )
+                                if ranking is not None:
+                                    arguments["ranking"] = ranking
+                                    no_ranking = False
         if fit_gone:
             self._finish(
                 task.job_id,
                 "failed",
                 from_=ACTIVE,
                 error_code=FIT_DELETED,
-                error_message="the fit was deleted before its cross-validation started",
+                error_message=(
+                    "the fit was deleted before its cross-validation started"
+                    if task.kind == "audit"
+                    else f"the fit was deleted before its {FIT_TOOL_NAMES[task.kind]} started"
+                ),
+            )
+            return None
+        if no_ranking:
+            self._finish(
+                task.job_id,
+                "failed",
+                from_=ACTIVE,
+                error_code=NO_RANKING,
+                error_message=(
+                    "this fit was not opened from an Auto-fit result; open a row from an "
+                    "Auto-fit result first"
+                ),
             )
             return None
         if arguments is None:
@@ -761,6 +833,50 @@ class JobManager:
                 error_code=FIT_DELETED,
                 error_message="the fit was deleted before its cross-validation finished",
             )
+
+    def _store_fit_tool(self, task: Task, payload: dict[str, Any]) -> None:
+        """Store a fit tool's result as one ``stat_results`` row and finish the job.
+
+        The row keeps the choices the job was given (its specification, the fit's id
+        included) and the result the core returned, on the fit's dataset. The job then points
+        at the row: ``GET /jobs/{id}`` gives its ``result_id`` and ``GET /stats/results/{id}``
+        the result itself. A cancel that lands first wins, and nothing is stored.
+        """
+        result_id = uuid.uuid4()
+        tool = FIT_TOOL_KINDS[task.kind]
+        size = len(json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+        with self._sessions() as db:
+            claimed = db.execute(
+                update(Job)
+                .where(Job.id == task.job_id, Job.status == "running")
+                .values(status="succeeded", result_ref=result_id, finished_at=utcnow())
+                .returning(Job.user_id, Job.dataset_id, Job.spec)
+            ).one_or_none()
+            if claimed is None:
+                db.rollback()
+                return
+            user_id, dataset_id, spec = claimed
+            db.add(
+                StatResult(
+                    id=result_id,
+                    user_id=user_id,
+                    dataset_id=dataset_id,
+                    tool=tool,
+                    request=spec,
+                    result=payload,
+                    size_bytes=size,
+                )
+            )
+            audit.record(
+                db,
+                "stat.create",
+                "stat_result",
+                user_id=user_id,
+                entity_id=result_id,
+                detail={"tool": tool, "job_id": str(task.job_id)},
+                request_id=task.request_id,
+            )
+            db.commit()
 
 
 def _kill_group(process: BaseProcess) -> None:

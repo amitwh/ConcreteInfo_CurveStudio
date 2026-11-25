@@ -210,6 +210,76 @@
         "title": "AdminUserUpdateIn",
         "type": "object"
       },
+      "AdvisorRequest": {
+        "additionalProperties": false,
+        "description": "What to ask the advisor: how many points, over which range, for which parameter.\n\n``points`` is 1 to 20 and ``candidates`` 10 to 1,000 (the exchange tries every candidate\nat every step); ``replicates`` is 1 to 20 rows at one location. ``low`` and ``high``\nreplace the data's own range on the sides they are given. ``objective`` is ``d_optimal``\n(maximise the determinant of the information matrix) or ``parameter`` (minimise the named\n``parameter``'s variance, which is then required); ``parameter`` is ignored under\n``d_optimal``. ``level`` is the confidence level of the prediction band. The values are\nchecked by :func:`advise`, which raises ``INVALID_OPTION`` for anything out of range.",
+        "properties": {
+          "candidates": {
+            "default": 400,
+            "title": "Candidates",
+            "type": "integer"
+          },
+          "high": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "High"
+          },
+          "level": {
+            "default": 0.95,
+            "title": "Level",
+            "type": "number"
+          },
+          "low": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Low"
+          },
+          "objective": {
+            "default": "d_optimal",
+            "enum": [
+              "d_optimal",
+              "parameter"
+            ],
+            "title": "Objective",
+            "type": "string"
+          },
+          "parameter": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parameter"
+          },
+          "points": {
+            "default": 3,
+            "title": "Points",
+            "type": "integer"
+          },
+          "replicates": {
+            "default": 1,
+            "title": "Replicates",
+            "type": "integer"
+          }
+        },
+        "title": "AdvisorRequest",
+        "type": "object"
+      },
       "AuditCheck": {
         "additionalProperties": false,
         "description": "One check of the audit.\n\n``title`` states what was found, phrased for the verdict. ``statistic`` is the number\nthe verdict turned on, as text, and ``threshold`` the rule that turned it. ``evidence``\nsays what was read, or (for ``NOT_APPLICABLE``) why nothing could be. ``explanation``\nis one or two plain sentences on what the check is about, and ``next_step`` what to do\nabout a ``caution`` or ``fail``.",
@@ -1748,6 +1818,66 @@
         "title": "DeleteMeIn",
         "type": "object"
       },
+      "DesignSpec": {
+        "additionalProperties": false,
+        "description": "Where to measure and how often: explicit locations, or an evenly spaced range.\n\nGive exactly one of ``locations`` and the ``low``/``high``/``count`` trio. A location is\nrepeated ``replicates`` times in every simulated dataset. The values are checked by\n:func:`simulate`, which raises ``INVALID_OPTION`` for anything a design cannot be.",
+        "properties": {
+          "count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Count"
+          },
+          "high": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "High"
+          },
+          "locations": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locations"
+          },
+          "low": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Low"
+          },
+          "replicates": {
+            "default": 1,
+            "title": "Replicates",
+            "type": "integer"
+          }
+        },
+        "title": "DesignSpec",
+        "type": "object"
+      },
       "DiagnosticTest": {
         "additionalProperties": false,
         "description": "One statistical test applied to the residuals of a fit.\n\n``statistic``, ``p_value`` and ``df`` are ``None`` when the test does not produce them:\na test that does not apply, or a statistic-only test such as the Durbin-Watson.\n``status`` is ``\"ok\"`` when the test was computed and ``\"not_applicable\"`` when the\ndata cannot support it; ``reason`` then says why.  ``reason`` may also carry a note on\nhow a test was computed (a clamped lag, for instance) while ``status`` is ``\"ok\"``.\n\n``null_hypothesis`` states what the test assumes, ``assumptions`` what it needs for\nthe result to mean anything and ``limitations`` what it cannot show.  ``note`` is the\nsame on every result.",
@@ -1862,6 +1992,34 @@
           "tests"
         ],
         "title": "DiagnosticsReport",
+        "type": "object"
+      },
+      "DiscernibilityRequest": {
+        "additionalProperties": false,
+        "description": "What the report is asked for.\n\n``level`` is the confidence level of the prediction intervals and the profile intervals.\n``grid_points`` is how many x values the curves are compared on. ``max_models`` caps\nhow many models of the leading group are refitted and compared; the rest are listed\nand counted. ``profile`` turns the profile-likelihood check on or off.",
+        "properties": {
+          "grid_points": {
+            "default": 200,
+            "title": "Grid Points",
+            "type": "integer"
+          },
+          "level": {
+            "default": 0.95,
+            "title": "Level",
+            "type": "number"
+          },
+          "max_models": {
+            "default": 12,
+            "title": "Max Models",
+            "type": "integer"
+          },
+          "profile": {
+            "default": true,
+            "title": "Profile",
+            "type": "boolean"
+          }
+        },
+        "title": "DiscernibilityRequest",
         "type": "object"
       },
       "EmailVerificationOut": {
@@ -3581,7 +3739,7 @@
         "type": "object"
       },
       "JobOut": {
-        "description": "A job. ``result_ref`` is set when the job succeeds: the fit it stored (``fit``,\n``open_row``), the Auto-fit run (``autofit``) or, for a cross-validation (``audit``), the\ndataset it ran on: its result is stored on the fit, which is then ``result_id``.",
+        "description": "A job. ``result_ref`` is set when the job succeeds: the fit it stored (``fit``,\n``open_row``), the Auto-fit run (``autofit``), the statistical result (``discern``,\n``simulate``, ``advise``) or, for a cross-validation (``audit``), the dataset it ran on:\nits result is stored on the fit, which is then ``result_id``.",
         "properties": {
           "created_at": {
             "title": "Created At",
@@ -3635,7 +3793,10 @@
               "fit",
               "autofit",
               "open_row",
-              "audit"
+              "audit",
+              "discern",
+              "simulate",
+              "advise"
             ],
             "title": "Kind",
             "type": "string"
@@ -4117,6 +4278,30 @@
           "count"
         ],
         "title": "NameCount",
+        "type": "object"
+      },
+      "NoiseSpec": {
+        "additionalProperties": false,
+        "description": "The noise added to the model's mean: a constant SD, or a coefficient of variation.\n\n``sd`` adds ``N(0, value)`` to every point, so the noise does not scale with the curve.\n``cv`` multiplies the mean by ``1 + N(0, value)`` and fits with weights\n``1 / (value * mean)**2`` (inverse variances), so the fit's noise model matches the draw.",
+        "properties": {
+          "kind": {
+            "default": "sd",
+            "enum": [
+              "sd",
+              "cv"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "number"
+          }
+        },
+        "required": [
+          "value"
+        ],
+        "title": "NoiseSpec",
         "type": "object"
       },
       "OAuthExchangeIn": {
@@ -5867,6 +6052,61 @@
           "cv_rmse"
         ],
         "title": "SimplerModelOut",
+        "type": "object"
+      },
+      "SimulationRequest": {
+        "additionalProperties": false,
+        "description": "A complete simulation: the truth, the design, the noise and the number of runs.\n\n``truth`` must name exactly the model's parameters. ``runs`` is 2 to 5,000 (more is\n``TOO_MANY_ROWS``). ``difference`` asks for the simulated power against the stated\ndifference for the parameters it names; it is ``None`` when power is not wanted.",
+        "properties": {
+          "design": {
+            "$ref": "#/components/schemas/DesignSpec"
+          },
+          "difference": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "number"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Difference"
+          },
+          "level": {
+            "default": 0.95,
+            "title": "Level",
+            "type": "number"
+          },
+          "noise": {
+            "$ref": "#/components/schemas/NoiseSpec"
+          },
+          "runs": {
+            "default": 200,
+            "title": "Runs",
+            "type": "integer"
+          },
+          "seed": {
+            "default": 0,
+            "title": "Seed",
+            "type": "integer"
+          },
+          "truth": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "title": "Truth",
+            "type": "object"
+          }
+        },
+        "required": [
+          "truth",
+          "design",
+          "noise"
+        ],
+        "title": "SimulationRequest",
         "type": "object"
       },
       "StatResultOut": {
@@ -8898,6 +9138,72 @@
         ]
       }
     },
+    "/api/v1/fits/{fit_id}/advisor": {
+      "post": {
+        "description": "Queue the next-measurement advice for a stored fit. The body is optional (``points``,\n``candidates``, ``low``, ``high``, ``replicates``, ``objective``, ``parameter``, ``level``).\nThe result is stored as a statistical result. One advice of a fit runs at a time (409 with\nthe running job's ``job_id``); no quota.",
+        "operationId": "advise_fit_api_v1_fits__fit_id__advisor_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "fit_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Fit Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/AdvisorRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobCreatedOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Advise Fit",
+        "tags": [
+          "fits"
+        ]
+      }
+    },
     "/api/v1/fits/{fit_id}/audit": {
       "get": {
         "description": "What a stored fit's evidence shows, check by check: convergence, the residual tests,\nthe parameters, the held-out error once the fit has been cross-validated, and a simpler\nmodel once the fit was ranked by an Auto-fit run. Read from the stored fit; nothing is\nrefitted, and no data are handed to the audit: a fit loses rows only above\n``COMPACT_MAX_POINTS``, which is past the exact Durbin-Watson test's own limit, so the\ndataset's table could change nothing (a test in ``test_api_fit_audit.py`` trips if the two\nlimits ever cross). A bundle with no observations is a 422 whose ``detail.code`` is\n``NO_DATA``.",
@@ -9001,6 +9307,72 @@
           }
         ],
         "summary": "Cross Validate Fit",
+        "tags": [
+          "fits"
+        ]
+      }
+    },
+    "/api/v1/fits/{fit_id}/discernibility": {
+      "post": {
+        "description": "Queue the model discernibility report of a stored fit, on the Auto-fit result it was\nopened from. The result is stored as a statistical result: follow the job, then read it at\n``GET /stats/results/{result_id}``. The body is optional (``level``, ``grid_points``,\n``max_models``, ``profile``). A fit that was not opened from an Auto-fit result fails the\njob with ``NO_RANKING``. One report of a fit runs at a time: a second request while one is\nqueued or running is a 409 whose ``detail.job_id`` names the job to follow. No quota.",
+        "operationId": "discern_fit_api_v1_fits__fit_id__discernibility_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "fit_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Fit Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/DiscernibilityRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobCreatedOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Discern Fit",
         "tags": [
           "fits"
         ]
@@ -9171,6 +9543,65 @@
           }
         ],
         "summary": "Predict Fit",
+        "tags": [
+          "fits"
+        ]
+      }
+    },
+    "/api/v1/fits/{fit_id}/simulate": {
+      "post": {
+        "description": "Queue a feasibility simulation under a stored fit's specification: the truth, the\ndesign, the noise, the run count, the seed and the optional differences to measure power\nfor. The result is stored as a statistical result. One simulation of a fit runs at a time\n(409 with the running job's ``job_id``); no quota.",
+        "operationId": "simulate_fit_api_v1_fits__fit_id__simulate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "fit_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Fit Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SimulationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobCreatedOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Simulate Fit",
         "tags": [
           "fits"
         ]

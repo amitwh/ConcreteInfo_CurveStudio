@@ -19,6 +19,11 @@ from curvestudio_api.deps import (
     Context,
 )
 from curvestudio_api.errors import install_error_handlers
+from curvestudio_api.fit_tools_worker import (
+    run_advice_job,
+    run_discernibility_job,
+    run_simulation_job,
+)
 from curvestudio_api.housekeeping import Housekeeper
 from curvestudio_api.import_worker import ImportWorker, import_process_main
 from curvestudio_api.importer import ImportRunner
@@ -54,14 +59,17 @@ def create_app(
     job_worker: JobWorker = run_fit_job,
     autofit_worker: JobWorker = run_autofit_job,
     audit_worker: JobWorker = run_cross_validation_job,
+    discern_worker: JobWorker = run_discernibility_job,
+    simulate_worker: JobWorker = run_simulation_job,
+    advise_worker: JobWorker = run_advice_job,
     import_worker: ImportWorker = import_process_main,
 ) -> FastAPI:
     """Build the application.
 
     Production settings without JWT keys, or keys that do not parse or do not match, fail
     here, so a misconfigured deployment never starts serving. ``job_worker``,
-    ``autofit_worker``, ``audit_worker`` and ``import_worker`` exist for tests; they must be
-    top-level functions (they run in spawned processes).
+    ``autofit_worker``, ``audit_worker``, the three fit-tool workers and ``import_worker``
+    exist for tests; they must be top-level functions (they run in spawned processes).
     """
     register_models()
     settings = settings or Settings()
@@ -86,6 +94,9 @@ def create_app(
         worker=job_worker,
         autofit_worker=autofit_worker,
         audit_worker=audit_worker,
+        discern_worker=discern_worker,
+        simulate_worker=simulate_worker,
+        advise_worker=advise_worker,
         autofit_timeout_s=settings.autofit_timeout_s,
     )
     # What the middleware counts per route; the housekeeper empties it into the day's rows.
