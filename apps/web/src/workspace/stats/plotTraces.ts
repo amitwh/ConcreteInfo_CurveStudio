@@ -4,7 +4,7 @@
  * in one line rather than mounting an empty frame.
  */
 
-import type { PlotlyLayout, PlotlyTrace } from "plotly.js-dist-min";
+import type { PlotlyLayout, PlotlyTrace } from "../../lib/plotly-bundle";
 import type {
   BoxPlot,
   HistogramPlot,

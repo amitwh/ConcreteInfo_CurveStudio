@@ -1,7 +1,7 @@
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { PlotlyLayout, PlotlyTrace } from "plotly.js-dist-min";
+import type { PlotlyLayout, PlotlyTrace } from "../lib/plotly-bundle";
 import { api, ApiError } from "../api/client";
 import { renderWithQuery } from "../test/render";
 import type { InstallSummaryOut, OverviewOut } from "./adminApi";
@@ -13,7 +13,7 @@ const plotly = vi.hoisted(() => ({
   resize: vi.fn(),
 }));
 
-vi.mock("plotly.js-dist-min", () => ({
+vi.mock("../lib/plotly-bundle", () => ({
   default: {
     react: plotly.react,
     purge: plotly.purge,

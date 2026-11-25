@@ -5,7 +5,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, type ReactElement } from "react";
-import type { PlotlyLayout, PlotlyTrace } from "plotly.js-dist-min";
+import type { PlotlyLayout, PlotlyTrace } from "../lib/plotly-bundle";
 import { Empty } from "../components/States";
 import { PlotChart } from "../components/PlotChart";
 import { StatTile } from "../components/StatTile";

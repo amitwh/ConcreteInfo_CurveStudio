@@ -7,7 +7,7 @@ const plotly = vi.hoisted(() => ({
   resize: vi.fn(),
 }));
 
-vi.mock("plotly.js-dist-min", () => ({
+vi.mock("../lib/plotly-bundle", () => ({
   default: {
     react: plotly.react,
     purge: plotly.purge,

@@ -5,7 +5,7 @@
  */
 
 import type { FitBundle, PointsOut, RankedFit } from "../api/client";
-import type { PlotlyLayout, PlotlyTrace } from "plotly.js-dist-min";
+import type { PlotlyLayout, PlotlyTrace } from "../lib/plotly-bundle";
 import { fmtEquation } from "../format";
 
 export interface ChartToggles {

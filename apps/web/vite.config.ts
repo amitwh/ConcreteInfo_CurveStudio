@@ -15,6 +15,10 @@ export default defineConfig({
   plugins: [react()],
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
+    // The module-built Plotly (lib/plotly-bundle.ts) pulls CJS source modules that read
+    // Node's `global` (has-hover does, unguarded); the library's own dist bundles map it
+    // to the browser global at webpack time, this build does it at define time.
+    global: "globalThis",
   },
   server: {
     proxy: {

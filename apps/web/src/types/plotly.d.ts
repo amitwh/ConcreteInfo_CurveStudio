@@ -1,16 +1,12 @@
 /**
- * Minimal typed surface of `plotly.js-dist-min` — only what the thin wrapper in
- * `components/PlotChart.tsx` uses. The bundle ships no TypeScript declarations of its
- * own and the full `@types/plotly.js` tree is deliberately not a dependency; keeping
- * this hand-written keeps the dependency set lean and drift-free. Broaden it only when
- * the wrapper genuinely needs more of the API.
- *
- * The full bundle (not `plotly.js-basic-dist-min`) is required: in plotly.js 4.x the
- * basic bundle has only scatter/bar/pie and no partial bundle ships the WebGL
- * `scattergl` trace, which the 20 000-point chart requirement needs.
+ * Minimal typed surface of the module-built Plotly — only what the thin wrapper in
+ * `components/PlotChart.tsx` (via `lib/plotly-bundle.ts`) uses. The `plotly.js` package
+ * ships TypeScript declarations only for its full-bundle entry (`lib/index.d.ts`), not
+ * for the `lib/core` partial-bundle route; keeping this hand-written keeps the surface
+ * lean and drift-free. Broaden it only when the wrapper genuinely needs more of the API.
  */
 
-declare module "plotly.js-dist-min" {
+declare module "plotly.js/lib/core" {
   export interface PlotlyTrace {
     type?: string;
     mode?: string;
@@ -96,6 +92,12 @@ declare module "plotly.js-dist-min" {
     filename?: string;
   }
 
+  /** A trace or component module accepted by `register` (the structural minimum). */
+  export interface PlotlyModule {
+    moduleType: string;
+    name: string;
+  }
+
   const Plotly: {
     react(
       root: HTMLElement,
@@ -110,6 +112,8 @@ declare module "plotly.js-dist-min" {
       config?: Partial<PlotlyConfig>,
     ): Promise<unknown>;
     purge(root: HTMLElement): void;
+    /** Grow the partial bundle by the given trace/component modules. */
+    register(modules: ReadonlyArray<PlotlyModule>): void;
     downloadImage(root: HTMLElement, options: DownloadImageOptions): Promise<unknown>;
     /** Serialise the current graph to a data URL (PNG by default). */
     toImage(root: HTMLElement, options?: DownloadImageOptions): Promise<string>;
@@ -117,4 +121,23 @@ declare module "plotly.js-dist-min" {
   };
 
   export default Plotly;
+}
+
+/** The trace modules `lib/plotly-bundle.ts` registers; each re-exports its src module. */
+declare module "plotly.js/lib/bar" {
+  import type { PlotlyModule } from "plotly.js/lib/core";
+  const bar: PlotlyModule;
+  export default bar;
+}
+
+declare module "plotly.js/lib/box" {
+  import type { PlotlyModule } from "plotly.js/lib/core";
+  const box: PlotlyModule;
+  export default box;
+}
+
+declare module "plotly.js/lib/scattergl" {
+  import type { PlotlyModule } from "plotly.js/lib/core";
+  const scattergl: PlotlyModule;
+  export default scattergl;
 }

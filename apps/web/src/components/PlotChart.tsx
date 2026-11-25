@@ -1,9 +1,10 @@
 /**
  * The one place Plotly is touched: a thin `Plotly.react` wrapper (no react-plotly.js).
- * The library arrives via dynamic import() on first mount, so it lives in its own chunk
- * and /login, /register and /about never download it; the component re-renders
- * declaratively from props and purges the graph on unmount so route changes never leak
- * Plotly state into a dead DOM node.
+ * The library arrives via dynamic import() of the module-built bundle
+ * (`lib/plotly-bundle.ts` — core plus the traces the app draws) on first mount, so it
+ * lives in its own chunk and /login, /register and /about never download it; the
+ * component re-renders declaratively from props and purges the graph on unmount so
+ * route changes never leak Plotly state into a dead DOM node.
  */
 
 import { useEffect, useMemo, useRef, useState, type ReactElement, type RefObject } from "react";
@@ -12,16 +13,16 @@ import type {
   PlotlyConfig,
   PlotlyLayout,
   PlotlyTrace,
-} from "plotly.js-dist-min";
+} from "../lib/plotly-bundle";
 import { saveBlob } from "../api/client";
 
-type PlotlyLib = (typeof import("plotly.js-dist-min"))["default"];
+type PlotlyLib = (typeof import("../lib/plotly-bundle"))["default"];
 
 let plotlyPromise: Promise<PlotlyLib> | null = null;
 
 /** First chart mount fetches Plotly once; later mounts (and PNG export) reuse it. */
 function loadPlotly(): Promise<PlotlyLib> {
-  plotlyPromise ??= import("plotly.js-dist-min").then((mod) => mod.default);
+  plotlyPromise ??= import("../lib/plotly-bundle").then((mod) => mod.default);
   return plotlyPromise;
 }
 

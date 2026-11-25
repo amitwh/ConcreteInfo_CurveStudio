@@ -50,6 +50,38 @@ workspace (every page is a static import in `App.tsx`), which is what the 100 KB
 target measures. The two lazy giants (Plotly, the PDF renderer) are the targets of
 Tasks 2–3.
 
+### The chart bundle after Task 2, 25/11/2026
+
+The chart library is now built from the `plotly.js` source package's modules — `lib/core`
+plus the traces the app registers (`bar`, `box`, `scattergl`; `scatter` is part of core)
+— instead of the `plotly.js-dist-min` whole bundle; same library, same locked version
+4.3.0 (dist-min ships exactly one file, no partial bundle, so the module route is the
+library's supported way to register less). Command: `node
+/home/amith/tmp/cs-verify/perf/bundles.mjs <dist>`, run on the build at `81eb1f7`
+(before) and the Task 2 build (after); full outputs `bundles.task2-before.out` and
+`bundles.task2-after.out` next to the script.
+
+| Asset | Raw before | Gzip before | Raw after | Gzip after |
+| --- | ---: | ---: | ---: | ---: |
+| the chart chunk (`plotly.min-*.js` → `plotly-bundle-*.js`) | 4,651,969 | 1,409,192 | 1,495,001 | 505,951 |
+| the chart chunk's CSS (was inlined in the JS; now a separate file loaded with it) | — | — | 82,962 | 10,471 |
+| what a first chart downloads together | 4,651,969 | 1,409,192 | 1,577,963 | 516,422 |
+
+−67.8 % raw, −63.3 % gzip on the first-chart payload. The Plotly `histogram` trace is
+deliberately not registered: the statistics mode bins server-side and draws its
+histogram as `bar` traces, so the module would be dead bytes. Every other asset is
+unchanged (the entry chunk moved 611,413 → 611,476 raw with the import-specifier text);
+all JS together 6,552,165 → 3,395,661 raw, 2,060,247 → 1,158,042 gzip.
+
+Screenshot comparison, same date: `node
+/home/amith/tmp/cs-verify/perf/screenshots_task2.mjs <dist> <out-dir>` drives the real
+UI against a fresh API — the public page's model gallery, a workspace fit (data, fitted
+curve, 95 % band), the statistics result's histogram and box plot, and the 100 000-row
+dataset's `scattergl` chart. PNGs under
+`/home/amith/tmp/cs-verify/perf/screenshots/task2/{before,after}`; all five pairs are
+pixel-identical (`compare -metric AE` = 0 differing pixels) and the drawn trace types
+are unchanged (`screenshots.json` in each directory).
+
 ## Web: public page LCP under throttle
 
 Command: `node /home/amith/tmp/cs-verify/perf/web_timings.mjs` (section A of the output
