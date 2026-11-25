@@ -18,6 +18,7 @@ the fit's methods text — paragraph, equation and table — for the clipboard i
 """
 
 from collections.abc import Callable
+from functools import partial
 from typing import Any, Literal
 
 import pyqtgraph as pg
@@ -82,11 +83,15 @@ def methods_clipboard_text(bundle: FitBundle, spec: FitSpec | None, style: Style
     return "\n\n".join((text.paragraph, text.equation, text.table))
 
 
-def methods_text_menu(owner: QWidget, copy: Callable[[Style], None]) -> QMenu:
-    """The small menu behind a Copy methods text control: one entry for each style."""
+def methods_text_menu(owner: QWidget, copy: Callable[[Style], object]) -> QMenu:
+    """The small menu behind a Copy methods text control: one entry for each style.
+
+    The callback's return value is the caller's business (the details window's copy reports
+    whether there was a text to copy); a menu entry ignores it.
+    """
     menu = QMenu(owner)
     for style, label in METHODS_STYLES:
-        menu.addAction(label, lambda style=style: copy(style))
+        menu.addAction(label, partial(copy, style))
     return menu
 
 

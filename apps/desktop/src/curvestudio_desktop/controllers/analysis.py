@@ -524,25 +524,25 @@ class AnalysisController(QObject):
             return False
         if analysis.kind == "stat":
             try:
-                result = analysis_store.stat_from_analysis(analysis)
+                stat_result = analysis_store.stat_from_analysis(analysis)
             except ValueError as exc:
                 self.status_message.emit(str(exc))
                 return False
             self.set_mode(MODE_STATS)
-            self.stat_finished.emit(analysis.dataset_id, result)
+            self.stat_finished.emit(analysis.dataset_id, stat_result)
             self.status_message.emit("Restored the stored statistics result (nothing was run)")
             return True
         if analysis.kind == "autofit":
             try:
-                result = analysis_store.autofit_from_analysis(analysis)
+                autofit = analysis_store.autofit_from_analysis(analysis)
             except ValueError as exc:
                 self.status_message.emit(str(exc))
                 return False
-            self._latest_runs[analysis.dataset_id] = result
-            if not result.cancelled:  # a partial never takes the canonical slot
-                self._autofit_cache[analysis.dataset_id] = result
-            self.autofit_finished.emit(analysis.dataset_id, result)
-            if result.cancelled:
+            self._latest_runs[analysis.dataset_id] = autofit
+            if not autofit.cancelled:  # a partial never takes the canonical slot
+                self._autofit_cache[analysis.dataset_id] = autofit
+            self.autofit_finished.emit(analysis.dataset_id, autofit)
+            if autofit.cancelled:
                 self.status_message.emit("Restored the partial Auto-fit run (nothing was refitted)")
             else:
                 self.status_message.emit("Restored the stored Auto-fit run (nothing was refitted)")

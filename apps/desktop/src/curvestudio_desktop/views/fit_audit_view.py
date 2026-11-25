@@ -375,7 +375,8 @@ class FitAuditView(QWidget):
 
     def _clear_blocks(self) -> None:
         while self._checks.count():
-            widget = self._checks.takeAt(0).widget()
+            item = self._checks.takeAt(0)
+            widget = None if item is None else item.widget()
             if widget is not None:
                 widget.hide()  # off the view at once: no layout places it any more
                 widget.deleteLater()

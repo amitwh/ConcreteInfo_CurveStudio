@@ -26,8 +26,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QStandardItemModel
 from PySide6.QtWidgets import (
-    QAbstractSpinBox,
     QCheckBox,
     QComboBox,
     QDoubleSpinBox,
@@ -152,15 +152,17 @@ def _option_control(field: RequestField) -> tuple[QWidget, Callable[[], Any]]:
         spin.setValue(int(default if default is not None else 0))
         return spin, spin.value
     if kind == "number":
-        spin = QDoubleSpinBox()
-        spin.setDecimals(6)
-        spin.setRange(_UNSET_NUMBER, 1e12)
+        number_spin = QDoubleSpinBox()
+        number_spin.setDecimals(6)
+        number_spin.setRange(_UNSET_NUMBER, 1e12)
         if nullable:
-            spin.setSpecialValueText(UNSET_TEXT)
-            spin.setValue(_UNSET_NUMBER if default is None else float(default))
-            return spin, lambda: None if spin.value() == _UNSET_NUMBER else spin.value()
-        spin.setValue(float(default if default is not None else 0.0))
-        return spin, spin.value
+            number_spin.setSpecialValueText(UNSET_TEXT)
+            number_spin.setValue(_UNSET_NUMBER if default is None else float(default))
+            return number_spin, (
+                lambda: None if number_spin.value() == _UNSET_NUMBER else number_spin.value()
+            )
+        number_spin.setValue(float(default if default is not None else 0.0))
+        return number_spin, number_spin.value
     values = core.get("enum")
     if kind == "string" and values:
         combo = QComboBox()
@@ -303,9 +305,11 @@ class StatsView(QWidget):
                 continue
             heading = picker.count()
             picker.addItem(title, None)
-            item = picker.model().item(heading)
-            if item is not None:
-                item.setEnabled(False)
+            model = picker.model()
+            if isinstance(model, QStandardItemModel):
+                item = model.item(heading)
+                if item is not None:
+                    item.setEnabled(False)
             for info in tools:
                 picker.addItem(info.title, info.name)
         first = next(
@@ -361,7 +365,7 @@ class StatsView(QWidget):
             widget.currentIndexChanged.connect(self._on_choice_changed)
             if widget.isEditable():
                 widget.editTextChanged.connect(self._on_choice_changed)
-        elif isinstance(widget, QAbstractSpinBox):
+        elif isinstance(widget, QSpinBox | QDoubleSpinBox):
             widget.valueChanged.connect(self._on_choice_changed)
         elif isinstance(widget, QCheckBox):
             widget.toggled.connect(self._on_choice_changed)
