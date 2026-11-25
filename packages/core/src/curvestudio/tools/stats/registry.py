@@ -460,6 +460,7 @@ TOOL_MODULES: tuple[str, ...] = (
     "curvestudio.tools.stats.regression",
     "curvestudio.tools.stats.reliability",
     "curvestudio.tools.stats.roc",
+    "curvestudio.tools.stats.survival",
 )
 """A module per tool family, each registering its tool as it is imported."""
 
