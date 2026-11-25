@@ -304,6 +304,106 @@ Auth-gated per-route percentiles are **local-replica-only by policy**: measuring
 against production would need an account and a token there, and this task's rules allow
 read-only, unauthenticated GETs and nothing else. The replica table above carries them.
 
+## Server: the health check's log volume (Task 7, 25/11/2026)
+
+Who probes the app, verified rather than assumed. Production's only standing prober is the
+image's own HEALTHCHECK (`deploy/Dockerfile`: `GET /api/v1/health` every 30 s, 5 s timeout,
+3 retries, 40 s start period) — Coolify's own HTTP health check is switched off for the
+application (`health_check_enabled=false` with `custom_healthcheck_found=true`, read from
+the Coolify API 25/11), so Coolify reports "healthy" from the image's check and the cadence
+is exactly that 30 s. The Sentinel is Coolify's server-metrics collector (server-side Docker
+stats, 10 s refresh); it never calls the app's HTTP endpoints. `/api/v1/ready` has no
+standing prober anywhere in the repository — the deployed-probe figures above were ad-hoc
+curl runs — but it is a probe route and is quieted with `/health`.
+
+Command: `bash /home/amith/tmp/cs-verify/perf/health_log_probe.sh <port> 10` — starts the
+worktree's API (`uv run curvestudio-api`, SQLite, `CURVESTUDIO_ENV=test`), waits for
+readiness, truncates the start-up lines, then issues exactly 10 GETs of `/api/v1/health` at
+the production cadence (one per 30 s) and counts every line the process wrote to stderr from
+the first probe to the last. Before = the worktree at `8daa069` (the Task 0 code); after =
+the Task 7 change (the same record logged at DEBUG for the two probe paths).
+
+| Figure | Before | After |
+| --- | ---: | ---: |
+| Probes, all HTTP 200 | 10 | 10 |
+| stderr lines, first probe to last | 10 | 0 |
+| of which middleware `request` records | 10 (all INFO) | 0 |
+
+One line per probe before — the request middleware's `request` record at INFO; nothing else
+wrote anything, including uvicorn's access log (`log_config=None` leaves `uvicorn.access`
+unrendered at INFO), so the probe's line was the whole of its log cost. Zero lines after:
+the same record now logs at DEBUG for `/api/v1/health` and `/api/v1/ready`, and the JSON
+handler's INFO threshold drops it. Extrapolated at the HEALTHCHECK's cadence —
+86,400 s/day ÷ 30 s = 2,880 probes/day — that is **2,880 request lines a day before, 0
+after**, and the standing design-doc figure (~2,900 lines/day, measured on production
+23/11/2026) is the same arithmetic plus start-period retries and restarts, which corroborates
+it. Failures stay loud: a probe that fails still raises the health route's own
+`database check failed` ERROR record; only the routine 200 line went quiet, and the
+per-route request statistics still count every probe as before.
+
+## The production container's capacity — a recommendation (Task 7, 25/11/2026)
+
+The plan's Task 7 asks for the host's spare capacity against the container's limit, ending
+in a recommendation. **The limit change is the owner's decision and nothing in any deployment
+was modified.** Host figures: the Coolify server-metrics API (the Sentinel's own collection,
+5-minute buckets) for a 24-hour window, read 25/11/2026 ~21:05 IST from coolify-vps, server
+`localhost` — one host carrying 9 resources: this app (`curvestudio-vps`), `cams2` and its
+PgBouncer, the shared Postgres, Redis, MariaDB and RabbitMQ, phpMyAdmin and `cmd_app`, plus
+Coolify itself.
+
+| Figure | Value |
+| --- | --- |
+| CPU, whole host, 24 h | typically 11–25 %, brief peaks ~34 % |
+| load1 | mostly < 1.5, spikes to ~4.4 (job bursts) |
+| Memory | 16.76 GB total, 5.25–5.61 GB used across the window (~32–33 %) |
+| Disk | 207 GB total, 30.5 % used |
+| The app's container limit | 2 CPUs / 2 GB (Coolify `limits_cpus=2`, `limits_memory=2 GiB`, read 25/11 — the plan's stated production limit) |
+
+What the app asks of that limit, from this file's own measurements plus the application's
+production environment (read from Coolify 25/11): production runs `CURVESTUDIO_JOB_WORKERS=1`
+and `CURVESTUDIO_AUTOFIT_WORKERS=2` — the defaults are 2 and 3, so production already chose
+the conservative end. One Auto-fit is therefore 1 job process + 2 fit workers, three
+model-stack processes, plus the API process serving requests, all inside the 2-CPU cap; the
+replica's measured cost of that shape of work is the Auto-fit table above (**15.9 s median,
+16.4 s p95** at 2 CPUs with the 3-worker default; the design's target is 3 s) and the
+**1.50 s** per-job process spawn. The upload parser child is separately capped at
+`CURVESTUDIO_IMPORT_MEMORY_MB=1024` (the default; production does not override it) — one
+child allowed half the container's whole memory limit.
+
+The arithmetic:
+
+- **CPU.** During a fit the cap, not the host, binds: the 24-h host CPU (app and all nine
+  resources together) sat at 11–25 % with ~34 % peaks, so the majority of the host's CPU was
+  idle while the app's three fit processes shared 2 CPUs — 2 ÷ 3 ≈ 0.67 CPU each. The
+  load1 spikes to ~4.4 are the same bursts engaging roughly four cores' worth of host before
+  the cap flattens them into a longer queue. Raising the limit to 4 CPUs gives each fit
+  process about a core (4 ÷ 3 ≈ 1.33, 2× today's share). Auto-fit's 174 candidate fits are
+  independent, so wall time should fall roughly with that share until the serial parts
+  dominate: a rough expectation is 15.9 s → ~9 s, the 1.5 s spawn and the data setup not
+  shrinking — an expectation, not a measurement; nothing was re-measured above 2 CPUs, and
+  4 CPUs alone does not reach the 3 s target (Tasks 5–6's warm pools are the bigger lever
+  on the serial part). The cost to the neighbours is bounded: Docker's `--cpus` is a ceiling,
+  not a reservation, so the raise only removes the cap during bursts; the shared databases
+  and RabbitMQ keep whatever CPU they claim first.
+- **Memory.** The 2 GB limit has been enough (the production container has
+  `restart_count=0` and the replica never OOMed), but the tight case is an import's
+  1-GB-capped child landing while an Auto-fit's three model-stack processes are resident —
+  per-process RSS on the server is **not measured**, so this is a configured ceiling
+  argument, not an observed one. The host's spare is 16.76 − 5.61 ≈ 11.2 GB: raising the
+  container to 3 GB takes the host's worst case to ~6.6 GB used (~39 %), which the host
+  would not notice. (Disk is nowhere near binding at 30.5 %.)
+
+**Recommendation — the owner's call, not made here:** if Auto-fit wall time on the server
+matters, raise the container to **4 CPUs / 3 GB** and leave `CURVESTUDIO_JOB_WORKERS=1`;
+with 4 CPUs, `CURVESTUDIO_AUTOFIT_WORKERS=3` (the default) becomes the natural second step —
+re-measure the Auto-fit table here at the new limit before taking it, and watch memory, since
+a fourth model-stack process is exactly the un-measured RSS question above. If the limit
+stays 2 CPU / 2 GB, the current `AUTOFIT_WORKERS=2` is already the right setting — more fit
+workers than CPUs adds contention and memory without throughput — and the Auto-fit gain must
+come from Tasks 5–6's pools instead. Scaling is vertical only either way: the deployment
+policy is exactly one replica, with `CURVESTUDIO_JOB_WORKERS` as the lever, never replicas
+(`deploy/README.md`).
+
 ## Desktop: cold start
 
 Command: `uv run python /home/amith/tmp/cs-verify/perf/desktop_coldstart.py` (from the
@@ -344,8 +444,8 @@ while even the warm run costs 0.56 s — above the 0.3 s target.
 - **A 1,000,000-row dataset's plot time** — the plan measures 100 000 rows at this stage;
   Task 4 measures both 100 000 and 1 000 000 when the WebGL/decimation threshold lands.
 - **The health check's daily log lines** — the standing figure is ~2,900 lines/day,
-  measured 23/11/2026 and recorded in the design doc; Task 7 re-measures it before and
-  after the DEBUG change rather than duplicating it here.
+  measured 23/11/2026 and recorded in the design doc; Task 7 has since measured it before
+  and after the DEBUG change — see "the health check's log volume" above.
 - **Local LCP with edge-equivalent compression** — the local API serves raw bytes (no gzip
   middleware); reproducing Caddy's `encode` locally was out of scope for the baseline. The
   deployed bundle fetch above carries the compressed transfer time.

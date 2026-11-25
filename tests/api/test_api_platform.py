@@ -28,7 +28,7 @@ from curvestudio_api.app import create_app
 from curvestudio_api.db import make_session_factory
 from curvestudio_api.errors import ApiError
 from curvestudio_api.export_openapi import DEFAULT_PATH, generate, render
-from curvestudio_api.logging_setup import JsonFormatter
+from curvestudio_api.logging_setup import LOGGER_NAME, JsonFormatter
 from curvestudio_api.middleware import BodyLimitMiddleware
 from curvestudio_api.migrations import _config, upgrade_to_head
 from curvestudio_api.orm import AuditLog, Base, Plan
@@ -356,6 +356,40 @@ def test_logs_are_json_with_request_ids_and_never_hold_secrets(
     assert len(requests) >= 6
     assert all(r["request_id"] and r["status"] and r["path"].startswith(API) for r in requests)
     assert all(r["ts"].endswith("+05:30") for r in requests)
+
+
+def test_health_probes_log_no_info_line(
+    shared_client: TestClient, caplog: pytest.LogCaptureFixture
+) -> None:
+    """An ordinary probe — liveness or readiness — writes no INFO line (Task 7: the image's
+    HEALTHCHECK calls /api/v1/health every 30 s, ~2,880 probes a day) but is still logged at
+    DEBUG, with the same fields, and still counted in the per-route statistics."""
+    with caplog.at_level(logging.INFO, logger=LOGGER_NAME):
+        assert shared_client.get(f"{API}/health").status_code == 200
+        assert shared_client.get(f"{API}/ready").status_code == 200
+    assert [r for r in caplog.records if r.getMessage() == "request"] == []
+
+    with caplog.at_level(logging.DEBUG, logger=LOGGER_NAME):
+        assert shared_client.get(f"{API}/health").status_code == 200
+    quieted = [r for r in caplog.records if r.getMessage() == "request"]
+    assert [r.levelno for r in quieted] == [logging.DEBUG]
+    assert quieted[0].fields["path"] == f"{API}/health"  # type: ignore[attr-defined]
+    assert quieted[0].fields["status"] == 200  # type: ignore[attr-defined]
+
+    counted = shared_client.app.state.ctx.stats.snapshot_and_reset()  # type: ignore[attr-defined]
+    assert counted[f"{API}/health"].count >= 2  # the statistics middleware is untouched
+
+
+def test_every_other_request_still_logs_info(
+    shared_client: TestClient, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A request that is not a probe logs exactly as before: one INFO line with its fields."""
+    with caplog.at_level(logging.INFO, logger=LOGGER_NAME):
+        assert shared_client.get(f"{API}/models").status_code == 200
+    requests = [r for r in caplog.records if r.getMessage() == "request"]
+    assert [r.levelno for r in requests] == [logging.INFO]
+    assert requests[0].fields["path"] == f"{API}/models"  # type: ignore[attr-defined]
+    assert requests[0].fields["status"] == 200  # type: ignore[attr-defined]
 
 
 # -- database --------------------------------------------------------------------------------------

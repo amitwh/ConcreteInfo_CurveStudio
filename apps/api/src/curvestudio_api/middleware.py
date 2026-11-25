@@ -36,6 +36,10 @@ SECURITY_HEADERS = {
 }
 HSTS = "max-age=31536000; includeSubDomains"
 _REQUEST_ID = re.compile(r"[A-Za-z0-9._-]{1,64}")
+# The liveness and readiness probes. The image's HEALTHCHECK calls /api/v1/health every 30 s
+# (~2,880 probes a day; a failing probe still surfaces through the health route's own error
+# log), so their request lines go to DEBUG to keep the log clear of probe noise.
+HEALTH_PROBE_PATHS = frozenset((f"{API_PREFIX}/health", f"{API_PREFIX}/ready"))
 _log = get_logger("http")
 
 
@@ -86,7 +90,7 @@ class RequestContextMiddleware:
             duration_ms = round((time.perf_counter() - started) * 1000, 1)
             _record(scope, state["status"], duration_ms)
             _log.log(
-                logging.INFO,
+                logging.DEBUG if scope["path"] in HEALTH_PROBE_PATHS else logging.INFO,
                 "request",
                 extra=log_fields(
                     method=scope["method"],
