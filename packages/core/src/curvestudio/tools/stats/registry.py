@@ -43,6 +43,7 @@ FAMILIES: tuple[tuple[str, str], ...] = (
     ("measurement", "Measurement and classification"),
     ("power", "Sample size and power"),
     ("evidence", "Evidence synthesis"),
+    ("bayes", "Bayesian tests"),
 )
 """The families a tool belongs to, each with its title, in the order a person meets them."""
 
@@ -439,6 +440,7 @@ class Registry(Mapping[str, ToolSpec]):
 TOOL_MODULES: tuple[str, ...] = (
     "curvestudio.tools.stats.anova",
     "curvestudio.tools.stats.anova_more",
+    "curvestudio.tools.stats.bayes",
     "curvestudio.tools.stats.comparison",
     "curvestudio.tools.stats.comparison_lines",
     "curvestudio.tools.stats.contingency",
