@@ -650,6 +650,16 @@ come from Tasks 5–6's pools instead. Scaling is vertical only either way: the 
 policy is exactly one replica, with `CURVESTUDIO_JOB_WORKERS` as the lever, never replicas
 (`deploy/README.md`).
 
+**Addendum (26/11/2026, after Task 5's warm workers landed):** the memory picture above
+predates the warm pool. A warm worker's measured post-import resident size is **202.3 MB**
+("Server: warm job workers"), and workers stay resident with no idle expiry — so the
+container now holds an idle floor of about **405 MB at the default
+`CURVESTUDIO_JOB_WORKERS=2`** before any job runs. The 2 GB limit absorbs that (the floor
+plus one import's 1-GB-capped child plus one Auto-fit's engine pool still fits under the
+argument above), but the 3 GB recommendation now carries this floor in its margin, and
+dropping to `CURVESTUDIO_JOB_WORKERS=1` on a 2 GB box trades the idle floor (405 → 202 MB)
+against the second concurrent job.
+
 ## Desktop: cold start
 
 Command: `uv run python /home/amith/tmp/cs-verify/perf/desktop_coldstart.py` (from the
