@@ -5,11 +5,17 @@ import {
   BAND_PREDICTION_FILL,
   DATA_COLOR,
   MODEL_COLORS,
+  GL_DISPLAY_MAX_POINTS,
+  GL_MAX_SAMPLE_POINTS,
+  SVG_SAMPLE_POINTS,
   buildTraces,
+  chartSamplePoints,
+  decimateMinMax,
   logAxesAllowed,
   mergeLayout,
   modelColor,
   equationLayout,
+  scatterPoints,
   selectedEquation,
   setWebglSupportedForTests,
   themeLayout,
@@ -179,6 +185,71 @@ describe("the no-curve invariant", () => {
     expect(dataY[dataY.length - 1]).toBe(20001);
   });
 
+  it("decimates the WebGL data trace to the display budget, keeping the envelope", () => {
+    setWebglSupportedForTests(true);
+    // Well past the display budget, with a unique spike hiding mid-block every 50k rows.
+    const n = GL_DISPLAY_MAX_POINTS + 50_000;
+    const xs = Array.from({ length: n }, (_, i) => i);
+    const ys = xs.map((v) => (v % 50_000 === 25_000 ? 100_000 : 1));
+    const { type, x: dx, y: dy } = scatterPoints(xs, ys);
+    expect(type).toBe("scattergl");
+    expect(dx.length).toBeLessThanOrEqual(GL_DISPLAY_MAX_POINTS + 2);
+    // Every spike survived: each block's bucket maximum is drawn, not strided away.
+    expect(dy.filter((v) => v === 100_000)).toHaveLength(5);
+    // The drawn x-span is the full data span (the least-x and greatest-x samples stay).
+    expect(Math.min(...dx)).toBe(0);
+    expect(Math.max(...dx)).toBe(n - 1);
+  });
+
+  it("keeps the WebGL data trace undecimated up to the display budget", () => {
+    setWebglSupportedForTests(true);
+    const xy = Array.from({ length: GL_DISPLAY_MAX_POINTS }, (_, i) => i + 1);
+    const { type, x, y } = scatterPoints(xy, xy);
+    expect(type).toBe("scattergl");
+    expect(x).toHaveLength(GL_DISPLAY_MAX_POINTS);
+    expect(y).toHaveLength(GL_DISPLAY_MAX_POINTS);
+  });
+
+  it("NEVER decimates the fitted curve or the bands, however large the data trace", () => {
+    setWebglSupportedForTests(true);
+    // Data far above the display budget forces the Data trace through decimation.
+    const n = GL_DISPLAY_MAX_POINTS + 10_000;
+    const xs = Array.from({ length: n }, (_, i) => i);
+    const ys = xs.map((v) => v);
+    const curveX = Array.from({ length: 200 }, (_, i) => (i * (n - 1)) / 199);
+    const curveY = curveX.map((v) => 2 * Math.exp(-0.0005 * v));
+    const fit = bundle("converged", {
+      curve: { x: curveX, y: curveY },
+      confidence_band: {
+        kind: "confidence",
+        level: 0.95,
+        x: curveX,
+        fit: curveY,
+        lower: curveY.map((v) => v - 0.1),
+        upper: curveY.map((v) => v + 0.1),
+        extrapolated: curveX.map(() => false),
+        df: 38,
+        note: "pointwise",
+        pointwise: true,
+      },
+      prediction_band: null,
+    });
+    const { traces } = buildTraces(points(xs, ys), fit, allOn, { x: "x", y: "y" });
+    const data = traces.find((t) => t.name === "Data");
+    expect(data?.x?.length).toBeLessThanOrEqual(GL_DISPLAY_MAX_POINTS + 2);
+    // The smoothness invariant: the curve and band are the engine's own 200-point
+    // polygons, every point, verbatim — decimation touches the data trace alone.
+    const curve = traces.find((t) => t.name === "Fitted curve");
+    expect(curve?.x).toEqual(curveX);
+    expect(curve?.y).toEqual(curveY);
+    const band = traces.find((t) => t.name === "95% confidence band");
+    expect(band?.x).toEqual([...curveX, ...[...curveX].reverse()]);
+    expect(band?.y).toEqual([
+      ...curveY.map((v) => v + 0.1),
+      ...curveY.map((v) => v - 0.1).reverse(),
+    ]);
+  });
+
   it("escapes < > & in axis titles so Plotly renders them literally", () => {
     const { layout } = buildTraces(points([1, 2], [3, 4]), null, allOn, {
       x: "a<b & c",
@@ -336,5 +407,95 @@ describe("chart equation caption", () => {
     // the wrap splits between terms and drops the separator space it broke at
     expect(lines.join("").replaceAll(" ", "")).toBe(long.replaceAll(" ", ""));
     expect(lines.every((line) => line.length <= 44)).toBe(true);
+  });
+});
+
+describe("the chart's requested sample size (the WebGL path's larger fetch)", () => {
+  it("is exactly the old request at or below the threshold, WebGL or not", () => {
+    for (const webgl of [true, false]) {
+      expect(chartSamplePoints(0, webgl)).toBe(SVG_SAMPLE_POINTS);
+      expect(chartSamplePoints(20_000, webgl)).toBe(SVG_SAMPLE_POINTS);
+    }
+  });
+
+  it("asks for the whole dataset above the threshold with WebGL, capped at the API maximum", () => {
+    expect(chartSamplePoints(20_001, true)).toBe(20_001);
+    expect(chartSamplePoints(100_000, true)).toBe(100_000);
+    expect(chartSamplePoints(2_500_000, true)).toBe(GL_MAX_SAMPLE_POINTS);
+  });
+
+  it("keeps the old request without WebGL, however large or unknown the dataset", () => {
+    expect(chartSamplePoints(1_000_000, false)).toBe(SVG_SAMPLE_POINTS);
+    expect(chartSamplePoints(null, false)).toBe(SVG_SAMPLE_POINTS);
+    expect(chartSamplePoints(undefined, false)).toBe(SVG_SAMPLE_POINTS);
+  });
+});
+
+describe("min/max envelope decimation for display", () => {
+  it("returns the input unchanged (as a copy) at or under the budget", () => {
+    const x = [0, 1, 2, 3];
+    const y = [1, 9, 2, 8];
+    const out = decimateMinMax(x, y, 4);
+    expect(out).toEqual({ x, y });
+    expect(out.x).not.toBe(x); // a copy: the caller's arrays are never aliased
+  });
+
+  it("preserves every bucket's y-extreme exactly — a spike cannot vanish", () => {
+    // 1000 points, 4 buckets of 250; a unique spike sits mid-bucket in each.
+    const x: number[] = [];
+    const y: number[] = [];
+    for (let i = 0; i < 1000; i += 1) {
+      x.push(i);
+      y.push(i % 250 === 125 ? 10_000 + i : (i % 7) + (i % 3));
+    }
+    const { x: dx, y: dy } = decimateMinMax(x, y, 8);
+    expect(dy.filter((v) => v >= 10_000)).toHaveLength(4);
+    // The invariant, bucket by bucket: the output's min and max y over an x-bucket equal
+    // the input's — the drawn envelope is exact, not approximate.
+    const width = 1000 / 4;
+    for (let bucket = 0; bucket < 4; bucket += 1) {
+      const lo = bucket * width;
+      const hi = lo + width;
+      const inY = y.filter((_, i) => lo <= (x[i] ?? Infinity) && (x[i] ?? Infinity) < hi);
+      const outY = dy.filter((_, i) => lo <= (dx[i] ?? Infinity) && (dx[i] ?? Infinity) < hi);
+      expect(inY.length).toBeGreaterThan(0);
+      expect(Math.min(...outY)).toBe(Math.min(...inY));
+      expect(Math.max(...outY)).toBe(Math.max(...inY));
+    }
+  });
+
+  it("keeps the exact x-extremes and stays within the budget", () => {
+    const x = Array.from({ length: 10_001 }, (_, i) => (i * 7) % 10_003); // unsorted
+    const y = x.map((v) => (v % 11) - 5);
+    const { x: dx, y: dy } = decimateMinMax(x, y, 100);
+    expect(dx.length).toBeLessThanOrEqual(102);
+    expect(dy.length).toBe(dx.length);
+    expect(Math.min(...dx)).toBe(Math.min(...x));
+    expect(Math.max(...dx)).toBe(Math.max(...x));
+  });
+
+  it("skips non-finite samples (they draw no marker) and is deterministic", () => {
+    const x = [0, 1, 2, 3, 4];
+    const y = [1, Number.NaN, 3, Number.POSITIVE_INFINITY, 2];
+    const first = decimateMinMax(x, y, 2);
+    const second = decimateMinMax(x, y, 2);
+    expect(first).toEqual(second);
+    // One bucket over [0, 4]: its least-y (1 at x=0) and greatest-y (3 at x=2) survive;
+    // the NaN and +Infinity samples never appear, and the x-extremes are kept.
+    expect(first.x).toEqual([0, 2, 4]);
+    expect(first.y).toEqual([1, 3, 2]);
+  });
+
+  it("emits one point when a single sample wins a bucket's min and max", () => {
+    // Flat data: every bucket's min-y and max-y is its first sample (ties keep first).
+    const x = [0, 1, 2, 3, 4, 5, 6, 7];
+    const y = [5, 5, 5, 5, 5, 5, 5, 5];
+    const { x: dx } = decimateMinMax(x, y, 2); // 1 bucket + the x-extremes
+    expect(dx).toEqual([0, 7]);
+  });
+
+  it("returns nothing drawable when every sample is non-finite", () => {
+    const out = decimateMinMax([1, 2, 3], [Number.NaN, Infinity, -Infinity], 2);
+    expect(out).toEqual({ x: [], y: [] });
   });
 });

@@ -44,9 +44,7 @@ import { StatsPlots } from "../workspace/stats/StatsPlots";
 import { StatsResult } from "../workspace/stats/StatsResult";
 import { useStatsTools } from "../workspace/stats/useStatsTools";
 import { loadMode, saveMode, type WorkspaceMode } from "../workspace/mode";
-
-/** The chart requests the full 20 000-point sample the API allows. */
-const CHART_POINTS = 20000;
+import { chartSamplePoints } from "../workspace/traces";
 
 /** Where the active fit bundle came from — the chart obeys the mode, the tabs don't. */
 type BundleSource = "manual" | "opened-row";
@@ -85,6 +83,9 @@ export function WorkspacePage({
   /** The selection a long request was started for; late responses compare against it. */
   const selectedIdRef = useRef(selectedId);
   selectedIdRef.current = selectedId;
+  /** The dataset list as of the last render, read by callbacks without re-creating them. */
+  const datasetsRef = useRef(datasets);
+  datasetsRef.current = datasets;
   const [detail, setDetail] = useState<DatasetDetailOut | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<unknown>(null);
@@ -233,7 +234,7 @@ export function WorkspacePage({
   }, [mode, selectedId, loadStatHistory]);
 
   const selectDataset = useCallback(
-    async (id: string): Promise<void> => {
+    async (id: string, nRows?: number): Promise<void> => {
       // The ref still holds the previous selection: React has not re-rendered yet.
       const reselecting = id === selectedIdRef.current;
       setSelectedId(id);
@@ -260,10 +261,17 @@ export function WorkspacePage({
       // Auto-fit leads: ensure a run (or the latest stored one) right after selection —
       // but only in Auto-fit mode, so Statistics and Manual fit spend no run.
       autofit.ensure(id, modeRef.current);
+      // The chart's sample size: above the measured threshold and with WebGL the chart
+      // asks for the whole dataset (capped — traces.ts); otherwise exactly the old
+      // request. An upload passes its own n_rows because the list (and the ref above)
+      // has not re-rendered yet when the selection starts.
+      const chartPoints = chartSamplePoints(
+        nRows ?? datasetsRef.current.find((dataset) => dataset.id === id)?.n_rows,
+      );
       setDetailLoading(true);
       try {
         setDetail(
-          await api.request<DatasetDetailOut>(`/datasets/${id}?points=${CHART_POINTS}`),
+          await api.request<DatasetDetailOut>(`/datasets/${id}?points=${chartPoints}`),
         );
         await loadFits(id);
       } catch (error) {
@@ -310,7 +318,7 @@ export function WorkspacePage({
   const onUploaded = useCallback(
     (dataset: DatasetOut): void => {
       setDatasets((current) => [dataset, ...current]);
-      void selectDataset(dataset.id);
+      void selectDataset(dataset.id, dataset.n_rows);
     },
     [selectDataset],
   );

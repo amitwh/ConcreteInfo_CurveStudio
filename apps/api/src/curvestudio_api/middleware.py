@@ -20,12 +20,20 @@ from curvestudio_api.modules.errors.service import route_template
 
 # The client-side PDF renderer needs three narrow allowances:
 #   * `'wasm-unsafe-eval'` instantiates its WebAssembly text-layout engine (compilation
-#     only — not JavaScript `eval`), so the no-unsafe-eval posture is preserved;
+#     only — not JavaScript `eval`);
 #   * `worker-src blob:` lets it start its font-subsetting worker from a blob URL;
 #   * `connect-src data:` lets it read the engine's inline data-URL payload.
+# Plotly's WebGL traces (every chart above SCATTER_MAX_SVG_POINTS = 5 000 points) need
+# `'unsafe-eval'`: their regl pipeline generates code at runtime, and without the
+# allowance the context creation fails silently and the chart is covered by Plotly's
+# "WebGL is not supported" banner — which is what happened to every large chart from the
+# moment this header landed (22/11) until the allowance was added (verified by
+# screenshot-pixel comparison with and without it; docs/perf.md, Task 4). The relaxation
+# is the price of shipping plotly.js-gl; XSS mitigations that do not depend on
+# script eval (self-only sources, nosniff, no framing) are unchanged.
 CSP = (
     "default-src 'self'; img-src 'self' data: blob:; font-src 'self' data:; "
-    "style-src 'self' 'unsafe-inline'; script-src 'self' 'wasm-unsafe-eval'; "
+    "style-src 'self' 'unsafe-inline'; script-src 'self' 'wasm-unsafe-eval' 'unsafe-eval'; "
     "worker-src 'self' blob:; connect-src 'self' data: blob:"
 )
 SECURITY_HEADERS = {

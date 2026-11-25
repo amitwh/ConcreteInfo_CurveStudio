@@ -5,6 +5,7 @@ import { AuthProvider } from "../api/auth";
 import { ApiError, api } from "../api/client";
 import type { components } from "../api/schema";
 import { ThemeProvider } from "../components/ThemeToggle";
+import { setWebglSupportedForTests } from "../workspace/traces";
 import { WorkspacePage } from "./WorkspacePage";
 
 // jsdom cannot host a real Plotly graph; this test is about the workspace's UI state.
@@ -28,7 +29,7 @@ type StatResultOut = components["schemas"]["StatResultOut"];
 type StatResultSummaryOut = components["schemas"]["StatResultSummaryOut"];
 
 /** The page under its providers: theme, auth, and the query client the app has at its root. */
-function renderPage(initialMode: "stats" | null = null) {
+function renderPage(initialMode: "manual" | "stats" | null = null) {
   return render(
     <QueryClientProvider client={new QueryClient()}>
       <ThemeProvider>
@@ -60,6 +61,23 @@ const DETAIL: DatasetDetailOut = {
     { name: "x", kind: "number", n_missing: 0 },
     { name: "y", kind: "number", n_missing: 0 },
   ],
+};
+
+/** A dataset far above the chart's large-dataset threshold (traces.ts): its selection is
+ *  where the WebGL path's larger sample request shows. */
+const DATASET_BIG: DatasetOut = {
+  ...DATASET,
+  id: "ds-2",
+  name: "gen-1m.csv",
+  n_rows: 1_000_000,
+  created_at: "2026-11-17T06:00:00Z",
+};
+
+const DETAIL_BIG: DatasetDetailOut = {
+  ...DATASET_BIG,
+  points: { n_total: 1_000_000, x: [1, 2], y: [2, 4], w: null },
+  table_stored: true,
+  table_columns: [],
 };
 
 const SUMMARY: AutofitSummaryOut = {
@@ -246,11 +264,18 @@ let storedStatistics: StatResultSummaryOut[] = [];
 /** When true the open-row call answers with an existing fit instead of a polled job. */
 let openAsExistingFit = false;
 
+/** When true the dataset list also holds the 1M-row dataset (newest first). */
+let bigListed = false;
+
 /** Every route WorkspacePage hits on mount, on selection and while opening a row. */
 function route(path: string, options?: RequestInit): Promise<unknown> {
-  if (path === "/datasets") return Promise.resolve([DATASET]);
+  if (path === "/datasets") return Promise.resolve(bigListed ? [DATASET_BIG, DATASET] : [DATASET]);
   if (path === "/models") return Promise.resolve([]);
   if (path === "/datasets/ds-1?points=20000") return Promise.resolve(DETAIL);
+  if (path === "/datasets/ds-2?points=20000" || path === "/datasets/ds-2?points=1000000") {
+    return Promise.resolve(DETAIL_BIG);
+  }
+  if (path === "/datasets/ds-2/fits") return Promise.resolve([]);
   if (path === "/datasets/ds-1/autofits") return Promise.resolve([SUMMARY]);
   if (path === "/autofits/af-1") return Promise.resolve(STORED);
   if (path === "/datasets/ds-1/fits") return Promise.resolve([FIT_SUMMARY]);
@@ -282,6 +307,7 @@ let request: MockInstance;
 
 beforeEach(() => {
   openAsExistingFit = false;
+  bigListed = false;
   statRunFails = null;
   storedStatistics = [];
   request = vi.spyOn(api, "request").mockImplementation(
@@ -293,6 +319,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+  setWebglSupportedForTests(null);
 });
 
 /** Let the mocked promises resolve and React apply the resulting state. */
@@ -565,5 +592,66 @@ describe("WorkspacePage — statistics mode", () => {
     await flush();
 
     expect(screen.queryByText(/this dataset holds 250,000 rows/)).not.toBeNull();
+  });
+});
+
+describe("WorkspacePage — the chart's sample request", () => {
+  // Manual fit keeps the selection free of Auto-fit traffic; the request under test is
+  // the chart detail fetch alone.
+  it("asks for the whole dataset, capped, above the threshold with WebGL", async () => {
+    bigListed = true;
+    setWebglSupportedForTests(true);
+    renderPage("manual");
+    await flush();
+    await flush();
+
+    fireEvent.click(screen.getByTitle("gen-1m.csv"));
+    await flush();
+    await flush();
+
+    expect(request).toHaveBeenCalledWith("/datasets/ds-2?points=1000000");
+  });
+
+  it("keeps today's request without WebGL, however large the dataset", async () => {
+    bigListed = true;
+    setWebglSupportedForTests(false);
+    renderPage("manual");
+    await flush();
+    await flush();
+
+    fireEvent.click(screen.getByTitle("gen-1m.csv"));
+    await flush();
+    await flush();
+
+    expect(request).toHaveBeenCalledWith("/datasets/ds-2?points=20000");
+  });
+
+  it("keeps today's request below the threshold even with WebGL", async () => {
+    setWebglSupportedForTests(true);
+    renderPage("manual");
+    await flush();
+    await flush();
+
+    fireEvent.click(screen.getByTitle("growth.csv"));
+    await flush();
+    await flush();
+
+    expect(request).toHaveBeenCalledWith("/datasets/ds-1?points=20000");
+  });
+
+  it("uses an uploaded dataset's own row count — the list has not re-rendered yet", async () => {
+    setWebglSupportedForTests(true);
+    vi.spyOn(api, "uploadDataset").mockResolvedValue(DATASET_BIG);
+    const { container } = renderPage("manual");
+    await flush();
+    await flush();
+
+    fireEvent.change(container.querySelector("input[type=file]") as HTMLInputElement, {
+      target: { files: [new File(["x,y\n"], "gen-1m.csv", { type: "text/csv" })] },
+    });
+    await flush();
+    await flush();
+
+    expect(request).toHaveBeenCalledWith("/datasets/ds-2?points=1000000");
   });
 });

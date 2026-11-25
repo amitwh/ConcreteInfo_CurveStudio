@@ -13,6 +13,7 @@ from sqlalchemy import select
 from conftest import linear_csv, signup, upload
 from curvestudio.data import XY
 from curvestudio_api.orm import AuditLog, Dataset
+from curvestudio_api.routers.datasets import MAX_POINTS
 from curvestudio_api.storage import decode_payload, encode_payload
 
 API = "/api/v1"
@@ -213,9 +214,16 @@ def test_list_get_and_point_sampling(shared_client: TestClient) -> None:
     assert len(few["points"]["x"]) == len(few["points"]["y"]) <= 10
     none = shared_client.get(f"{API}/datasets/{second['id']}?points=0", headers=headers).json()
     assert none["points"] is None
+    # The client-chosen sample is capped and validated: MAX_POINTS itself is served in
+    # full, one above it is refused (the WebGL path's larger fetch, Task 4).
+    at_cap = shared_client.get(
+        f"{API}/datasets/{second['id']}?points={MAX_POINTS}", headers=headers
+    )
+    assert at_cap.status_code == 200
+    assert len(at_cap.json()["points"]["x"]) == 3000  # the whole dataset, nothing to stride
     assert (
         shared_client.get(
-            f"{API}/datasets/{second['id']}?points=20001", headers=headers
+            f"{API}/datasets/{second['id']}?points={MAX_POINTS + 1}", headers=headers
         ).status_code
         == 422
     )

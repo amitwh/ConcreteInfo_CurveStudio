@@ -30,7 +30,12 @@ router = APIRouter(prefix="/datasets", tags=["datasets"])
 MAX_NAME_LENGTH = 100
 DEFAULT_NAME = "dataset"
 DEFAULT_POINTS = 2000
-MAX_POINTS = 20_000
+# The cap on a client-chosen sample size. The chart's WebGL path asks for the whole
+# dataset above its own threshold (workspace/traces.ts keeps its mirror in step), so the
+# cap bounds what one request can cost: a 1 000 000-point answer measured ~0.4 s of API
+# time and a 17 MiB body on this machine (docs/perf.md, Task 4), and anything larger is
+# stride-sampled down to it server-side.
+MAX_POINTS = 1_000_000
 _NAME_UNSAFE = re.compile(r"[^\w .()+-]+")
 
 

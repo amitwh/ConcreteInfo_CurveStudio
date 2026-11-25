@@ -311,6 +311,104 @@ Two facts shape this number and belong to the baseline:
 - above `SCATTER_MAX_SVG_POINTS = 5 000` with WebGL the trace is `scattergl`; this headless
   Chromium has SwiftShader WebGL, so all 20 000 sampled points draw.
 
+### Task 4, 25/11/2026 — large datasets: the constraint measured, then the design
+
+**Where does a large plot's time actually go?** Measured first, before any design:
+`node /home/amith/tmp/cs-verify/perf/task4_probe.mjs` (full outputs `task4_probe.out`,
+`task4_probe2.out` next to the script) starts the worktree's API on 127.0.0.1:8797, seeds
+the baseline generator's `decay` (100 rows), `gen-100k` and `gen-1m`, and times the three
+candidate constraints. Server figures are curl `time_total`, median of 5; parse figures
+are an in-page `fetch`+`response.json()`, median of 3; draw figures are `Plotly.newPlot`
+`scattergl` markers through the app's own chart-bundle chunk on SwiftShader WebGL, median
+of 3 after a warm-up (the second pass, whose GL actually painted — see the CSP note).
+
+| Stage | 100k rows @20k pts | 100k full | 1M rows @20k pts | 1M @100k | 1M @200k | 1M @500k | 1M full |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| API serve (median) | 21 ms | 35–39 ms | 166–174 ms | 193–205 ms | 229–278 ms | 373–405 ms | 383–402 ms |
+| body size | 0.34 MiB | 1.70 MiB | 0.34 MiB | 1.69 MiB | 3.38 MiB | 8.47 MiB | 16.95 MiB |
+| browser fetch+parse | 29 ms | 49–63 ms | 179–185 ms | 203–205 ms | 247–248 ms | 399–439 ms | 501–508 ms |
+| SwiftShader GL draw, `newPlot` (marker count) | 53 ms (20k) | 80 ms (100k) | — | — | 107 ms (200k) | 268 ms (500k) | 587–1 171 ms (1M) |
+
+**The design that landed:**
+
+- **API:** `MAX_POINTS` 20 000 → 1 000 000 (`routers/datasets.py`). The client-chosen
+  sample stays capped and validated — `points=1 000 001` is a 422 — and anything larger
+  is stride-sampled down server-side. Never an unbounded fetch.
+- **The chart's request** (`workspace/traces.ts`, `chartSamplePoints`): above 20 000 rows
+  — exactly where the old fixed request began losing rows, since at or below it the API
+  already returned every row — and only with WebGL, the chart asks for
+  `min(n_rows, 1 000 000)`; every other case is byte-identical to the old request, so the
+  SVG path and WebGL-less browsers fetch no more than before. An upload passes its own
+  `n_rows` because the dataset list has not re-rendered when the selection starts.
+- **Display decimation** (`GL_DISPLAY_MAX_POINTS = 200 000`, `decimateMinMax`): above it
+  the data trace is min/max envelope decimated — the x-range splits into 100 000 buckets,
+  each bucket contributes its least-y and greatest-y sample (once, when one sample wins
+  both), and the range's least-x and greatest-x samples are always kept — so the drawn
+  y-envelope per bucket is exact (a spike inside a bucket cannot vanish) at ≤ 200 002
+  points, and the drawn x-span never shrinks. Non-finite samples draw no marker and are
+  skipped; buckets are by x-value, so unsorted datasets decimate just as correctly. The
+  budget sits just below the measured render knee (107 ms at 200k markers vs 268 ms at
+  500k and ~0.6–1.2 s at 1M on SwiftShader, the slowest renderer the app targets) and
+  keeps the 100 000-row target dataset drawing every row, undecimated.
+- **The fitted curve and bands are never decimated** (the smoothness invariant, pinned by
+  a test): they stay the engine's own 200-point and 2×200-point polygons, verbatim.
+- `SCATTER_MAX_SVG_POINTS = 5 000` stays the SVG/`scattergl` trace-type threshold,
+  unchanged — the mechanism the app already had.
+
+**The bug the screenshots found — the CSP was silencing every WebGL chart.** The first
+screenshot pass showed Plotly's "WebGL is not supported" banner where the `scattergl`
+clouds should have been — on the before build and the after build alike, at 20 000 points
+as much as at 100 000. Traced and verified with fresh-browser A/B runs (marker-pixel
+counts on page screenshots, `task4_paint_truth.mjs`): a bare `getContext('webgl')`
+succeeds in this Chromium, hardware GL (`--use-angle=gl`) or SwiftShader, and the full
+`plotly.js` dist bundle behaves exactly like the app's module-built chunk — but Plotly's
+regl pipeline generates code at runtime, and the API's Content-Security-Policy
+(`script-src 'self' 'wasm-unsafe-eval'`, deliberate for the PDF renderer) blocked it
+silently: regl's context creation failed and Plotly covered the chart with the banner.
+Adding `'unsafe-eval'` to `script-src` (`middleware.py`, with the reasoning in place of
+the old no-unsafe-eval note) makes the same page paint 4 592 marker samples where the
+banner was — with the policy enforced, on both renderers. Which means **from the day that
+header landed (22/11, `036d168`) every web chart above 5 000 points had been showing the
+banner instead of data, in every browser, and every earlier "scattergl" screenshot
+(Task 0's baseline note, Task 2's five pairs) had been photographing the banner on both
+sides of its comparisons.** The relaxation is a real security-posture trade — the price
+of shipping plotly.js-gl — and is flagged for the owner to ratify; the self-only source
+allowlist, nosniff and no-framing are unchanged.
+
+**End-to-end, before and after** (`node /home/amith/tmp/cs-verify/perf/task4_timings.mjs`,
+outputs `task4_timings-{before,after}.out`; before = the saved pre-Task-4 build in
+`task4-dist-before/`, after = this worktree's). Same shape as section C: no throttle, the
+100-point dataset selected first so the chart bundle is loaded, clock from the dataset-row
+click to the Data trace holding the target count. Two deliberate differences from the Task
+0 baseline, recorded honestly: the workspace sits in **Manual fit** (a selection there
+starts no Auto-fit, so no background job competes with the clock — Task 0 drained after
+each run instead), and logins are paced under the route's 10/min limit (a run every ~10 s
+trips it otherwise; observed, then fixed in the harness). The browser cache is cleared per
+run and the detail fetch's bytes are asserted non-zero, so no run rides a cache hit.
+
+| Dataset | Before (20 000-pt sample) | After (full fetch) | Drawn points | Target |
+| --- | ---: | ---: | ---: | --- |
+| gen-100k, median of 5 | 142 ms (runs 137–376) | **350 ms** (runs 325–521) | 20 000 → **100 000** | ≤ 2 s, met |
+| gen-1m, median of 5 | 369 ms (runs 289–370) | **1 023 ms** (runs 1 011–1 212) | 20 000 → **200 001** (of 1 000 000 fetched) | none set; recorded |
+
+Both columns are measured with the CSP fix in place and the GL raster actually painting —
+the after-figure buys five times the drawn points for ~+210 ms at 100k, and at 1M the
+whole dataset (16.96 MiB) is fetched, min/max-decimated and drawn in about a second.
+Machine activity during the runs: load average ≈ 1.4–1.7 on the 12-thread workstation (no
+parallel web build running; an rclone and a small PHP process were resident earlier in the
+evening).
+
+**Screenshots** (`node /home/amith/tmp/cs-verify/perf/task4_screenshots.mjs <out-dir>`,
+real renders after the CSP fix): below the threshold (`decay`, 100 rows — the plain SVG
+path) and above it (`gen-100k`, `gen-1m`), before and after, under
+`/home/amith/tmp/cs-verify/perf/screenshots/task4/`. The below-threshold pair is
+pixel-identical (`compare -metric AE` = 0) — the path below the threshold is exactly
+today's. The above-threshold pairs both show the rendered decay cloud (verified by
+marker-pixel counts: ~1 900 samples in the plot area, where the pre-fix banner runs
+showed ~2); they differ by 3.5 % of pixels — the same cloud drawn from 5× and 50× the
+points, marginally denser. `screenshots.json` in each directory records the trace types
+and counts.
+
 ## Server: the local constrained replica
 
 Command: `bash /home/amith/tmp/cs-verify/perf/docker_replica.sh`. The production image

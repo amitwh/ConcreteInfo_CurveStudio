@@ -92,6 +92,17 @@ export interface TraceOptions {
  *  included). */
 export const SCATTER_MAX_SVG_POINTS = 5000;
 
+/** The sample size the chart asks the API for on its default (SVG-capable) path — the
+ *  request every dataset got before large-dataset support. A dataset with at most this
+ *  many rows is served in full by it, so it is also the threshold above which the WebGL
+ *  path starts asking for more (docs/perf.md, Task 4). */
+export const SVG_SAMPLE_POINTS = 20000;
+
+/** The most the chart ever asks the API for — the server's `MAX_POINTS`
+ *  (`curvestudio_api/routers/datasets.py`); keep the two in step. A full-cap answer
+ *  measured ~0.4 s of API time and a 17 MiB body (docs/perf.md, Task 4). */
+export const GL_MAX_SAMPLE_POINTS = 1_000_000;
+
 let webglCache: boolean | null = null;
 
 /** Whether this browser can create a WebGL context (probed once, cached). */
@@ -120,6 +131,22 @@ export function scatterTraceType(count: number): "scatter" | "scattergl" {
   return count > SCATTER_MAX_SVG_POINTS && webglSupported() ? "scattergl" : "scatter";
 }
 
+/**
+ * The sample size the chart asks the API for. Above SVG_SAMPLE_POINTS rows — where the
+ * old fixed request began stride-losing rows — and only with WebGL, the chart asks for
+ * the whole dataset, capped at GL_MAX_SAMPLE_POINTS; any other case is exactly the old
+ * request, so the SVG path and WebGL-less browsers fetch no more than before.
+ */
+export function chartSamplePoints(
+  nRows: number | null | undefined,
+  webgl: boolean = webglSupported(),
+): number {
+  const rows = nRows ?? 0;
+  return webgl && rows > SVG_SAMPLE_POINTS
+    ? Math.min(rows, GL_MAX_SAMPLE_POINTS)
+    : SVG_SAMPLE_POINTS;
+}
+
 /** Evenly strided sample that always keeps the first and last element. */
 export function downsampleStride<T>(values: readonly T[], max: number): T[] {
   if (values.length <= max) return [...values];
@@ -131,12 +158,96 @@ export function downsampleStride<T>(values: readonly T[], max: number): T[] {
   return sampled;
 }
 
-/** The (x, y) pair for a markers trace, downsampled in lockstep when WebGL is off. */
+/** The display budget of the WebGL data trace, just below the measured render knee on
+ *  the slowest renderer the app targets (headless SwiftShader: 107 ms at 200k markers,
+ *  268 ms at 500k, ~0.6–1.2 s at 1M). It also bounds overdraw and hover cost past screen
+ *  saturation — a ~1400 px plot at marker size 5 saturates far below it — and keeps the
+ *  100k target dataset drawing every row undecimated (docs/perf.md, Task 4). */
+export const GL_DISPLAY_MAX_POINTS = 200_000;
+
+/**
+ * Min/max envelope decimation for display. The x-range is split into
+ * `ceil(maxPoints / 2)` buckets and every bucket contributes its least-y and its
+ * greatest-y sample (once, when one sample wins both); the whole range's least-x and
+ * greatest-x samples are always kept, so the drawn x-span never shrinks. The drawn
+ * y-envelope per bucket is therefore exact — a spike inside a bucket cannot vanish —
+ * while the output stays within `maxPoints + 2` points. Non-finite x or y is skipped:
+ * such a sample draws no marker anyway. Buckets are by x-value, not input order, so an
+ * unsorted dataset decimates just as correctly; among equal extremes the first sample
+ * wins, which keeps the output deterministic.
+ */
+export function decimateMinMax(
+  x: readonly number[],
+  y: readonly number[],
+  maxPoints: number,
+): { x: number[]; y: number[] } {
+  if (x.length <= maxPoints) return { x: [...x], y: [...y] };
+  // Pass 1: the drawable x-range (and its extreme samples) — bucket boundaries must be
+  // final before any sample is assigned to one.
+  let minX = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let minXIdx = -1;
+  let maxXIdx = -1;
+  for (let i = 0; i < x.length; i += 1) {
+    const xi = x[i] as number;
+    if (!Number.isFinite(xi) || !Number.isFinite(y[i] as number)) continue;
+    if (minXIdx === -1 || xi < minX) {
+      minX = xi;
+      minXIdx = i;
+    }
+    if (maxXIdx === -1 || xi > maxX) {
+      maxX = xi;
+      maxXIdx = i;
+    }
+  }
+  // Pass 2: the least-y / greatest-y sample per bucket, by index (-1: bucket still empty).
+  const buckets = Math.max(1, Math.ceil(maxPoints / 2));
+  const width = (maxX - minX) / buckets;
+  const minIdx = new Array<number>(buckets).fill(-1);
+  const maxIdx = new Array<number>(buckets).fill(-1);
+  for (let i = 0; i < x.length; i += 1) {
+    const xi = x[i] as number;
+    const yi = y[i] as number;
+    if (!Number.isFinite(xi) || !Number.isFinite(yi)) continue;
+    const raw = width > 0 ? Math.floor((xi - minX) / width) : 0;
+    const bucket = Math.min(buckets - 1, Math.max(0, raw));
+    const lo = minIdx[bucket] as number;
+    const hi = maxIdx[bucket] as number;
+    if (lo === -1 || yi < (y[lo] as number)) minIdx[bucket] = i;
+    if (hi === -1 || yi > (y[hi] as number)) maxIdx[bucket] = i;
+  }
+  const emitted = new Set<number>();
+  if (minXIdx !== -1) {
+    emitted.add(minXIdx);
+    emitted.add(maxXIdx);
+  }
+  for (let bucket = 0; bucket < buckets; bucket += 1) {
+    const lo = minIdx[bucket] as number;
+    const hi = maxIdx[bucket] as number;
+    if (lo !== -1) emitted.add(lo);
+    if (hi !== -1) emitted.add(hi);
+  }
+  const kept = [...emitted].sort((a, b) => a - b);
+  return {
+    x: kept.map((i) => x[i] as number),
+    y: kept.map((i) => y[i] as number),
+  };
+}
+
+/**
+ * The (x, y) pair for a markers trace. The SVG path is stride-downsampled to
+ * SCATTER_MAX_SVG_POINTS when WebGL is off, exactly as before; the WebGL path draws
+ * everything it was served, min/max-decimated to GL_DISPLAY_MAX_POINTS for display
+ * above it.
+ */
 export function scatterPoints(
   x: readonly number[],
   y: readonly number[],
 ): { type: "scatter" | "scattergl"; x: number[]; y: number[] } {
   const type = scatterTraceType(x.length);
+  if (type === "scattergl" && x.length > GL_DISPLAY_MAX_POINTS) {
+    return { type, ...decimateMinMax(x, y, GL_DISPLAY_MAX_POINTS) };
+  }
   if (type === "scatter" && x.length > SCATTER_MAX_SVG_POINTS) {
     return {
       type,
@@ -211,8 +322,9 @@ function bandTraces(
  * Build the chart's traces. Data points use WebGL `scattergl` only above
  * SCATTER_MAX_SVG_POINTS points and only when the browser has WebGL — otherwise a plain
  * (and, if needed, stride-downsampled) SVG `scatter` trace, so a software-rendered or
- * headless browser never sees "WebGL is not supported". The curve and bands are plain
- * SVG lines (200/2×200 points).
+ * headless browser never sees "WebGL is not supported"; a WebGL data trace larger than
+ * GL_DISPLAY_MAX_POINTS is min/max-decimated for display. The curve and bands are plain
+ * SVG lines (200/2×200 points) and are NEVER decimated.
  */
 export function buildTraces(
   points: PointsOut | null,
