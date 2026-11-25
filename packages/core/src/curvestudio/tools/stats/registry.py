@@ -443,6 +443,7 @@ TOOL_MODULES: tuple[str, ...] = (
     "curvestudio.tools.stats.correlation",
     "curvestudio.tools.stats.descriptives",
     "curvestudio.tools.stats.distribution",
+    "curvestudio.tools.stats.factor",
     "curvestudio.tools.stats.logistic",
     "curvestudio.tools.stats.means",
     "curvestudio.tools.stats.pca",
