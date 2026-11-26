@@ -14,7 +14,7 @@ methods text for the clipboard, as the Equation tab does, and shows the reason w
 tool that writes it refuses the fit.
 """
 
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from PySide6.QtCore import QByteArray, QSettings, Qt, Signal
 from PySide6.QtGui import QCloseEvent, QGuiApplication
@@ -27,10 +27,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from curvestudio.discovery import AutoFitResult
-from curvestudio.tools import Style
-from curvestudio.workflow import FitBundle, FitSpec, format_equation
 from curvestudio_desktop.jobs import JobRunner
+
+if TYPE_CHECKING:
+    from curvestudio.discovery import AutoFitResult
+    from curvestudio.tools import Style
+    from curvestudio.workflow import FitBundle, FitSpec
 from curvestudio_desktop.theme import mono_font
 from curvestudio_desktop.views.fit_audit_view import CrossValidateCaller
 from curvestudio_desktop.views.fit_summary import apply_status_badge
@@ -183,6 +185,8 @@ class DetailsDialog(QDialog):
                 )
             )
         )
+        from curvestudio.workflow import format_equation
+
         self.results.show_bundle(bundle, cast("FitSpec", spec), meta, ranking=ranking)
         self.copy_button.setEnabled(bool(format_equation(bundle.equation_text)))
         sync_methods_button(self.methods_button, bundle)
@@ -222,6 +226,8 @@ class DetailsDialog(QDialog):
         return self._spec
 
     def equation_text(self) -> str:
+        from curvestudio.workflow import format_equation
+
         return "" if self._bundle is None else format_equation(self._bundle.equation_text)
 
     def copy_equation(self) -> bool:

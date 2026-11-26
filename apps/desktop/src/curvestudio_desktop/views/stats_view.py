@@ -23,7 +23,7 @@ result — it described the old one — and rebuilds the form's column choices.
 import json
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QStandardItemModel
@@ -44,20 +44,30 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from curvestudio.data import Dataset
-from curvestudio.tools.stats import FAMILIES, Plot, ToolInfo, ToolResult, catalogue
-from curvestudio.tools.stats.registry import RequestField
-from curvestudio_desktop.controllers import stats_jobs
 from curvestudio_desktop.controllers.selection import SelectionController
+
+if TYPE_CHECKING:
+    from curvestudio.data import Dataset
+    from curvestudio.tools.stats import Plot, ToolInfo, ToolResult
+    from curvestudio.tools.stats.registry import RequestField
 from curvestudio_desktop.jobs import JobRunner
 from curvestudio_desktop.views.searchable_combo import SearchableComboBox
 from curvestudio_desktop.views.stats_result_view import StatsResultView
+
+
+def _stats_jobs() -> Any:
+    """The statistics job bodies, imported on first use (they pull the tools stack)."""
+    from curvestudio_desktop.controllers import stats_jobs
+
+    return stats_jobs
+
 
 UNSET_TEXT = "not given"
 """A nullable option's spin box reads this at its minimum: the option is left out."""
 RUN_TEXT = "Run"
 RUNNING_TEXT = "Running…"
 MISSING_TOOL = "Pick a tool to run."
+LIBRARY_LOADING = "The tool list is still loading; try again in a moment."
 NEEDS_DATASET = "Select a dataset to run this tool."
 CHECKED_COLUMNS_MAX = 20
 """The most columns the several-column check list offers."""
@@ -228,7 +238,7 @@ class StatsView(QWidget):
         self.setObjectName("statsView")
         self._selection = selection
         self._jobs = jobs if jobs is not None else JobRunner(self)
-        self._infos: dict[str, ToolInfo] = {info.name: info for info in catalogue()}
+        self._infos: dict[str, ToolInfo] = {}
         self._controls: dict[str, _Control] = {}
         self._plots: tuple[Plot, ...] = ()
         self._running = False
@@ -284,7 +294,10 @@ class StatsView(QWidget):
         outer.setContentsMargins(0, 0, 0, 0)
         outer.addWidget(self.splitter)
 
-        self._fill_tools()
+        from curvestudio_desktop import model_library
+
+        if model_library.is_ready():
+            self._fill_tools()
         self.tool_picker.currentIndexChanged.connect(self._on_tool_changed)
         self.run_button.clicked.connect(self._run)
         self.plot_picker.currentIndexChanged.connect(self._on_plot_chosen)
@@ -295,6 +308,9 @@ class StatsView(QWidget):
 
     def _fill_tools(self) -> None:
         """Fill the picker: a disabled heading per family, then its tools by title."""
+        from curvestudio.tools.stats import FAMILIES, catalogue
+
+        self._infos = {info.name: info for info in catalogue()}
         picker = self.tool_picker
         picker.blockSignals(True)
         picker.clear()
@@ -320,6 +336,15 @@ class StatsView(QWidget):
             picker.setCurrentIndex(first)
         picker.blockSignals(False)
         picker.set_search_entries([f"{info.title} ({info.name})" for info in infos])
+
+    def tool_count(self) -> int:
+        """How many tools the picker holds (0 while the library loads)."""
+        return len(self._infos)
+
+    def fill_tools(self) -> None:
+        """(Re)build the picker from the catalogue — the window calls this once the model
+        library has loaded; before that the picker waits empty."""
+        self._fill_tools()
 
     def selected_tool(self) -> str | None:
         """The chosen tool's registered name (``None`` on a family heading)."""
@@ -390,6 +415,11 @@ class StatsView(QWidget):
         """Why Run cannot start now, in one line, or ``None`` when the form is complete."""
         info = self._info()
         if info is None:
+            if not self._infos:
+                from curvestudio_desktop import model_library
+
+                if not model_library.is_ready():
+                    return LIBRARY_LOADING
             return MISSING_TOOL
         if info.needs_data and self._selection.active_dataset() is None:
             return NEEDS_DATASET
@@ -438,7 +468,7 @@ class StatsView(QWidget):
         self._run_dataset = self._selection.active_id
         self._update_run_state()
         self._jobs.submit(
-            stats_jobs.run_selected,
+            _stats_jobs().run_selected,
             dataset,
             tool,
             choices,

@@ -12,20 +12,19 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from html import escape
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
-import numpy as np
-import pyqtgraph as pg
 from PySide6.QtCore import QEvent, QObject, QPointF, Qt
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QLabel, QStackedLayout, QVBoxLayout, QWidget
 
-from curvestudio.tools.stats import Plot
-from curvestudio.workflow import format_equation
 from curvestudio_desktop.theme import current_scheme, mono_font
-from curvestudio_desktop.views.stats_plots import draw_stats_plot
-from curvestudio_plotting import WATERMARK_ALPHA, WATERMARK_TEXT
-from curvestudio_plotting.palette import band_fill, curve_style, data_color
+
+if TYPE_CHECKING:
+    import numpy as np
+    import pyqtgraph as pg
+
+    from curvestudio.tools.stats import Plot
 
 _DARK_PLOT_BACKGROUND = "#1e1e1e"
 _DARK_PLOT_FOREGROUND = "#d4d4d4"
@@ -34,10 +33,17 @@ _BAND_Z = 0.5
 _CURVE_Z = 2.0
 #: The in-app brand mark: the same text (and faintness) as the published figures.
 _WATERMARK_Z = 10.0
-_WATERMARK_HTML = (
-    f'<span style="color: rgba(70,70,70,{WATERMARK_ALPHA:g}); font-size: 7pt;">'
-    f"{WATERMARK_TEXT}</span>"
-)
+
+
+def _watermark_html() -> str:
+    """The plot watermark, from the reporting layer's constants (imported on first use:
+    the plotting package pulls the fitting stack through its figures module)."""
+    from curvestudio_plotting import WATERMARK_ALPHA, WATERMARK_TEXT
+
+    return (
+        f'<span style="color: rgba(70,70,70,{WATERMARK_ALPHA:g}); font-size: 7pt;">'
+        f"{WATERMARK_TEXT}</span>"
+    )
 
 
 _EQUATION_LINE_WIDTH = 52
@@ -90,6 +96,10 @@ class PlotView(QWidget):
     """Scatter plot with labelled axes, crosshair readout and log-axis toggles."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
+        # pyqtgraph is the one heavy import the window itself needs to draw: it lands
+        # here, on first construction, not at module import.
+        import pyqtgraph as pg
+
         super().__init__(parent)
         self._x_name, self._y_name = "x", "y"
         self._x: np.ndarray | None = None
@@ -150,7 +160,10 @@ class PlotView(QWidget):
         # The faint brand mark is a scene item (not a QLabel overlay) so both exporters
         # — ImageExporter's PNG and the QSvgGenerator SVG, which serialise the scene —
         # render it. NoButton keeps it out of the crosshair's way.
-        self._watermark = pg.LabelItem(text=_WATERMARK_HTML, parent=self._plot.graphicsItem())
+        # empty until first asked: the watermark's constants live in the plotting
+        # package, whose import would pull the whole fitting stack onto the window's
+        # path for the sake of one label
+        self._watermark = pg.LabelItem(text="", parent=self._plot.graphicsItem())
         self._watermark.anchor(itemPos=(1, 1), parentPos=(1, 1), offset=(-8, -6))
         self._watermark.setZValue(_WATERMARK_Z)
         self._watermark.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
@@ -161,6 +174,8 @@ class PlotView(QWidget):
         self.apply_scheme()
 
     def apply_scheme(self, scheme: str | None = None) -> None:
+        import pyqtgraph as pg
+
         """Repaint the plot surface, viewbox, axes and labels for the light/dark scheme.
 
         ``apply_theme`` reconfigures pyqtgraph's *defaults*, but a PlotWidget built before
@@ -179,6 +194,8 @@ class PlotView(QWidget):
             axis.setTextPen(foreground)
             axis.label.setDefaultTextColor(QColor(foreground))
         self._scheme = resolved
+        from curvestudio_plotting.palette import data_color
+
         # Data points stay neutral in either theme; bands pick the theme's neutral fill.
         if self._scatter is not None:
             neutral = data_color(dark=dark)
@@ -191,12 +208,25 @@ class PlotView(QWidget):
         return str(self._plot.backgroundBrush().color().name())
 
     def watermark_text(self) -> str:
+        from curvestudio_plotting import WATERMARK_TEXT
+
+        self._fill_watermark()
         """The brand mark drawn faintly in the plot's bottom-right corner (also exported)."""
         return WATERMARK_TEXT
+
+    def _fill_watermark(self) -> None:
+        """Set the watermark label's text; the plotting package is imported only now."""
+        if self._watermark.text.startswith("<span"):
+            return
+        self._watermark.setText(_watermark_html())
 
     # -- data --------------------------------------------------------------------------------
 
     def set_data(self, x: np.ndarray, y: np.ndarray, x_name: str, y_name: str) -> None:
+        import pyqtgraph as pg
+
+        from curvestudio_plotting.palette import data_color
+
         """Replace the scatter with ``(x, y)``, labelled from the column names."""
         self._x_name, self._y_name = x_name, y_name
         self._x, self._y = x, y
@@ -258,6 +288,11 @@ class PlotView(QWidget):
         this for a fit that did not converge — there is no curve to draw then (see
         :meth:`clear_fit`).
         """
+        import numpy as np
+        import pyqtgraph as pg
+
+        from curvestudio_plotting.palette import curve_style
+
         self.clear_fit()
         self._band_x = list(x)
         self._band_confidence = confidence
@@ -289,6 +324,11 @@ class PlotView(QWidget):
         Bands belong to the selected model only and stay neutral; ``band_x`` is that
         model's curve x (it need not be the first curve in ``curves``).
         """
+        import numpy as np
+        import pyqtgraph as pg
+
+        from curvestudio_plotting.palette import curve_style
+
         self.clear_fit()
         self._band_x = list(band_x) if band_x is not None else None
         self._band_confidence = confidence
@@ -395,6 +435,8 @@ class PlotView(QWidget):
         same colour as its curve (never the tied rank's colour). The engine stores ``**``;
         it is shown as ``^``, the way it is written in the details window and reports.
         """
+        from curvestudio.workflow import format_equation
+
         display = format_equation(equation)
         if not display:
             self.clear_equation()
@@ -421,6 +463,8 @@ class PlotView(QWidget):
         return not self._equation.isHidden()
 
     def _render_equation(self) -> None:
+        from curvestudio_plotting.palette import curve_style
+
         if self._equation_text is None:
             return
         model, display, position = self._equation_text
@@ -458,6 +502,8 @@ class PlotView(QWidget):
         return super().eventFilter(watched, event)
 
     def fit_curve_data(self) -> tuple[np.ndarray, np.ndarray] | None:
+        import numpy as np
+
         """The first drawn curve's arrays, or ``None`` when no curve is shown."""
         if not self._curves:
             return None
@@ -473,6 +519,8 @@ class PlotView(QWidget):
 
     def _draw_bands(self) -> None:
         """(Re)draw the neutral bands for the current theme; no-op without band data."""
+        from curvestudio_plotting.palette import band_fill
+
         for item in (self._confidence, self._prediction):
             if item is not None:
                 self._plot.removeItem(item)
@@ -498,6 +546,9 @@ class PlotView(QWidget):
         band: tuple[Sequence[float], Sequence[float]],
         fill: str,
     ) -> pg.FillBetweenItem:
+        import numpy as np
+        import pyqtgraph as pg
+
         lower = pg.PlotDataItem(
             np.asarray(x, dtype=np.float64), np.asarray(band[0], dtype=np.float64)
         )
@@ -541,6 +592,8 @@ class PlotView(QWidget):
         self._plot.getPlotItem().setLogMode(x=x, y=y)
 
     def _recompute_log_availability(self, x: np.ndarray, y: np.ndarray) -> None:
+        import numpy as np
+
         finite_x = x[np.isfinite(x)]
         finite_y = y[np.isfinite(y)]
         self._can_log_x = bool(finite_x.size and (finite_x > 0).all())
@@ -574,6 +627,8 @@ class PlotView(QWidget):
     # -- crosshair ---------------------------------------------------------------------------
 
     def _install_crosshair(self) -> None:
+        import pyqtgraph as pg
+
         self._v_line = pg.InfiniteLine(angle=90, movable=False)
         self._h_line = pg.InfiniteLine(angle=0, movable=False)
         self._v_line.hide()
@@ -622,6 +677,8 @@ class PlotView(QWidget):
     # -- statistical plots -------------------------------------------------------------------
 
     def show_stats_plot(self, plot: Plot) -> None:
+        from curvestudio_desktop.views.stats_plots import draw_stats_plot
+
         """Show one statistical plot model in place of the dataset and the fitted curve.
 
         The scatter, every curve and its bands, the equation caption and the inline hint

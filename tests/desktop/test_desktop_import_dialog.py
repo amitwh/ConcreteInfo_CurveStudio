@@ -116,17 +116,21 @@ def test_clipboard_from_system_clipboard(qtbot) -> None:
 
 
 def _counting_import(monkeypatch):
-    """Wrap import_dialog.import_dataset with a call counter."""
-    import curvestudio_desktop.views.import_dialog as dialog_module
+    """Wrap the workflow's import_dataset with a call counter.
+
+    The dialog resolves the importer where it lives (its module import is deferred off
+    the window's start-up path), so the counter wraps it there.
+    """
+    import curvestudio.workflow as workflow
 
     calls = {"n": 0}
-    real = dialog_module.import_dataset
+    real = workflow.import_dataset
 
     def counting(source, filename, **kwargs):
         calls["n"] += 1
         return real(source, filename, **kwargs)
 
-    monkeypatch.setattr(dialog_module, "import_dataset", counting)
+    monkeypatch.setattr(workflow, "import_dataset", counting)
     return calls
 
 

@@ -10,7 +10,11 @@ in-flight candidates are simply re-queued. ``time_limit`` itself is cooperative;
 is what makes the run finish. Workers also exit when their parent process disappears (see
 :func:`~curvestudio.discovery.worker.init_worker`).
 
-Workers are always started with ``spawn``, so Linux, macOS and Windows behave alike.
+Workers are started with ``spawn`` by default, so Linux, macOS and Windows behave alike. A
+process that has already imported the fitting stack (a warm worker that forks a child per
+job) may pass ``start_method="fork"`` instead: the pool's workers then fork from that
+already-imported memory in milliseconds, with the same results (a candidate's seed depends
+only on the run seed and its id, never on which process fitted it).
 """
 
 import atexit
@@ -64,6 +68,11 @@ def default_workers() -> int:
     return max(1, (os.process_cpu_count() or 2) - 1)
 
 
+def _noop() -> None:
+    """A candidate-free job :meth:`AutoFitPool.prewarm` runs to start a worker."""
+    return None
+
+
 class AutoFitPool:
     """A pool of worker processes that can serve several :func:`autofit` runs.
 
@@ -76,8 +85,10 @@ class AutoFitPool:
     workers, and the next run starts fresh ones.
     """
 
-    def __init__(self, workers: int | None = None) -> None:
+    def __init__(self, workers: int | None = None, *, start_method: str | None = None) -> None:
         self.workers = default_workers() if workers is None else max(1, workers)
+        self.start_method = start_method if start_method is not None else "spawn"
+        get_context(self.start_method)  # an unknown name fails here, not at the first job
         self._executor: ProcessPoolExecutor | None = None
         self.busy = threading.Lock()
 
@@ -97,11 +108,25 @@ class AutoFitPool:
         if self._executor is None:
             self._executor = ProcessPoolExecutor(
                 max_workers=self.workers,
-                mp_context=get_context("spawn"),
+                mp_context=get_context(self.start_method),
                 initializer=init_worker,
                 initargs=(os.getpid(), threading.current_thread() is threading.main_thread()),
             )
         return self._executor
+
+    def prewarm(self, timeout_s: float | None = None) -> None:
+        """Start every worker now, so the first run pays none of their start-up.
+
+        One no-op job per worker is enough: the executor starts a process per submission
+        until it has ``workers`` of them. Waits for the workers to come up (a caller that
+        wants the cost off its own critical path runs this on a background thread); a
+        ``timeout_s`` bounds that wait.
+        """
+        if self._executor is not None:
+            return  # already started: every worker exists or is being replaced on demand
+        futures = [self.executor().submit(_noop) for _ in range(self.workers)]
+        for future in futures:
+            future.result(timeout=timeout_s)
 
     def worker_pids(self) -> list[int]:
         """Process ids of the live workers (empty before the first job)."""

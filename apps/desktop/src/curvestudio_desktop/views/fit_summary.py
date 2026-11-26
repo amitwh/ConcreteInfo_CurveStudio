@@ -7,6 +7,8 @@ plus two actions: open the full details window and export the result. Everything
 never repeats it. With no selection the panel is a quiet hint, not an empty frame.
 """
 
+from typing import TYPE_CHECKING
+
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QGridLayout,
@@ -17,11 +19,13 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from curvestudio.discovery import RankedFit
-from curvestudio.tools import Verdict
-from curvestudio.workflow import FitBundle, WorkflowError, get_model
 from curvestudio_desktop.theme import mono_font
 from curvestudio_desktop.views.ranking_table import format_metric, format_precise
+
+if TYPE_CHECKING:
+    from curvestudio.discovery import RankedFit
+    from curvestudio.tools import Verdict
+    from curvestudio.workflow import FitBundle
 
 HINT_TEXT = "Select a ranked row to see its numbers"
 METRIC_TITLES = ("R²", "adj. R²", "RMSE", "k")
@@ -48,20 +52,26 @@ def apply_status_badge(label: QLabel, status: str, state: str | None = None) -> 
 
 
 _VERDICT_STATE = {
-    Verdict.PASS: "ok",
-    Verdict.CAUTION: "caution",
-    Verdict.FAIL: "failed",
-    Verdict.NOT_APPLICABLE: "not_applicable",
+    "pass": "ok",
+    "caution": "caution",
+    "fail": "failed",
+    "not_applicable": "not_applicable",
 }
+"""Keyed by :class:`~curvestudio.tools.Verdict` values (a ``StrEnum``), so this table
+imports nothing until a verdict is actually shown."""
 
 
 def apply_verdict_badge(label: QLabel, verdict: Verdict) -> None:
     """An audit verdict as a badge: the verdict in words, in the colour of its state."""
-    apply_status_badge(label, verdict.value.replace("_", " ").capitalize(), _VERDICT_STATE[verdict])
+    apply_status_badge(
+        label, verdict.value.replace("_", " ").capitalize(), _VERDICT_STATE[verdict.value]
+    )
 
 
 def model_identity(model_id: str) -> tuple[str, str]:
     """The catalogue name and category for ``model_id``; the id itself when unknown."""
+    from curvestudio.workflow import WorkflowError, get_model
+
     if model_id.startswith("poly"):
         return "Polynomial", "polynomial"
     try:

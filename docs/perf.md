@@ -705,3 +705,62 @@ while even the warm run costs 0.56 s — above the 0.3 s target.
 - **Local LCP with edge-equivalent compression** — the local API serves raw bytes (no gzip
   middleware); reproducing Caddy's `encode` locally was out of scope for the baseline. The
   deployed bundle fetch above carries the compressed transfer time.
+
+
+## 2026-11-26 — P6 Task 6: the window first, the library behind it
+
+Commands (the Task 0 instruments): the desktop cold-start harness
+`uv run python /home/amith/tmp/cs-verify/perf/desktop_coldstart.py` from the Task 6
+worktree, plus one variant child (`desktop_child_default.py`, held beside the harness)
+identical except its Auto-fit runs at the app's own worker count (`workers=None` → the
+pool the app pre-warms) — the standing harness pins `workers=2` for run-to-run stability,
+which builds a pool of its own that no pre-warm warms. Before = the worktree re-measured
+before the change (Task 0's figures within noise): `window_shown` 4.955 s, `model_list`
+5.127 s, first-Auto-fit pool overhead 1.095 s.
+
+| Phase (median of 5, from process spawn) | Before | After | Target | Verdict |
+| --- | ---: | ---: | ---: | --- |
+| `qapp` | 1.756 | 0.142 | — | the window-icon import no longer pulls the window in |
+| `window_built` | 4.923 | 0.565 | ≈ `qapp` + ε | met (0.42 s over it) |
+| **`window_shown`** | **4.955** | **0.593** | ≤ 1.0 s | **met** |
+| `model_list` | 5.127 | 4.233 | ≤ 2.0 s | **missed** — the load itself is 2.82 s; below |
+| **first Auto-fit overhead, the app's pre-warmed pool** | **1.095** | **0.153** | ≤ 0.3 s | **met** |
+| first Auto-fit overhead, the instrument's own 2-worker pool | 1.095 | 1.051 | — | unchanged by design: that pool is not the pre-warmed one |
+
+The app-default rows behind the overhead figures: `pool_warm` 6.133 s, first Auto-fit
+0.437 s of its own after it, second 0.284 s — 0.153 s of first-run overhead.
+
+What moved. The main-window module and every view and controller it imports now resolve
+their heavy imports at first use (`curvestudio.discovery`/`workflow`/`project`/`tools`,
+NumPy, pyqtgraph), the two desktop package roots re-export lazily (PEP 562), and
+`curvestudio_plotting`'s `__init__` resolves its Matplotlib half lazily (the plot's
+colours come from the light palette and never needed it). The model library loads on a
+background thread started when the window is shown, with a status-bar message while it
+runs and a wait-or-says-still-loading guard on the commands that need it; the Auto-fit
+pool pre-warms after the load — sequenced, because measured the other way (both at once)
+the library load alone went from ~2.8 s to ~4.2 s while eleven workers spawned beside it.
+A `--startup-timing` flag prints one line per phase (t0, app_module, qapp, window_built,
+window_shown, model_list, pool_warm).
+
+Why `model_list` misses. Measured apart, the library load is **2.82 s**: 0.87 s to import
+the stack (`curvestudio.workflow.catalog` and everything under it) and **1.87 s for
+`list_models()` itself** — the plugin entry-point load and registration of the 200-model
+catalogue. The baseline hid that 1.87 s inside `window_built` (the old manual-fit view
+called `list_models()` in its constructor, so Task 0's 0.17 s `model_list` gap was only
+the warm re-list). Moving the library behind the window moved all of it there: the window
+is 4.4 s faster and the catalogue 0.9 s faster (it no longer competes with the build), but
+0.6 + 2.8 > 2.0. Reaching the target needs the catalogue itself to load faster — plugin
+import and registration inside `curvestudio.models` — a model-library change, not a
+launch-order one; recorded as the follow-up.
+
+Server half, same machine, same day. In a process that has imported the fitting stack
+(the shape of a warm job worker's forked child), one tiny Auto-fit run takes **1.810 s**
+with the engine's default spawn-started pool and **0.719 s** with the job process's
+fork-started warm pool — **1.09 s saved per Auto-fit job**, the pool's creation having
+become a fork of already-imported memory (the engine is worker-count agnostic and a
+candidate's seed depends only on the run seed and its id, so the results are identical —
+also a test). The upload parser child costs **1.227 s** to start under `spawn` and
+**0.023 s** forked from the preloaded forkserver the API now starts at start-up. Both
+keep Task 5's isolation: the pool's workers die with their job child (PDEATHSIG plus the
+manager's `killpg`), and the parser child is still one fresh, self-capped process per
+upload (the timeout, memory-cap and crash tests run unchanged).

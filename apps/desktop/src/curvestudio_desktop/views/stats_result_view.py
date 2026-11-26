@@ -17,6 +17,7 @@ is how the offscreen tests read the view without relying on how it paints.
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QGuiApplication
@@ -37,10 +38,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from curvestudio.tools import AuditCheck, Verdict
-from curvestudio.tools.stats import Counts, Table, ToolResult, p_text
-from curvestudio.tools.stats._display import Cell, ColumnKind
 from curvestudio_desktop.theme import mono_font
+
+if TYPE_CHECKING:
+    from curvestudio.tools import AuditCheck
+    from curvestudio.tools.stats import Counts, Table, ToolResult
+    from curvestudio.tools.stats._display import Cell, ColumnKind
 from curvestudio_desktop.views.fit_audit_view import AuditBlockView, en_in_digits
 from curvestudio_desktop.views.fit_summary import apply_verdict_badge
 from curvestudio_desktop.views.ranking_table import format_metric
@@ -73,6 +76,8 @@ def _number(value: float | None) -> str:
 
 
 def _cell_text(cell: Cell, kind: ColumnKind) -> str:
+    from curvestudio.tools.stats import p_text
+
     """One table cell as the view writes it; a missing number is an em dash."""
     if cell is None:
         return MISSING
@@ -103,6 +108,8 @@ class _Card:
 
 
 def _build_card(check: AuditCheck) -> _Card:
+    from curvestudio.tools import Verdict
+
     """One assumption as a card, in the fit audit's pattern and the tool's own words."""
     widget = QWidget()
     layout = QVBoxLayout(widget)
@@ -293,6 +300,8 @@ class StatsResultView(QWidget):
                 degrees = format_metric(test.df)
             else:
                 degrees = f"{format_metric(test.df)}, {format_metric(test.df_denominator)}"
+            from curvestudio.tools.stats import p_text
+
             adjusted = MISSING if test.adjusted_p is None else p_text(test.adjusted_p)
             cells = (
                 test.name,

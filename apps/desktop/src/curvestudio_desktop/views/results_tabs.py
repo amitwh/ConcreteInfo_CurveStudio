@@ -22,9 +22,8 @@ measurement) through the window's job runner; its details are in
 
 from collections.abc import Callable
 from functools import partial
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, cast
 
-import pyqtgraph as pg
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QGuiApplication, QResizeEvent, QShowEvent
 from PySide6.QtWidgets import (
@@ -45,34 +44,29 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from curvestudio.discovery import AutoFitResult
-from curvestudio.tools import Style, ToolError, all_methods_texts
-from curvestudio.workflow import (
-    MAX_PREDICT_POINTS,
-    FitBundle,
-    FitSpec,
-    Prediction,
-    WorkflowError,
-    format_equation,
-)
 from curvestudio_desktop.jobs import JobRunner
 from curvestudio_desktop.theme import mono_font
 from curvestudio_desktop.views.fit_audit_view import CrossValidateCaller, FitAuditView
 from curvestudio_desktop.views.fit_tools_view import MORE_TOOLS_TITLE, FitToolsView
-from curvestudio_reporting.csv_report import statistics_rows
 
+if TYPE_CHECKING:
+    from curvestudio.discovery import AutoFitResult
+    from curvestudio.tools import Style
+    from curvestudio.workflow import FitBundle, FitSpec, Prediction
 EMPTY_TEXT = "No fit yet"
 _NA = "n/a"
 PredictCaller = Callable[
-    [FitBundle, FitSpec, list[float], Literal["confidence", "prediction"] | None],
-    Prediction,
+    ["FitBundle", "FitSpec", list[float], Literal["confidence", "prediction"] | None],
+    "Prediction",
 ]
 
-METHODS_STYLES: tuple[tuple[Style, str], ...] = (
+METHODS_STYLES: tuple[tuple[str, str], ...] = (
     ("text", "Text"),
     ("markdown", "Markdown"),
     ("latex", "LaTeX"),
 )
+"""Keyed by :class:`~curvestudio.tools.Style` values (a ``StrEnum``), so no import is
+needed to build the menu."""
 """The styles a Copy methods text control offers, with what its menu calls each."""
 NO_METHODS_TEXT_REASON = "No methods text for a fit that did not converge"
 
@@ -84,6 +78,8 @@ def methods_clipboard_text(bundle: FitBundle, spec: FitSpec | None, style: Style
         ToolError: what ``all_methods_texts`` refuses: a fit that did not converge, a
             specification that is not the fit's, a fit that carries no statistics.
     """
+    from curvestudio.tools import all_methods_texts
+
     text = all_methods_texts(bundle, spec=spec)[style]
     return "\n\n".join((text.paragraph, text.equation, text.table))
 
@@ -96,7 +92,7 @@ def methods_text_menu(owner: QWidget, copy: Callable[[Style], object]) -> QMenu:
     """
     menu = QMenu(owner)
     for style, label in METHODS_STYLES:
-        menu.addAction(label, partial(copy, style))
+        menu.addAction(label, partial(copy, cast("Style", style)))
     return menu
 
 
@@ -291,6 +287,8 @@ class ResultsTabs(QWidget):
         self._tabs_of.append(self._statistics_tab)
 
     def _build_diagnostics(self) -> None:
+        import pyqtgraph as pg
+
         content = QWidget()
         grid = QGridLayout(content)
         grid.setContentsMargins(2, 2, 2, 2)
@@ -510,6 +508,8 @@ class ResultsTabs(QWidget):
         self._parameters_tab.show_content(bool(estimates))
 
     def _fill_statistics(self, bundle: FitBundle) -> None:
+        from curvestudio_reporting.csv_report import statistics_rows
+
         rows: list[tuple[str, Any, str]] = list(statistics_rows(bundle))
         summary = bundle.summary
         if summary is not None:
@@ -558,6 +558,8 @@ class ResultsTabs(QWidget):
             self._diag_note.setText(reason)
             self._diagnostics_tab.show_content(False)
             return
+        import pyqtgraph as pg
+
         self._diagnostics_tab.show_content(True)
         scatter = {
             "symbol": "o",
@@ -605,12 +607,16 @@ class ResultsTabs(QWidget):
         self._diag_note.setText("n/a: " + ", ".join(notes) if notes else "")
 
     def _fill_equation(self, bundle: FitBundle) -> None:
+        from curvestudio.workflow import format_equation
+
         self._equation_label.setText(format_equation(bundle.equation_text))
         sync_methods_button(self._methods_button, bundle)
         self._equation_tab.show_content(True)
 
     def equation_text(self) -> str:
         """The equation exactly as shown ('' when there is no bundle)."""
+        from curvestudio.workflow import format_equation
+
         return "" if self._bundle is None else format_equation(self._bundle.equation_text)
 
     def copy_equation(self) -> bool:
@@ -630,6 +636,8 @@ class ResultsTabs(QWidget):
         bundle, spec = self._bundle, self._spec
         if bundle is None:
             return False
+        from curvestudio.tools import ToolError
+
         try:
             text = methods_clipboard_text(bundle, spec, style)
         except ToolError as exc:
@@ -661,6 +669,8 @@ class ResultsTabs(QWidget):
         return values, ""
 
     def _run_predict(self) -> None:
+        from curvestudio.workflow import MAX_PREDICT_POINTS, WorkflowError
+
         bundle, spec, caller = self._bundle, self._spec, self._predict_fn
         if bundle is None or spec is None or caller is None:
             return

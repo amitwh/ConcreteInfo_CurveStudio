@@ -19,10 +19,8 @@ the form states that, and nothing else could be said about an experiment not yet
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
-import numpy as np
-import pyqtgraph as pg
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -44,15 +42,14 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from curvestudio.data import XY, DataError
-from curvestudio.discovery import AutoFitResult
-from curvestudio.tools.advisor import AdvisorRequest, advise
-from curvestudio.tools.discernibility import DiscernibilityRequest, discernibility
-from curvestudio.tools.feasibility import DesignSpec, NoiseSpec, SimulationRequest, simulate
-from curvestudio.tools.stats import Plot, ToolResult
-from curvestudio.workflow import FitBundle, FitSpec
 from curvestudio_desktop.jobs import JobRunner, ProgressCallback
-from curvestudio_desktop.views.stats_plots import draw_stats_plot
+
+if TYPE_CHECKING:
+    from curvestudio.data import XY
+    from curvestudio.discovery import AutoFitResult
+    from curvestudio.tools.feasibility import DesignSpec
+    from curvestudio.tools.stats import Plot, ToolResult
+    from curvestudio.workflow import FitBundle, FitSpec
 from curvestudio_desktop.views.stats_result_view import StatsResultView
 
 MORE_TOOLS_TITLE = "More tools"
@@ -91,6 +88,10 @@ def xy_from_bundle(bundle: FitBundle) -> XY | None:
     every row. A snapshot detail the data model refuses (a missing weight, say) also yields
     ``None``: the caller opens the fit from its dataset instead.
     """
+    import numpy as np
+
+    from curvestudio.data import XY, DataError
+
     snapshot = bundle.data
     if snapshot.subsampled:
         return None
@@ -126,6 +127,8 @@ class FitToolResultDialog(QDialog):
         self.plot_picker.setObjectName("fitToolsPlotPicker")
         self.plot_picker.hide()
         self.result_view = StatsResultView()
+        import pyqtgraph as pg
+
         self.plot = pg.PlotWidget()
         self.plot.setObjectName("fitToolsPlot")
         self.plot.setMinimumHeight(220)
@@ -196,6 +199,8 @@ class FitToolResultDialog(QDialog):
 
     def _draw(self, index: int) -> None:
         self._clear_plot()
+        from curvestudio_desktop.views.stats_plots import draw_stats_plot
+
         self._items = draw_stats_plot(self.plot.getPlotItem(), self._plots[index])
         self.plot.autoRange()
 
@@ -473,6 +478,8 @@ class FitToolsView(QWidget):
             self.adv_parameter.setCurrentIndex(index)
         values = ", ".join(f"{name} = {value:.6g}" for name, value in self._truth_items())
         self.feas_truth_label.setText(TRUTH_NOTE + ("" if not values else f": {values}"))
+        import numpy as np
+
         if xy is not None and xy.x.size:
             self.feas_low.setValue(float(np.min(xy.x)))
             self.feas_high.setValue(float(np.max(xy.x)))
@@ -543,7 +550,9 @@ class FitToolsView(QWidget):
         self._show_message(RUNNING_MESSAGES[kind])
         self._sync()
 
-        def job(progress: ProgressCallback) -> ToolResult:
+        # quoted for a reason: the runner inspects this local function's annotations,
+        # and ToolResult is a TYPE_CHECKING-only import on the window's path
+        def job(progress: ProgressCallback) -> "ToolResult":  # noqa: UP037
             progress(0, 1)
             try:
                 return compute(event.is_set)
@@ -585,6 +594,8 @@ class FitToolsView(QWidget):
     # -- the three actions -------------------------------------------------------------------
 
     def run_discernibility(self) -> None:
+        from curvestudio.tools.discernibility import DiscernibilityRequest, discernibility
+
         fit = self._fit
         if fit is None or fit.data is None or fit.ranking is None:
             return
@@ -603,6 +614,8 @@ class FitToolsView(QWidget):
         )
 
     def run_feasibility(self) -> None:
+        from curvestudio.tools.feasibility import NoiseSpec, SimulationRequest, simulate
+
         fit = self._fit
         if fit is None:
             return
@@ -628,6 +641,8 @@ class FitToolsView(QWidget):
         )
 
     def run_advisor(self) -> None:
+        from curvestudio.tools.advisor import AdvisorRequest, advise
+
         fit = self._fit
         if fit is None or fit.data is None:
             return
@@ -643,6 +658,7 @@ class FitToolsView(QWidget):
             objective=objective,
             parameter=self.adv_parameter.currentText() or None,
         )
+
         data, spec, result = fit.data, fit.spec, fit.bundle.result
         self._start(
             "advisor",
@@ -657,6 +673,8 @@ class FitToolsView(QWidget):
         return None if value == _UNSET_NUMBER else float(value)
 
     def _design(self) -> DesignSpec | None:
+        from curvestudio.tools.feasibility import DesignSpec
+
         """The design the form holds, or ``None`` with the refusal shown in the form."""
         replicates = self.feas_replicates.value()
         if self.feas_design_mode.currentData() == "range":

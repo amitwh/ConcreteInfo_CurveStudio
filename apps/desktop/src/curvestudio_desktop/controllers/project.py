@@ -13,25 +13,24 @@ import re
 from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from PySide6.QtCore import QObject, QSettings, Signal
 
-from curvestudio.project import (
-    Analysis,
-    Project,
-    ProjectDataset,
-    ProjectError,
-    load_project,
-    save_project,
-)
-from curvestudio.workflow import ImportOutcome, WorkflowError, import_dataset
 from curvestudio_desktop.controllers.providers import (
     ConfirmationProvider,
     Messenger,
     PathProvider,
     UnsavedAnswer,
 )
+
+if TYPE_CHECKING:
+    from curvestudio.project import (
+        Analysis,
+        Project,
+        ProjectDataset,
+    )
+    from curvestudio.workflow import ImportOutcome
 
 IST = timezone(timedelta(hours=5, minutes=30), name="IST")
 """Every timestamp the app records carries the +05:30 offset (repo convention)."""
@@ -51,6 +50,8 @@ def ist_now() -> str:
 
 def new_empty_project(now: Callable[[], str] = ist_now) -> Project:
     """A clean untitled project, stamped with ``now()``."""
+    from curvestudio.project import Project
+
     return Project(name="Untitled project", created_at=now())
 
 
@@ -114,7 +115,10 @@ class ProjectController(QObject):
         self._messenger = messenger
         self._settings = settings if settings is not None else QSettings()
         self._now = now
-        self._project = new_empty_project(now)
+        # The empty project costs the whole fitting-stack import (the ``Project`` model's
+        # fields pull it in), so it is materialised on first touch instead of here: a
+        # window being built never waits for it (see ``curvestudio_desktop.model_library``).
+        self._project: Project | None = None
         self._path: Path | None = None
         self._dirty = False
         self._undo_stack: list[Project] = []
@@ -133,6 +137,18 @@ class ProjectController(QObject):
 
     @property
     def project(self) -> Project:
+        return self._ensure_project()
+
+    def _ensure_project(self) -> Project:
+        """The current project, creating the empty one on first touch.
+
+        Between construction and the first touch the project is ``None`` — only a window
+        mid-build sees that; by the time anything asks (a refresh, a save, a mutation)
+        the model library has loaded and the import the creation pays is warm.
+        """
+        if self._project is None:
+            self._project = new_empty_project(self._now)
+        assert self._project is not None
         return self._project
 
     @property
@@ -185,6 +201,8 @@ class ProjectController(QObject):
             path = self._paths.choose_open_path()
             if path is None:
                 return False
+        from curvestudio.project import ProjectError
+
         try:
             project = self.load_only(path)
         except ProjectError as exc:
@@ -198,6 +216,8 @@ class ProjectController(QObject):
         The heavy half of opening (zip + JSON + dataset parsing) — pure, so it can
         run off the GUI thread. Raises :class:`~curvestudio.project.ProjectError`.
         """
+        from curvestudio.project import load_project
+
         return load_project(path)
 
     def adopt_opened(self, project: Project, path: Path) -> bool:
@@ -226,6 +246,8 @@ class ProjectController(QObject):
 
     def save_as(self) -> bool:
         """Choose a target and save there. Returns ``False`` when cancelled or failed."""
+        self._ensure_project()
+        assert self._project is not None
         suggested = self._path.name if self._path else f"{self._project.name}.cstudio"
         target = self._paths.choose_save_path(suggested)
         if target is None:
@@ -238,6 +260,8 @@ class ProjectController(QObject):
         return True
 
     def _save_to(self, target: Path) -> bool:
+        from curvestudio.project import ProjectError
+
         try:
             project = self.write_only(target)
         except ProjectError as exc:
@@ -253,6 +277,8 @@ class ProjectController(QObject):
         :class:`~curvestudio.project.ProjectError`; the project stays dirty until
         :meth:`commit_save` runs.
         """
+        from curvestudio.project import save_project
+
         project = self._project_with_ui_state()
         save_project(project, target)  # atomic write inside the core
         return project
@@ -268,7 +294,9 @@ class ProjectController(QObject):
     def _project_with_ui_state(self) -> Project:
         """The current project with the desktop blob refreshed in ``plot_settings``."""
         if self._state_provider is None:
-            return self._project
+            return self._ensure_project()
+        self._ensure_project()
+        assert self._project is not None
         merged = dict(self._project.plot_settings)
         merged["desktop"] = self._state_provider()
         return self._rebuilt(plot_settings=merged)
@@ -288,6 +316,8 @@ class ProjectController(QObject):
         weight_column: str | None = None,
     ) -> bool:
         """Import a data file and add its dataset to the project."""
+        from curvestudio.workflow import WorkflowError, import_dataset
+
         try:
             outcome = import_dataset(
                 path, path.name, x_column=x_column, y_column=y_column, weight_column=weight_column
@@ -307,6 +337,8 @@ class ProjectController(QObject):
         weight_column: str | None = None,
     ) -> bool:
         """Import pasted text (named ``filename``) and add its dataset to the project."""
+        from curvestudio.workflow import WorkflowError, import_dataset
+
         try:
             outcome = import_dataset(
                 raw, filename, x_column=x_column, y_column=y_column, weight_column=weight_column
@@ -323,6 +355,9 @@ class ProjectController(QObject):
         issues or no usable x/y columns — the import dialog normally prevents that,
         but the controller must stay safe on its own.
         """
+        self._ensure_project()
+        from curvestudio.project import ProjectDataset
+
         errors = [issue for issue in outcome.issues if issue.severity == "error"]
         if errors or outcome.xy is None:
             lines = [f"{issue.code}: {issue.message}" for issue in errors]
@@ -330,6 +365,7 @@ class ProjectController(QObject):
                 lines = ["the data has no usable x and y columns"]
             self._messenger.show_error("Cannot import data", "\n".join(lines))
             return None
+        assert self._project is not None
         dataset_id = unique_id(outcome.dataset.name, {entry.id for entry in self._project.datasets})
         self._push_undo()
         self._project = self._rebuilt(
@@ -350,6 +386,7 @@ class ProjectController(QObject):
         entry = self._find(dataset_id)
         if entry is None:
             return False
+        assert self._project is not None  # _find materialised it
         self._push_undo()
         kept_analyses = tuple(
             analysis for analysis in self._project.analyses if analysis.dataset_id != dataset_id
@@ -373,6 +410,7 @@ class ProjectController(QObject):
                 "Cannot rename dataset", "The name cannot be empty or only spaces"
             )
             return False
+        assert self._project is not None  # _find materialised it
         self._push_undo()
         datasets = tuple(
             entry.model_copy(update={"name": name}) if e.id == dataset_id else e
@@ -393,6 +431,8 @@ class ProjectController(QObject):
         what "Run again" and the tree show); an opened row replaces the entry it opened.
         Records undo and marks the project dirty, like every other edit.
         """
+        self._ensure_project()
+        assert self._project is not None
         kept = tuple(entry for entry in self._project.analyses if entry.id != analysis.id)
         self._push_undo()
         self._project = self._rebuilt(analyses=(*kept, analysis))
@@ -435,6 +475,8 @@ class ProjectController(QObject):
     # -- internals --------------------------------------------------------------------------
 
     def _find(self, dataset_id: str) -> ProjectDataset | None:
+        self._ensure_project()
+        assert self._project is not None
         for entry in self._project.datasets:
             if entry.id == dataset_id:
                 return entry
@@ -448,6 +490,10 @@ class ProjectController(QObject):
         plot_settings: dict[str, Any] | None = None,
     ) -> Project:
         """A fresh validated Project (model_copy would skip the cross-field validators)."""
+        self._ensure_project()
+        assert self._project is not None
+        from curvestudio.project import Project
+
         return Project(
             name=self._project.name,
             created_at=self._project.created_at,
@@ -457,6 +503,8 @@ class ProjectController(QObject):
         )
 
     def _push_undo(self) -> None:
+        self._ensure_project()
+        assert self._project is not None
         self._undo_stack.append(self._project)
         if len(self._undo_stack) > _UNDO_LIMIT:
             self._undo_stack.pop(0)

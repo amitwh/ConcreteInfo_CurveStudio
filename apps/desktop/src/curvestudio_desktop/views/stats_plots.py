@@ -14,22 +14,22 @@ parts are what the result's blocks already hold (quartiles, median, Tukey's whis
 the outliers beyond them).
 """
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import numpy as np
-import pyqtgraph as pg
-
-from curvestudio.tools.stats import (
-    BoxPlot,
-    HistogramPlot,
-    MultiLinePlot,
-    Plot,
-    QQPlot,
-    ScatterPlot,
-)
-from curvestudio.tools.stats._display import Line
 from curvestudio_desktop.theme import current_scheme
-from curvestudio_plotting.palette import band_fill, curve_style, data_color
+
+if TYPE_CHECKING:
+    import pyqtgraph as pg
+
+    from curvestudio.tools.stats import (
+        BoxPlot,
+        HistogramPlot,
+        MultiLinePlot,
+        Plot,
+        QQPlot,
+        ScatterPlot,
+    )
+    from curvestudio.tools.stats._display import Line
 
 NOTE_NAME = "statsPlotNote"
 """The object name of the label a plot's note is drawn in."""
@@ -81,6 +81,8 @@ def _reset(plot_item: pg.PlotItem) -> None:
 
 
 def _note(plot_item: pg.PlotItem, plot: Plot) -> pg.LabelItem | None:
+    import pyqtgraph as pg
+
     """The block's note as a faint label pinned under the plot, or nothing when it has none.
 
     It is parented to the plot item (not added to its item list), so the view takes it down
@@ -96,6 +98,9 @@ def _note(plot_item: pg.PlotItem, plot: Plot) -> pg.LabelItem | None:
 
 
 def _points(x: Any, y: Any, colour: str, *, size: int = 6) -> pg.PlotDataItem:
+    import numpy as np
+    import pyqtgraph as pg
+
     """Points in ``colour``, with no joining line."""
     return pg.PlotDataItem(
         np.asarray(x, dtype=np.float64),
@@ -109,6 +114,9 @@ def _points(x: Any, y: Any, colour: str, *, size: int = 6) -> pg.PlotDataItem:
 
 
 def _reference_line(plot_item: pg.PlotItem, line: Line) -> pg.PlotDataItem:
+    import numpy as np
+    import pyqtgraph as pg
+
     """One straight reference line, in the neutral colour every band and rule shares."""
     item = pg.PlotDataItem(
         np.asarray([line.x0, line.x1], dtype=np.float64),
@@ -120,6 +128,11 @@ def _reference_line(plot_item: pg.PlotItem, line: Line) -> pg.PlotDataItem:
 
 
 def _scatter(plot_item: pg.PlotItem, plot: ScatterPlot, *, dark: bool) -> list[Any]:
+    import numpy as np
+    import pyqtgraph as pg
+
+    from curvestudio_plotting.palette import data_color
+
     points = _points(plot.x, plot.y, data_color(dark=dark))
     plot_item.addItem(points)
     items: list[Any] = [points]
@@ -134,6 +147,8 @@ def _scatter(plot_item: pg.PlotItem, plot: ScatterPlot, *, dark: bool) -> list[A
             np.asarray(plot.band.x, dtype=np.float64),
             np.asarray(plot.band.upper, dtype=np.float64),
         )
+        from curvestudio_plotting.palette import band_fill
+
         band = pg.FillBetweenItem(
             lower, upper, brush=pg.mkBrush(band_fill("confidence", dark=dark))
         )
@@ -146,9 +161,14 @@ def _scatter(plot_item: pg.PlotItem, plot: ScatterPlot, *, dark: bool) -> list[A
 
 
 def _histogram(plot_item: pg.PlotItem, plot: HistogramPlot, *, dark: bool) -> list[Any]:
+    import numpy as np
+    import pyqtgraph as pg
+
     edges = np.asarray(plot.edges, dtype=np.float64)
     counts = np.asarray(plot.counts, dtype=np.float64)
     centres = (edges[:-1] + edges[1:]) / 2.0
+    from curvestudio_plotting.palette import data_color
+
     bars = pg.BarGraphItem(
         x=centres,
         height=counts,
@@ -159,6 +179,8 @@ def _histogram(plot_item: pg.PlotItem, plot: HistogramPlot, *, dark: bool) -> li
     plot_item.addItem(bars)
     items: list[Any] = [bars]
     for index, overlay in enumerate(plot.overlays):
+        from curvestudio_plotting.palette import curve_style
+
         colour, width = curve_style(index + 1)
         line = pg.PlotDataItem(
             centres,
@@ -173,6 +195,9 @@ def _histogram(plot_item: pg.PlotItem, plot: HistogramPlot, *, dark: bool) -> li
 
 
 def _qq(plot_item: pg.PlotItem, plot: QQPlot) -> list[Any]:
+
+    from curvestudio_plotting.palette import curve_style
+
     points = _points(plot.theoretical, plot.ordered, curve_style(1)[0])
     plot_item.addItem(points)
     items: list[Any] = [points, _reference_line(plot_item, plot.line)]
@@ -182,8 +207,13 @@ def _qq(plot_item: pg.PlotItem, plot: QQPlot) -> list[Any]:
 
 
 def _box(plot_item: pg.PlotItem, plot: BoxPlot, *, dark: bool) -> list[Any]:
+    import pyqtgraph as pg
+
     """One box per group: a bar from Q1 to Q3, its median, Tukey's whiskers, its outliers."""
+    from curvestudio_plotting.palette import curve_style, data_color
+
     neutral = data_color(dark=dark)
+
     accent, _width = curve_style(1)
     items: list[Any] = []
     ticks: list[tuple[float, str]] = []
@@ -241,11 +271,16 @@ def _box(plot_item: pg.PlotItem, plot: BoxPlot, *, dark: bool) -> list[Any]:
 
 
 def _lines(plot_item: pg.PlotItem, plot: MultiLinePlot) -> list[Any]:
+    import numpy as np
+    import pyqtgraph as pg
+
     """One line per series, with a legend entry naming each, and the category tick texts."""
     legend = plot_item.legend if plot_item.legend is not None else plot_item.addLegend()
     legend.setVisible(True)
     items: list[Any] = []
     for index, series in enumerate(plot.series):
+        from curvestudio_plotting.palette import curve_style
+
         colour, width = curve_style(index + 1)
         line = pg.PlotDataItem(
             np.asarray(series.x, dtype=np.float64),

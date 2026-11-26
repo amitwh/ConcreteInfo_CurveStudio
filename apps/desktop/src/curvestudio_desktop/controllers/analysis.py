@@ -12,50 +12,37 @@ project tree restores a stored result without refitting. The controller uses QtC
 """
 
 from collections.abc import Callable
-from typing import Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from PySide6.QtCore import QObject, QSettings, Signal
 
-from curvestudio.data import XY, DataError
-from curvestudio.discovery import (
-    AutoFitConfig,
-    AutoFitResult,
-    CancelToken,
-    RankBy,
-    candidate_ref,
-)
-from curvestudio.discovery import (
-    CustomRef as DiscoveryCustomRef,
-)
-from curvestudio.discovery import (
-    PolynomialRef as DiscoveryPolynomialRef,
-)
-from curvestudio.discovery import (
-    RegisteredRef as DiscoveryRegisteredRef,
-)
-from curvestudio.project import Analysis
-from curvestudio.workflow import (
-    CustomRef,
-    FitBundle,
-    FitSpec,
-    PolynomialRef,
-    Prediction,
-    RegisteredRef,
-    WorkflowError,
-)
-from curvestudio.workflow import (
-    predict as workflow_predict,
-)
-from curvestudio_desktop.controllers import analysis_jobs, analysis_store
 from curvestudio_desktop.controllers.project import ProjectController
 from curvestudio_desktop.controllers.selection import SelectionController
 from curvestudio_desktop.jobs import JobHandle, JobRunner
+
+if TYPE_CHECKING:
+    from curvestudio.data import XY
+    from curvestudio.discovery import (
+        AutoFitConfig,
+        AutoFitResult,
+        CancelToken,
+        RankBy,
+    )
+    from curvestudio.project import Analysis
+    from curvestudio.workflow import (
+        FitBundle,
+        FitSpec,
+        Prediction,
+    )
 
 MODE_AUTOFIT = "autofit"
 MODE_MANUAL = "manual"
 MODE_STATS = "stats"
 _MODE_KEY = "analysis/mode"
 _RANK_KEY = "analysis/rank_by"
+RANK_VALUES: tuple[str, ...] = ("best_overall", "r2", "adj_r2", "rmse", "aicc", "bic", "cv_rmse")
+"""The rank criteria as their stored strings, in the canonical order — readable before the
+model library has loaded (they mirror ``RankBy``, which costs the fitting-stack import)."""
 
 _MODE_MESSAGES = {
     MODE_AUTOFIT: "Auto-fit mode: analyses run automatically on import",
@@ -64,8 +51,22 @@ _MODE_MESSAGES = {
 }
 """What each mode says when it is chosen: the rule it follows, in one line."""
 
-FitSubmit = Callable[[Callable[[FitBundle], None], Callable[[BaseException], None]], object]
+FitSubmit = Callable[[Callable[["FitBundle"], None], Callable[[BaseException], None]], object]
 """How ``_start_fit`` reaches the runner: the two callbacks it wants delivered."""
+
+
+def _store() -> Any:
+    """The analysis store, imported on first use (it pulls the fitting stack)."""
+    from curvestudio_desktop.controllers import analysis_store
+
+    return analysis_store
+
+
+def _analysis_jobs() -> Any:
+    """The job bodies module, imported on first use (it pulls the fitting stack)."""
+    from curvestudio_desktop.controllers import analysis_jobs
+
+    return analysis_jobs
 
 
 def _reason_of(error: BaseException) -> str:
@@ -131,8 +132,11 @@ class AnalysisController(QObject):
         self._fit_jobs = fit_jobs if fit_jobs is not None else JobRunner(self)
         self._settings = settings
         self._mode = self._stored_mode()
-        self._rank_by = self._stored_rank_by()
-        self._options = AutoFitConfig()
+        # The rank criterion and the run options live as their stored/plain values until
+        # first asked for their real types: building those costs the fitting stack's
+        # import, which a window being built must not wait for (see ``model_library``).
+        self._rank_value = self._stored_rank_value()
+        self._options: AutoFitConfig | None = None
         self._autofit_cache: dict[str, AutoFitResult] = {}
         self._latest_runs: dict[str, AutoFitResult] = {}
         self._cancel: CancelToken | None = None
@@ -172,17 +176,28 @@ class AnalysisController(QObject):
         return self._jobs
 
     @property
+    def rank_by_value(self) -> str:
+        """The rank criterion as its stored string — readable while the library loads."""
+        return self._rank_value
+
+    @property
     def rank_by(self) -> RankBy:
-        return self._rank_by
+        from curvestudio.discovery import RankBy
+
+        return RankBy(self._rank_value)
 
     def set_rank_by(self, rank_by: RankBy) -> None:
-        if rank_by is self._rank_by:
+        if rank_by.value == self._rank_value:
             return
-        self._rank_by = rank_by
+        self._rank_value = rank_by.value
         self._store(_RANK_KEY, rank_by.value)
         self.rank_by_changed.emit(rank_by)
 
     def autofit_options(self) -> AutoFitConfig:
+        from curvestudio.discovery import AutoFitConfig
+
+        if self._options is None:
+            self._options = AutoFitConfig()
         return self._options
 
     def selection_active_id(self) -> str | None:
@@ -199,14 +214,13 @@ class AnalysisController(QObject):
             return str(value)
         return MODE_AUTOFIT
 
-    def _stored_rank_by(self) -> RankBy:
+    def _stored_rank_value(self) -> str:
+        """The persisted criterion, or the default — as its string, with no enum import."""
+        default = RANK_VALUES[0]
         if self._settings is None:
-            return RankBy.BEST_OVERALL
-        value = self._settings.value(_RANK_KEY, RankBy.BEST_OVERALL.value)
-        try:
-            return RankBy(str(value))
-        except ValueError:
-            return RankBy.BEST_OVERALL
+            return default
+        value = str(self._settings.value(_RANK_KEY, default))
+        return value if value in RANK_VALUES else default
 
     def _store(self, key: str, value: str) -> None:
         if self._settings is not None:
@@ -223,11 +237,11 @@ class AnalysisController(QObject):
         """
         if dataset_id in self._autofit_cache:
             return self._autofit_cache[dataset_id]
-        analysis = self._find_analysis(analysis_store.autofit_analysis_id(dataset_id))
+        analysis = self._find_analysis(_store().autofit_analysis_id(dataset_id))
         if analysis is None:
             return None
         try:
-            result = analysis_store.autofit_from_analysis(analysis)
+            result: AutoFitResult = _store().autofit_from_analysis(analysis)
         except ValueError:
             return None  # a hand-edited archive: not fatal, there is just nothing stored
         self._autofit_cache[dataset_id] = result
@@ -296,6 +310,9 @@ class AnalysisController(QObject):
         if xy is None:
             self.autofit_failed.emit("the dataset has no usable x and y columns")
             return
+        from curvestudio.discovery import CancelToken
+        from curvestudio_desktop.controllers import analysis_jobs
+
         self._cancel = CancelToken()
         self._running_dataset = dataset_id
         self._run_serial += 1
@@ -315,7 +332,7 @@ class AnalysisController(QObject):
         self._jobs.submit(
             analysis_jobs.run_autofit,
             xy,
-            self._options,
+            self.autofit_options(),
             self._cancel,
             emit_live,
             on_result=finished,
@@ -343,13 +360,11 @@ class AnalysisController(QObject):
             # a partial run is its own analysis: the canonical slot (and cache) keep
             # the earlier complete run, and the partial is always shown flagged
             self._project.add_or_replace_analysis(
-                analysis_store.partial_autofit_analysis(dataset_id, result)
+                _store().partial_autofit_analysis(dataset_id, result)
             )
         else:
             self._autofit_cache[dataset_id] = result
-            self._project.add_or_replace_analysis(
-                analysis_store.autofit_analysis(dataset_id, result)
-            )
+            self._project.add_or_replace_analysis(_store().autofit_analysis(dataset_id, result))
         self.autofit_finished.emit(dataset_id, result)
         if result.cancelled:
             self.status_message.emit("Auto-fit cancelled: showing the partial ranking")
@@ -380,10 +395,10 @@ class AnalysisController(QObject):
         self._start_fit(
             dataset_id,
             lambda on_result, on_error: self._fit_jobs.submit(
-                analysis_jobs.fit_job, xy, spec, on_result=on_result, on_error=on_error
+                _analysis_jobs().fit_job, xy, spec, on_result=on_result, on_error=on_error
             ),
             spec,
-            analysis_store.unique_fit_id(self._taken_analysis_ids()),
+            _store().unique_fit_id(self._taken_analysis_ids()),
             source,
         )
 
@@ -393,6 +408,8 @@ class AnalysisController(QObject):
         if xy is None:
             self.fit_failed.emit("the dataset has no usable x and y columns")
             return
+        from curvestudio.workflow import WorkflowError
+
         try:
             spec = self._spec_for_candidate(result, candidate_id)
         except KeyError as exc:
@@ -401,13 +418,11 @@ class AnalysisController(QObject):
         except (ValueError, WorkflowError) as exc:
             self.fit_failed.emit(_reason_of(exc) if isinstance(exc, WorkflowError) else str(exc))
             return
-        analysis_id = analysis_store.safe_analysis_id(
-            analysis_store.FIT_PREFIX, dataset_id, candidate_id
-        )
+        analysis_id = _store().safe_analysis_id(_store().FIT_PREFIX, dataset_id, candidate_id)
         self._start_fit(
             dataset_id,
             lambda on_result, on_error: self._fit_jobs.submit(
-                analysis_jobs.open_candidate_job,
+                _analysis_jobs().open_candidate_job,
                 xy,
                 result,
                 candidate_id,
@@ -457,7 +472,7 @@ class AnalysisController(QObject):
         self, dataset_id: str, spec: FitSpec, meta: dict[str, Any], bundle: FitBundle
     ) -> None:
         try:
-            analysis = analysis_store.fit_analysis(
+            analysis = _store().fit_analysis(
                 dataset_id,
                 spec,
                 bundle,
@@ -489,7 +504,7 @@ class AnalysisController(QObject):
             self.validation_ready.emit(t, exc)
 
         self._jobs.submit(
-            analysis_jobs.check_spec_job,
+            _analysis_jobs().check_spec_job,
             spec,
             weighted,
             on_result=validated,
@@ -510,6 +525,8 @@ class AnalysisController(QObject):
             WorkflowError: exactly what the workflow layer reports (``FIT_NOT_CONVERGED``,
                 ``TOO_LARGE``, ...); the caller shows it inline.
         """
+        from curvestudio.workflow import predict as workflow_predict
+
         return workflow_predict(bundle, spec, x, band)
 
     # -- restoring stored analyses -----------------------------------------------------------
@@ -524,7 +541,7 @@ class AnalysisController(QObject):
             return False
         if analysis.kind == "stat":
             try:
-                stat_result = analysis_store.stat_from_analysis(analysis)
+                stat_result = _store().stat_from_analysis(analysis)
             except ValueError as exc:
                 self.status_message.emit(str(exc))
                 return False
@@ -534,7 +551,7 @@ class AnalysisController(QObject):
             return True
         if analysis.kind == "autofit":
             try:
-                autofit = analysis_store.autofit_from_analysis(analysis)
+                autofit = _store().autofit_from_analysis(analysis)
             except ValueError as exc:
                 self.status_message.emit(str(exc))
                 return False
@@ -548,7 +565,7 @@ class AnalysisController(QObject):
                 self.status_message.emit("Restored the stored Auto-fit run (nothing was refitted)")
             return True
         try:
-            bundle, spec = analysis_store.bundle_from_analysis(analysis)
+            bundle, spec = _store().bundle_from_analysis(analysis)
         except ValueError as exc:
             self.status_message.emit(str(exc))
             return False
@@ -572,7 +589,7 @@ class AnalysisController(QObject):
         if analysis is None:
             return analysis_id
         if analysis.kind == "autofit":
-            if analysis_store.is_partial_autofit(analysis):
+            if _store().is_partial_autofit(analysis):
                 return "Auto-fit (partial)"
             return "Auto-fit"
         result = analysis.result
@@ -606,6 +623,8 @@ class AnalysisController(QObject):
         if columns is None:
             return None
         x, y, weight = columns
+        from curvestudio.data import DataError
+
         try:
             return dataset.xy(x, y, weight)
         except DataError:
@@ -619,6 +638,12 @@ class AnalysisController(QObject):
 
     def _spec_for_candidate(self, result: AutoFitResult, candidate_id: str) -> FitSpec:
         """The workflow spec of one Auto-fit row, so its bundle can predict after a restore."""
+        from curvestudio.discovery import CustomRef as DiscoveryCustomRef
+        from curvestudio.discovery import PolynomialRef as DiscoveryPolynomialRef
+        from curvestudio.discovery import RegisteredRef as DiscoveryRegisteredRef
+        from curvestudio.discovery import candidate_ref
+        from curvestudio.workflow import CustomRef, FitSpec, PolynomialRef, RegisteredRef
+
         ref = candidate_ref(result.config, candidate_id)
         if isinstance(ref, DiscoveryPolynomialRef):
             # A through-the-origin polynomial predicts through the plain family: the spec

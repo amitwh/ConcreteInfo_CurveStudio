@@ -10,8 +10,8 @@ from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, cast
 
-from PySide6.QtCore import QByteArray, QPoint, QSettings, QSize, Qt, Signal
-from PySide6.QtGui import QAction, QActionGroup, QCloseEvent, QKeySequence
+from PySide6.QtCore import QByteArray, QObject, QPoint, QSettings, QSize, Qt, Signal
+from PySide6.QtGui import QAction, QActionGroup, QCloseEvent, QKeySequence, QShowEvent
 from PySide6.QtWidgets import (
     QApplication,
     QDockWidget,
@@ -28,17 +28,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from curvestudio.discovery import AutoFitResult, RankedFit, RowCurve
-from curvestudio.tools import CrossValidation
-from curvestudio.workflow import FitBundle, FitSpec, ImportOutcome
 from curvestudio_desktop import APP_NAME, NO_NETWORK_NOTE
-from curvestudio_desktop.controllers import analysis_jobs, exports
 from curvestudio_desktop.controllers.analysis import (
     MODE_AUTOFIT,
     MODE_STATS,
     AnalysisController,
 )
-from curvestudio_desktop.controllers.analysis_jobs import AutoFitLive
 from curvestudio_desktop.controllers.project import ProjectController
 from curvestudio_desktop.controllers.selection import SelectionController
 from curvestudio_desktop.jobs import JobHandle, JobRunner
@@ -60,12 +55,33 @@ from curvestudio_desktop.views.fit_tools_view import MORE_TOOLS_TITLE
 from curvestudio_desktop.views.icons import app_icon, icon
 from curvestudio_desktop.views.import_dialog import ClipboardImportDialog, ImportDialog
 from curvestudio_desktop.views.plot_view import OverlayCurve, PlotView
+
+if TYPE_CHECKING:
+    from curvestudio.discovery import AutoFitResult, RankedFit, RowCurve
+    from curvestudio.tools import CrossValidation
+    from curvestudio.workflow import FitBundle, FitSpec, ImportOutcome
+    from curvestudio_desktop.controllers.analysis_jobs import AutoFitLive
 from curvestudio_desktop.views.preferences_dialog import PreferencesDialog
 from curvestudio_desktop.views.project_tree import ProjectDock, ProjectTree
 
 if TYPE_CHECKING:
     from curvestudio_desktop.views.help_dialog import HelpDialog
     from curvestudio_desktop.windows import WindowRegistry
+
+
+def _analysis_jobs() -> Any:
+    """The job bodies, imported on first use (they pull the fitting stack)."""
+    from curvestudio_desktop.controllers import analysis_jobs
+
+    return analysis_jobs
+
+
+def _exports() -> Any:
+    """The export bodies, imported on first use (they pull the reporting stack)."""
+    from curvestudio_desktop.controllers import exports
+
+    return exports
+
 
 MINIMUM_SIZE = (980, 640)
 DEFAULT_WINDOW_SIZE = (1280, 820)
@@ -94,6 +110,24 @@ _DOCK_EXTENT: dict[str, tuple[Qt.Orientation, int]] = {
 }
 
 
+class _LibraryRelay(QObject):
+    """Marshals the model library's load completion to the GUI thread.
+
+    The loader calls ``loaded.emit`` on its own thread; the connection to a slot of this
+    QObject (which lives on the GUI thread) is queued, so the window updates on the GUI
+    thread and never from under it.
+    """
+
+    loaded = Signal()
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.loaded.connect(self._delivered, Qt.ConnectionType.QueuedConnection)
+
+    def _delivered(self) -> None:  # exists to make the connection queued
+        return None
+
+
 class MainWindow(QMainWindow):
     """The shell: left project tree, centre plot, right analysis, bottom data table."""
 
@@ -119,6 +153,8 @@ class MainWindow(QMainWindow):
         self.jobs = jobs if jobs is not None else JobRunner(self)
         self._settings = settings if settings is not None else QSettings()
         self._running_job: JobHandle | None = None
+        self._shown_once = False
+        self._library_relay: _LibraryRelay | None = None
         self._busy_cursor = False
         self._suppress_autostart = False
         self._discern_pending = False
@@ -167,7 +203,45 @@ class MainWindow(QMainWindow):
         self._apply_icons()
         self._wire()
         self._restore_layout()
+        from curvestudio_desktop import model_library, startup_timing
+
+        if model_library.is_ready():
+            self.refresh_all()
+        else:
+            # The window is up first; the model library (the whole fitting stack, the
+            # catalogue, the pools) loads behind it and this refresh runs when it lands.
+            self._library_relay = _LibraryRelay(self)
+            self._library_relay.loaded.connect(self._on_library_ready)
+            model_library.when_ready(self._library_relay.loaded.emit)
+            self.statusBar().showMessage(model_library.LOADING_MESSAGE)
+        startup_timing.mark("window_built")
+
+    def showEvent(self, event: QShowEvent) -> None:
+        """First paint: the moment the measurement scripts call the window visible."""
+        super().showEvent(event)
+        if not self._shown_once:
+            self._shown_once = True
+            from curvestudio_desktop import startup_timing
+
+            startup_timing.mark("window_shown")
+
+    def library_ready(self) -> bool:
+        """Whether the model library behind the window has finished loading."""
+        from curvestudio_desktop import model_library
+
+        return model_library.is_ready()
+
+    def _on_library_ready(self) -> None:
+        """The library landed: the pickers fill, the empty state renders, the banner goes."""
+        from curvestudio_desktop import model_library, startup_timing
+
+        bar = self.statusBar()
+        if bar.currentMessage() == model_library.LOADING_MESSAGE:
+            bar.showMessage(model_library.READY, 5000)
+        self.analysis_panel.manual_view.fill_models()
+        self.analysis_panel.stats_view.fill_tools()
         self.refresh_all()
+        startup_timing.mark("model_list")
 
     # -- convenient accessors (docks own the widgets) -----------------------------------------
 
@@ -941,7 +1015,7 @@ class MainWindow(QMainWindow):
 
         self._run_job(
             "Cross-validating",
-            analysis_jobs.cross_validate_job,
+            _analysis_jobs().cross_validate_job,
             bundle,
             spec,
             folds,
@@ -1484,7 +1558,7 @@ class MainWindow(QMainWindow):
         self._run_job(
             f"Exporting {target.name}",
             partial(
-                exports.export_fit,
+                _exports().export_fit,
                 target,
                 bundle,
                 byline=byline,
@@ -1509,7 +1583,7 @@ class MainWindow(QMainWindow):
             target = target.with_suffix(".csv")
         self._run_job(
             f"Exporting {target.name}",
-            exports.export_ranking_csv,
+            _exports().export_ranking_csv,
             target,
             result,
             self.analysis.rank_by,
@@ -1533,7 +1607,7 @@ class MainWindow(QMainWindow):
         byline = report_identity(self._settings).byline()
         self._run_job(
             f"Exporting {target.name}",
-            partial(exports.export_publication_plot, target, bundle, byline=byline),
+            partial(_exports().export_publication_plot, target, bundle, byline=byline),
             on_result=lambda _done: self.statusBar().showMessage(f"Exported {target.name}"),
             on_error=lambda exc: self.controller.messenger.show_error("Export failed", str(exc)),
         )

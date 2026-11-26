@@ -11,6 +11,7 @@ row gutter); any error-level issue disables OK, warnings do not.
 """
 
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import (
@@ -30,10 +31,20 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from curvestudio.data import DataError, Dataset, validate
-from curvestudio.workflow import ImportIssue, ImportOutcome, import_dataset
 from curvestudio_desktop.jobs import JobHandle, JobRunner
+
+if TYPE_CHECKING:
+    from curvestudio.data import Dataset
+    from curvestudio.workflow import ImportIssue, ImportOutcome
 from curvestudio_desktop.views.spreadsheet import SpreadsheetGrid
+
+
+def _import_dataset() -> Any:
+    """The workflow's importer, on first use (it pulls the parsing stack)."""
+    from curvestudio.workflow import import_dataset
+
+    return import_dataset
+
 
 PREVIEW_ROWS = 50
 _EDIT_DEBOUNCE_MS = 350
@@ -51,6 +62,9 @@ def remap_outcome(
     of exceptions, ``xy`` None while any error stands — using the public data API,
     so switching columns costs one in-memory pass, never a re-parse.
     """
+    from curvestudio.data import DataError, validate
+    from curvestudio.workflow import ImportIssue, ImportOutcome
+
     columns = tuple(str(name) for name in dataset.table().columns)
     n_rows = len(dataset.table())
     issues: list[ImportIssue] = []
@@ -174,7 +188,7 @@ class _ImportForm(QDialog):
             self._set_failure(str(exc))
 
         self._parse_job = self._jobs.submit(
-            import_dataset,
+            _import_dataset(),
             source,
             filename,
             on_result=parsed,

@@ -11,6 +11,7 @@ keeps its partial ranking behind a clear notice.
 
 import time
 from collections.abc import Sequence
+from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QRect, Qt, QTimer, Signal
 from PySide6.QtGui import QPaintEvent, QPalette
@@ -35,21 +36,25 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from curvestudio.discovery import AutoFitConfig, AutoFitResult, RankBy, RankedFit, rank
 from curvestudio_desktop.controllers.analysis import AnalysisController
-from curvestudio_desktop.controllers.analysis_jobs import AutoFitLive
 from curvestudio_desktop.views.collapsible import CollapsibleSection
 from curvestudio_desktop.views.ranking_table import RankingTableView
 
-RANK_LABELS: tuple[tuple[RankBy, str], ...] = (
-    (RankBy.BEST_OVERALL, "Best overall (recommended)"),
-    (RankBy.R2, "R²"),
-    (RankBy.ADJ_R2, "adjusted R²"),
-    (RankBy.RMSE, "RMSE"),
-    (RankBy.AICC, "AICc"),
-    (RankBy.BIC, "BIC"),
-    (RankBy.CV_RMSE, "CV-RMSE"),
+if TYPE_CHECKING:
+    from curvestudio.discovery import AutoFitConfig, AutoFitResult, RankedFit
+    from curvestudio_desktop.controllers.analysis_jobs import AutoFitLive
+
+RANK_LABELS: tuple[tuple[str, str], ...] = (
+    ("best_overall", "Best overall (recommended)"),
+    ("r2", "R²"),
+    ("adj_r2", "adjusted R²"),
+    ("rmse", "RMSE"),
+    ("aicc", "AICc"),
+    ("bic", "BIC"),
+    ("cv_rmse", "CV-RMSE"),
 )
+"""The criteria as their stored strings (``RankBy`` values), so the combo builds with no
+import; a window-first test pins them to the enum's members."""
 _MAX_SEED = 2**31 - 1
 #: Smallest usable height of the disclosure scroll. The region can always shrink this far
 #: and scroll, so its content never raises the page's minimum past the dock's height.
@@ -200,11 +205,13 @@ class AutoFitView(QWidget):
             QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
         )
         self.rank_combo.setMinimumContentsLength(10)
-        for rank_by, label in RANK_LABELS:
-            self.rank_combo.addItem(label, rank_by.value)
+        for rank_value, label in RANK_LABELS:
+            self.rank_combo.addItem(label, rank_value)
         self.rank_combo.setCurrentIndex(
             next(
-                i for i, (rank, _label) in enumerate(RANK_LABELS) if rank is self._analysis.rank_by
+                i
+                for i, (value, _label) in enumerate(RANK_LABELS)
+                if value == self._analysis.rank_by_value
             )
         )
         self.rank_combo.currentIndexChanged.connect(self._rank_combo_changed)
@@ -400,11 +407,14 @@ class AutoFitView(QWidget):
             self._analysis.run_autofit(dataset_id)
 
     def _rank_combo_changed(self, index: int) -> None:
+        from curvestudio.discovery import RankBy
+
         self._analysis.set_rank_by(RankBy(str(self.rank_combo.itemData(index))))
 
     def _on_rank_changed(self, rank_by: object) -> None:
-        if isinstance(rank_by, RankBy):
-            index = next(i for i, (rank, _label) in enumerate(RANK_LABELS) if rank is rank_by)
+        value = getattr(rank_by, "value", rank_by)
+        index = next((i for i, (known, _label) in enumerate(RANK_LABELS) if known == value), None)
+        if index is not None:
             self.rank_combo.setCurrentIndex(index)
         self.refresh_order()
 
@@ -520,20 +530,22 @@ class AutoFitView(QWidget):
 
     def refresh_order(self) -> None:
         """Re-render the rows under the active ordering (no refit)."""
-        rank_by = self._analysis.rank_by
-        label = next((text for rank, text in RANK_LABELS if rank is rank_by), rank_by.value)
+        rank_value = self._analysis.rank_by_value  # the enum would import the engine
+        label = next((text for value, text in RANK_LABELS if value == rank_value), rank_value)
         # the combo keeps the long label; the tooltip spells out the recommendation
         self.rank_combo.setToolTip(
             f"Order by {label}"
-            + (" — the engine's recommended default" if rank_by is RankBy.BEST_OVERALL else "")
+            + (" — the engine's recommended default" if rank_value == RANK_LABELS[0][0] else "")
         )
         if self._running:
             # the live ranking is the truth while a run is in progress; a RankBy
             # change re-sorts those rows, never the previous result's
             if self._live_rows:
-                self.table.set_rows(rank(self._live_rows, rank_by))
+                from curvestudio.discovery import rank
+
+                self.table.set_rows(rank(self._live_rows, self._analysis.rank_by))
         elif self._result is not None:
-            self._render_rows(self._result.ranked_by(rank_by))
+            self._render_rows(self._result.ranked_by(self._analysis.rank_by))
         self._refresh_overfit_banner()
 
     def _render_rows(self, rows: Sequence[RankedFit]) -> None:

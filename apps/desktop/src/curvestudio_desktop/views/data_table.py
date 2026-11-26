@@ -8,8 +8,8 @@ release; this release shows the table read-only.
 """
 
 import math
+from typing import TYPE_CHECKING
 
-import numpy as np
 from PySide6.QtCore import (
     QAbstractTableModel,
     QModelIndex,
@@ -20,9 +20,11 @@ from PySide6.QtCore import (
 from PySide6.QtGui import QBrush, QColor
 from PySide6.QtWidgets import QDockWidget, QHeaderView, QTableView, QVBoxLayout, QWidget
 
-from curvestudio.data import Dataset
-from curvestudio.workflow import ImportIssue
 from curvestudio_desktop.theme import mono_font
+
+if TYPE_CHECKING:
+    from curvestudio.data import Dataset
+    from curvestudio.workflow import ImportIssue
 
 _INCLUDED = "Included"
 _WEIGHT_HEADER = "Weight"
@@ -69,6 +71,8 @@ class DatasetTableModel(QAbstractTableModel):
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent)
+        import numpy as np
+
         self._frame = dataset.table()
         self._active = np.asarray(dataset.active_mask())
         self._x_column = x_column

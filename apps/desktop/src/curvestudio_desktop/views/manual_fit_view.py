@@ -15,6 +15,7 @@ desktop may import) does not expose them.
 
 import re
 from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
@@ -37,17 +38,17 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from curvestudio.data import XY
-from curvestudio.workflow import (
-    CustomRef,
-    FitSpec,
-    ModelInfo,
-    PolynomialRef,
-    RegisteredRef,
-    WorkflowError,
-    list_models,
-)
 from curvestudio_desktop.controllers.analysis import AnalysisController
+
+if TYPE_CHECKING:
+    from curvestudio.data import XY
+    from curvestudio.workflow import (
+        CustomRef,
+        FitSpec,
+        ModelInfo,
+        PolynomialRef,
+        RegisteredRef,
+    )
 from curvestudio_desktop.theme import mono_font
 from curvestudio_desktop.views.searchable_combo import SearchableComboBox
 
@@ -61,7 +62,7 @@ still usable, and the Analysis dock must be able to give its height to the plot.
 _MAX_SEED = 2**31 - 1
 _ID_IN_TEXT = re.compile(r"^.*?\(([^()]+)\)")
 
-XyProvider = Callable[[], XY | None]
+XyProvider = Callable[[], "XY | None"]
 
 
 class ManualFitView(QWidget):
@@ -122,7 +123,10 @@ class ManualFitView(QWidget):
         analysis.fit_started.connect(lambda _dataset_id: self.set_fitting(True))
         analysis.fit_finished.connect(lambda *_args: self.set_fitting(False))
         analysis.fit_failed.connect(lambda _message: self.set_fitting(False))
-        self._fill_models()
+        from curvestudio_desktop import model_library
+
+        if model_library.is_ready():
+            self._fill_models()
         self._on_model_changed()
 
     # -- construction ------------------------------------------------------------------------
@@ -262,6 +266,8 @@ class ManualFitView(QWidget):
         """Fill the picker. Every item carries its model **id** as data, never a position:
         the category separators occupy item indices, so index arithmetic against the
         catalogue list is wrong by the number of separators above the row."""
+        from curvestudio.workflow import list_models
+
         combo = self.model_combo
         combo.blockSignals(True)
         combo.clear()
@@ -312,6 +318,15 @@ class ManualFitView(QWidget):
         if model_id is None:
             return None
         return next((info for info in self._models if info.id == model_id), None)
+
+    def model_count(self) -> int:
+        """How many catalogue models the picker holds (0 while the library loads)."""
+        return len(self._models)
+
+    def fill_models(self) -> None:
+        """(Re)fill the picker from the catalogue — the window calls this once the model
+        library has loaded, and again never; before that the picker waits empty."""
+        self._fill_models()
 
     def _is_custom(self) -> bool:
         return self.model_combo.selected_id() is None
@@ -386,6 +401,8 @@ class ManualFitView(QWidget):
 
     def current_spec(self) -> tuple[FitSpec | None, str]:
         """The specification the form describes, or ``(None, why it cannot be built)``."""
+        from curvestudio.workflow import CustomRef, FitSpec, PolynomialRef, RegisteredRef
+
         model: CustomRef | PolynomialRef | RegisteredRef
         if self._is_custom():
             equation = self.equation_edit.text().strip()
@@ -475,6 +492,8 @@ class ManualFitView(QWidget):
         )
 
     def _on_validation(self, token: int, error: object) -> None:
+        from curvestudio.workflow import WorkflowError
+
         if token != self._validation_token:
             return  # a newer draft was submitted meanwhile
         if isinstance(error, WorkflowError):

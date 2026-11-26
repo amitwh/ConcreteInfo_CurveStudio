@@ -1,14 +1,26 @@
-"""Runs upload parsing in a short-lived process, with concurrency limits and a time budget."""
+"""Runs upload parsing in a short-lived process, with concurrency limits and a time budget.
+
+The child is forked on Linux from a forkserver that this process started with the parsing
+stack already imported (:func:`start_parser_parent`), so an upload pays no interpreter start
+and no NumPy/pandas import — while keeping exactly the isolation it always had: one fresh
+process per upload, capped in time, memory and concurrency, and nothing a parse does can
+reach the next (the server never runs parse code; it only imports). The forkserver — rather
+than a plain ``fork`` of this process — because the API process is multi-threaded (the event
+loop, the job scheduler, the background workers) and the interpreter deprecates forking
+those: the server is single-threaded by construction. Elsewhere (Windows; macOS) the child
+spawns exactly as it always did.
+"""
 
 import io
 import json
 import struct
+import sys
 import threading
 import time
 import uuid
 from dataclasses import dataclass
 from multiprocessing import get_context
-from typing import Any
+from typing import Any, Literal, cast
 
 from curvestudio_api.errors import ApiError
 from curvestudio_api.import_worker import ImportWorker, import_process_main, unpack_payloads
@@ -24,6 +36,50 @@ STARTUP_LIMIT_S = 60.0
 REAP_TIMEOUT_S = 5.0
 _EOCD = b"PK\x05\x06"
 _META_LIMIT = 8 * 1024 * 1024
+
+PARSER_START_METHOD: Literal["forkserver", "spawn"] = (
+    "forkserver" if sys.platform.startswith("linux") else "spawn"
+)
+"""How a parser child is started. ``forkserver`` children fork from a single-threaded server
+that has already imported the parsing stack (see :func:`start_parser_parent`); ``spawn``
+everywhere else."""
+
+PARSER_PRELOAD = ("curvestudio_api.import_worker",)
+"""What the forkserver imports before it ever forks a parser: ``import_worker`` pulls in the
+whole parsing stack (``curvestudio.workflow``, pandas, the data layer) transitively."""
+
+_parent_started = threading.Event()
+_parent_lock = threading.Lock()
+
+
+def _parent_is_ready() -> None:
+    """A no-op parser child: starting it proves the forkserver is up and preloaded."""
+    return None
+
+
+def start_parser_parent() -> None:
+    """Start the warm parser parent (the forkserver) if it is not running yet.
+
+    Idempotent and thread-safe. The server takes about a second to import the parsing
+    stack; the readiness child at the end pays that here, so the first upload after start-up
+    does not. Callers that cannot afford the second (the app's lifespan) run this on a
+    background thread — an upload that arrives first simply starts the server itself, with
+    the same preload already registered.
+    """
+    with _parent_lock:
+        if _parent_started.is_set():
+            return
+        if PARSER_START_METHOD == "forkserver":
+            from multiprocessing import forkserver
+
+            # set before anything can start the server: the preload is read at its start
+            forkserver.set_forkserver_preload(list(PARSER_PRELOAD))
+            forkserver.ensure_running()
+        _parent_started.set()
+    if PARSER_START_METHOD == "forkserver":
+        process = get_context(PARSER_START_METHOD).Process(target=_parent_is_ready, daemon=True)
+        process.start()
+        process.join(STARTUP_LIMIT_S)
 
 
 def _too_large(message: str) -> ApiError:
@@ -103,7 +159,7 @@ class ImportRunner:
         self._worker = worker
         self._active: set[uuid.UUID] = set()
         self._lock = threading.Lock()
-        self._context = get_context("spawn")
+        self._context = get_context(PARSER_START_METHOD)
         self.spawned = 0
         """Import processes started so far (for tests and diagnostics)."""
 
@@ -133,7 +189,9 @@ class ImportRunner:
 
     def _run(self, arguments: dict[str, Any]) -> ImportRun:
         receiver, sender = self._context.Pipe(duplex=False)
-        process = self._context.Process(
+        # the concrete contexts' stubs carry Process; the BaseContext union mypy sees
+        # does not, and both members build it identically
+        process = cast(Any, self._context).Process(
             target=self._worker,
             args=(sender, self._memory_mb, arguments),
             name="curvestudio-import",

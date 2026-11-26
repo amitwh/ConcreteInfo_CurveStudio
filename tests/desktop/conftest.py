@@ -21,8 +21,21 @@ pytest.importorskip("PySide6", reason="PySide6 is not installed; desktop tests s
 
 from PySide6.QtCore import QSettings
 
+from curvestudio_desktop import model_library
 from curvestudio_desktop.controllers.project import ProjectController
 from curvestudio_desktop.controllers.providers import UnsavedAnswer
+
+
+@pytest.fixture(autouse=True)
+def _model_library_loaded() -> None:
+    """The library behind the window, loaded before any test runs.
+
+    The app loads it in the background after the window shows; the tests assert on fully
+    populated windows, so they load it up front instead (the fitting stack is imported
+    around them anyway). The window-first behaviour has its own tests.
+    """
+    model_library.load_now()
+
 
 # Shared CSV/text snippets live in desktop_data.py (a plain module: test dirs have
 # no packages), imported by whichever test needs them.

@@ -1,6 +1,7 @@
 """The FastAPI application factory."""
 
 import logging
+import threading
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -26,7 +27,7 @@ from curvestudio_api.fit_tools_worker import (
 )
 from curvestudio_api.housekeeping import Housekeeper
 from curvestudio_api.import_worker import ImportWorker, import_process_main
-from curvestudio_api.importer import ImportRunner
+from curvestudio_api.importer import ImportRunner, start_parser_parent
 from curvestudio_api.jobs import JobManager
 from curvestudio_api.logging_setup import LOGGER_NAME, configure_logging, get_logger
 from curvestudio_api.middleware import BodyLimitMiddleware, RequestContextMiddleware
@@ -134,6 +135,11 @@ def create_app(
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         upgrade_to_head(engine)
         jobs.start()
+        # The parser forkserver imports the parsing stack for its children; that second of
+        # start-up runs beside the rest of start-up, off the first upload's path.
+        threading.Thread(
+            target=start_parser_parent, name="curvestudio-parser-parent", daemon=True
+        ).start()
         housekeeper.start()
         _log.info("started", extra={"fields": {"env": settings.env, "version": __version__}})
         try:

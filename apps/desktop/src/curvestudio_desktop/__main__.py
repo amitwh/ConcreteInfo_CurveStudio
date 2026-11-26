@@ -24,13 +24,25 @@ def main(argv: list[str] | None = None) -> int:
         help="headless smoke test: build the window, load the bundled example, "
         "run one fit and one Auto-fit through the process pool",
     )
+    parser.add_argument(
+        "--startup-timing",
+        action="store_true",
+        help="print one line per start-up phase (seconds from process start), then run",
+    )
     args = parser.parse_args(argv)
+    if args.startup_timing:
+        from curvestudio_desktop import startup_timing
+
+        startup_timing.enable()
+        startup_timing.mark("t0")
+    from curvestudio_desktop.app import run_app, run_selftest
+
+    if args.startup_timing:
+        from curvestudio_desktop import startup_timing
+
+        startup_timing.mark("app_module")
     if args.selftest:
-        from curvestudio_desktop.app import run_selftest
-
         return run_selftest()
-    from curvestudio_desktop.app import run_app
-
     return run_app()
 
 

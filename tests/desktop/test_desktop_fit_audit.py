@@ -29,7 +29,6 @@ from curvestudio.tools import (
 )
 from curvestudio.workflow import CustomRef, FitBundle, FitSpec, PolynomialRef, fit_dataset
 from curvestudio_desktop.theme import LIGHT_TOKENS
-from curvestudio_desktop.views import main_window as main_window_module
 from curvestudio_desktop.views.details_dialog import DetailsDialog
 from curvestudio_desktop.views.fit_audit_view import AuditBlockView, en_in_digits
 from curvestudio_desktop.views.fit_summary import apply_status_badge
@@ -742,7 +741,11 @@ def test_a_cross_validation_cancelled_from_the_status_bar_leaves_the_tab_as_it_w
         release.wait(timeout=10)
         return cross_validate(bundle, spec, folds=folds)
 
-    monkeypatch.setattr(main_window_module.analysis_jobs, "cross_validate_job", slow)
+    # the window resolves the job module at submit time, so patching it where it lives
+    # still steers what the status-bar cancel test runs
+    from curvestudio_desktop.controllers import analysis_jobs
+
+    monkeypatch.setattr(analysis_jobs, "cross_validate_job", slow)
     before = view.blocks()
     view.cross_validate_button.click()
     qtbot.waitUntil(started.is_set, timeout=10000)

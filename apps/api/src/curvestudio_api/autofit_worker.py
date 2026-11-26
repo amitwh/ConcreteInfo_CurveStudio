@@ -1,14 +1,16 @@
 """Auto-fit code that runs inside a job process (top-level and picklable: ``spawn`` start).
 
-* :func:`run_autofit_job` runs the whole search with the engine's own worker pool, reports a
-  progress snapshot at most every ``PROGRESS_INTERVAL_S`` seconds, and stops the search at the
-  run's time budget (keeping what was fitted so far, flagged partial).
+* :func:`run_autofit_job` runs the whole search on this job process's ONE warm pool (see
+  :mod:`curvestudio_api.autofit_pool`), reports a progress snapshot at most every
+  ``PROGRESS_INTERVAL_S`` seconds, and stops the search at the run's time budget (keeping
+  what was fitted so far, flagged partial).
 * :func:`run_open_row_job` refits one candidate of a finished run into a full ``FitBundle``.
 """
 
 import json
 import threading
 import time
+import warnings
 from typing import Any
 
 from curvestudio.discovery import (
@@ -23,6 +25,7 @@ from curvestudio.discovery import (
 from curvestudio.discovery.engine import SMALL_RUN_JOBS
 from curvestudio.workflow import WorkflowError, bundle_for_candidate
 from curvestudio_api.autofit_plan import plan_counts
+from curvestudio_api.autofit_pool import job_autofit_pool
 from curvestudio_api.storage import decode_payload
 from curvestudio_api.worker import ProgressReporter
 
@@ -111,8 +114,25 @@ def run_autofit_job(
     budget.start()
     progress = _Progress(report, plan.runnable, plan.skipped, config)
     progress.start()
+    # This process's one warm pool, or nothing for a small run the engine fits in-process.
+    pool = (
+        None
+        if (config.workers is None or config.workers <= 1)
+        else job_autofit_pool(config.workers)
+    )
     try:
-        result = autofit(xy, config, cancel=token, on_outcome=progress.add)
+        with warnings.catch_warnings():
+            # The pool's workers fork from this child, which the interpreter flags because
+            # daemon threads exist in it (the parent watcher and the budget timer). Neither
+            # holds a lock a forked worker could need: the whole fitting stack was imported
+            # before the fork — that is the point of the warm worker — and the workers run
+            # only already-imported candidate code.
+            warnings.filterwarnings(
+                "ignore",
+                message=".*use of fork\\(\\) may lead to deadlocks in the child.*",
+                category=DeprecationWarning,
+            )
+            result = autofit(xy, config, cancel=token, on_outcome=progress.add, pool=pool)
     finally:
         budget.cancel()
     return {

@@ -45,7 +45,10 @@ paths. The OpenAPI document is `apps/api/openapi.json`; regenerate it with
   the stack, so a job pays no interpreter start-up while its address space stays fresh (the
   worker never runs job code) — and every upload is parsed in its own short-lived, self-capped
   process (time, memory and concurrency limits), so one user's cancel, timeout, crash or heavy
-  file cannot disturb another's work. A worker is recycled after
+  file cannot disturb another's work. On Linux that parser process is forked from a forkserver
+  the API started with the parsing stack already imported, so an upload pays no interpreter or
+  import start-up either; on Windows (and macOS) it spawns a fresh interpreter per upload as it
+  always did — same limits, same isolation, only slower to start. A worker is recycled after
   `CURVESTUDIO_JOB_WORKER_MAX_JOBS` jobs or above `CURVESTUDIO_JOB_WORKER_MEMORY_MB` of its
   own resident size. Jobs are scheduled round-robin across users.
 * Quotas (datasets, dataset bytes, stored fits) come from the `self-hosted` row of `plans` and can
@@ -185,9 +188,13 @@ request thread pool, never on the event loop; the fitting happens in the job.
   `CURVESTUDIO_AUTOFIT_TIMEOUT_S` (default 180 s, plus `CURVESTUDIO_JOB_GRACE_S`) is the backstop:
   a run that is still alive then is killed and fails with `TIMEOUT`, keeping no result. The budget
   must be below the timeout. One candidate may take at most 20 s (or the budget, if shorter).
-* **Cores.** Each run starts its own pool of at most `CURVESTUDIO_AUTOFIT_WORKERS` (default 3)
-  worker processes, so one tenant cannot take every core; a run of four candidates or fewer stays
-  in its job process. The global `CURVESTUDIO_JOB_WORKERS` cap on concurrent jobs still applies.
+* **Cores.** A run uses at most `CURVESTUDIO_AUTOFIT_WORKERS` (default 3) worker processes, so
+  one tenant cannot take every core; a run of four candidates or fewer stays in its job process.
+  The workers no longer start per run: each job process keeps one warm pool (Linux starts its
+  workers with `fork` out of the job process's already-imported stack, so they are up in
+  milliseconds; elsewhere they spawn as before) and recycles it after 20 runs or 1.5 GB of
+  resident workers, and a worker that dies is replaced by the engine without failing the run.
+  The global `CURVESTUDIO_JOB_WORKERS` cap on concurrent jobs still applies.
 * **Processes.** An Auto-fit job is not a daemon process (it has children) and leads its own
   process group. Cancel, timeout and shutdown kill the group with the pool; a job process whose API
   process is killed outright notices and takes its pool with it. (Windows has no process groups: there cancel and timeout kill the job process only, and its pool

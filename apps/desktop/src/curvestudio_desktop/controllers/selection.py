@@ -7,14 +7,15 @@ extension point for app-private JSON), so a weighted dataset reopened from a
 ``.cstudio`` file keeps — and fits with — its weights.
 """
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import ValidationError
 from PySide6.QtCore import QObject, Signal
 
-from curvestudio.data import XY, DataError, Dataset
-from curvestudio.project import Project
-from curvestudio.workflow import ImportIssue
+if TYPE_CHECKING:
+    from curvestudio.data import XY, Dataset
+    from curvestudio.project import Project
+    from curvestudio.workflow import ImportIssue
 
 DESKTOP_STATE_KEY = "desktop"
 """Where desktop UI state lives inside ``Project.plot_settings``."""
@@ -131,6 +132,8 @@ class SelectionController(QObject):
         if columns is None:
             self.last_error = "the dataset has no two numeric columns to plot"
             return None
+        from curvestudio.data import DataError
+
         x, y, weight = columns
         try:
             result = dataset.xy(x, y, weight)
@@ -217,6 +220,8 @@ class SelectionController(QObject):
         return (x, y, weight)
 
     def _valid_issues(self, stored: object) -> tuple[ImportIssue, ...] | None:
+        from curvestudio.workflow import ImportIssue
+
         if not isinstance(stored, list):
             return None
         parsed: list[ImportIssue] = []

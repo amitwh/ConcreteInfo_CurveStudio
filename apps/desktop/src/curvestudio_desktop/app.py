@@ -250,10 +250,12 @@ def build_main_window(
 
 def run_app(argv: list[str] | None = None) -> int:
     """Start the application: theme, crash guard, main window, event loop."""
+    from curvestudio_desktop import model_library, startup_timing
     from curvestudio_desktop.theme import apply_theme
     from curvestudio_desktop.windows import WindowRegistry
 
     app = create_application(argv)
+    startup_timing.mark("qapp")
     apply_theme(app)
     install_crash_guard()
     store = QSettings()
@@ -267,7 +269,25 @@ def run_app(argv: list[str] | None = None) -> int:
         settings=store,
     )
     registry.spawn()
+    # The window is up: load the model library behind it (it refreshes the window when
+    # it lands) and pre-start the Auto-fit pool, so the first run pays no start-up.
+    model_library.begin_loading()
+    threading.Thread(target=_warm_pools, name="curvestudio-pool-prewarm", daemon=True).start()
     return int(app.exec())
+
+
+def _warm_pools() -> None:
+    """The background half of start-up: pre-start the Auto-fit pool's workers.
+
+    It waits for the model library first: both import the same stack, and letting them
+    race doubles the disk and CPU cost of each (measured — the library load alone went
+    from ~1.5 s to ~4 s with eleven workers spawning beside it).
+    """
+    from curvestudio_desktop import model_library, startup_timing
+
+    model_library.wait_until_ready()
+    model_library.prewarm_autofit_pool()
+    startup_timing.mark("pool_warm")
 
 
 def _selftest_autofit(xy: XY) -> tuple[bool, str]:
@@ -333,6 +353,10 @@ def _run_selftest(argv: list[str] | None = None) -> int:
     """
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")  # selftest is headless by design
     from importlib import resources
+
+    from curvestudio_desktop import model_library
+
+    model_library.load_now()  # the smoke test asserts on a fully populated window
 
     from curvestudio.discovery import AutoFitConfig
     from curvestudio.workflow import FitSpec, fit_dataset

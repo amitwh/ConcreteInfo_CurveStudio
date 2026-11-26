@@ -15,6 +15,7 @@ the ``RankBy`` selector's business, so click-sorting cannot fight the ranked ord
 """
 
 from collections.abc import Sequence
+from typing import TYPE_CHECKING
 
 from PySide6.QtCore import (
     QAbstractTableModel,
@@ -28,9 +29,9 @@ from PySide6.QtCore import (
 from PySide6.QtGui import QColor, QGuiApplication, QKeyEvent
 from PySide6.QtWidgets import QAbstractItemView, QHeaderView, QMenu, QTableView, QWidget
 
-from curvestudio.discovery import RankedFit
-from curvestudio.workflow import format_equation
-from curvestudio_plotting.palette import model_color
+if TYPE_CHECKING:
+    from curvestudio.discovery import RankedFit
+
 
 _NA = "n/a"
 COLUMNS = (
@@ -162,6 +163,8 @@ class RankingTableModel(QAbstractTableModel):
             # The row's own colour swatch: the same colour its curve is drawn in, matched
             # by the 1-based display position (row index), not the tied rank value, so
             # tied rows are still distinguishable. A decoration adds no column.
+            from curvestudio_plotting.palette import model_color
+
             return QColor(model_color(index.row() + 1))
         if role == _ROLE.TextAlignmentRole:
             if column in _CENTERED:
@@ -284,6 +287,8 @@ class RankingTableView(QTableView):
 
     def copy_equation(self) -> bool:
         """Copy the current row's fitted equation as shown (``^`` powers); False if none."""
+        from curvestudio.workflow import format_equation
+
         row = self.selected_row()
         text = "" if row is None else format_equation(row.equation_fitted)
         if not text:

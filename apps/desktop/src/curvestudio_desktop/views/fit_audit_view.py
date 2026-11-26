@@ -25,7 +25,7 @@ interest in any job still running for the fit that was.
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Literal, Protocol
+from typing import TYPE_CHECKING, Literal, Protocol
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
@@ -39,19 +39,18 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from curvestudio.discovery import AutoFitResult
-from curvestudio.tools import (
-    AuditCheck,
-    CrossValidation,
-    ExcludedRow,
-    FitAudit,
-    SimplerModel,
-    ToolError,
-    Verdict,
-    audit_fit,
-)
-from curvestudio.workflow import FitBundle, FitSpec
 from curvestudio_desktop.views.fit_summary import apply_status_badge, apply_verdict_badge
+
+if TYPE_CHECKING:
+    from curvestudio.discovery import AutoFitResult
+    from curvestudio.tools import (
+        AuditCheck,
+        CrossValidation,
+        ExcludedRow,
+        FitAudit,
+        SimplerModel,
+    )
+    from curvestudio.workflow import FitBundle, FitSpec
 
 EXCLUDED_LISTED_MAX = 8
 """How many excluded rows the line names; the rest are counted."""
@@ -204,6 +203,8 @@ class _Block:
 
 
 def _build_block(check: AuditCheck) -> _Block:
+    from curvestudio.tools import Verdict
+
     """One check as a block, in the audit's own words."""
     widget = QWidget()
     layout = QVBoxLayout(widget)
@@ -340,6 +341,8 @@ class FitAuditView(QWidget):
 
     def _audit_and_lay_out(self) -> None:
         """Audit the shown fit with whatever cross-validation it has, then lay the audit out."""
+        from curvestudio.tools import ToolError, audit_fit
+
         bundle = self._bundle
         if bundle is None:
             return
@@ -441,6 +444,8 @@ class FitAuditView(QWidget):
         if audit is None:
             return False
         check = next((check for check in audit.checks if check.id == CROSS_VALIDATION), None)
+        from curvestudio.tools import Verdict
+
         return check is not None and check.verdict is not Verdict.NOT_APPLICABLE
 
     def _cross_validation_availability(self) -> tuple[bool, str]:
