@@ -1,6 +1,6 @@
 """CurveStudio API: a FastAPI backend over the ``curvestudio.workflow`` layer."""
 
-__version__ = "0.11.1"
+__version__ = "1.13.0"
 
 API_PREFIX = "/api/v1"
 """Where every API route lives. It is defined in this leaf module so that the application and

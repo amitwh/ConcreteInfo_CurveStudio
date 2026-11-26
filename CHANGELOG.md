@@ -4,6 +4,8 @@ All notable changes are listed here. Dates are IST. Format: [Keep a Changelog](h
 
 ## [Unreleased]
 
+## [1.13.0] - 2026-11-27
+
 ### Changed
 - **The desktop's model library loads inside its two-second target**: the built model
   catalogue (the descriptors every picker is filled from) is cached per user under a
@@ -15,6 +17,44 @@ All notable changes are listed here. Dates are IST. Format: [Keep a Changelog](h
   cache lives outside the repository in the per-user cache directory
   (`~/.cache/ConcreteInfo/CurveStudio` on Linux; `CURVESTUDIO_CATALOGUE_CACHE_DIR`
   overrides it), and the first run of a fresh install pays the build once, as before.
+- **The web chart stops repainting on Auto-fit progress**: the workspace memoises the
+  selected-curve bundle, so the poll ticks (every 300 ms–1.5 s during a run) no longer
+  re-feed `Plotly.react` with identical data; a real change — another ranking row, an
+  opened row, a manual fit — still replots. Dataset detail and fits-history requests
+  also start together instead of the fits list waiting behind the larger detail fetch.
+- **Workspace tab switches are instant**: the workspace's GET answers (dataset list,
+  model catalogue, dataset details, fits histories) are cached across the remount each
+  switch performs — metadata revalidates after 30 s in the background, details and fits
+  hold until a mutation (upload, delete, a finished fit or Auto-fit, fit delete) or a
+  session boundary invalidates them, and at most three datasets keep their (potentially
+  tens-of-MB) details cached.
+- **`GET /models` enumerates the catalogue once per process** instead of per request
+  (152 ms median, 2.3 s cold, on every workspace mount before).
+- **The desktop plot handles large datasets**: line curves downsample per item, the
+  scatter draws an unsorted-safe min/max envelope above 20 000 points (with an honest
+  "showing X of N points" readout, and log axes refused while decimated), and data/fit
+  updates reuse their plot items instead of rebuilding them — `set_data` on 100 000
+  points fell from ~442 ms to ~37 ms and a full repaint from ~16 ms to ~4 ms.
+- **The result tables measure and format once**: column widths are cached and
+  invalidated by the table's own content signals (splitter drags re-measure nothing),
+  and the data table caches its per-cell `%.10g` strings with a shared highlight brush.
+- **The Auto-fit pool prewarms three workers** instead of every core but one — a wide
+  idle pool was only a cost (~200 MB per worker, never expiring); a real run still
+  scales to full width as its jobs submit.
+- **The frozen bundle drops the server and test stacks** the desktop never imports
+  (sqlalchemy, psycopg, greenlet, hypothesis — PIL stays: matplotlib needs it), about
+  36 MB off the download and less for the frozen importer to scan.
+
+### Fixed
+- The lockfile stamps the 1.12.0 workspace versions it should have carried since the
+  last release, so plain `uv run` no longer re-locks on every invocation and the core
+  package-version test holds at base.
+- The core and API packages' hardcoded `__version__` strings had stayed at 0.11.1
+  through the 1.12.0 release; both now carry the release version.
+- A registry scan that finds no `curvestudio.models` entry points no longer latches the
+  plugins-done flag, so a model request made after the visible entry points change (or
+  after the catalogue cache defers registration) loads the plugins it needs instead of
+  failing with an unknown-model error.
 
 ## [1.12.0] - 2026-11-26
 
