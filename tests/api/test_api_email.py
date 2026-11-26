@@ -6,10 +6,10 @@ from datetime import timedelta
 from typing import Any
 
 import pytest
+from api_test_helpers import PASSWORD, new_email
 from fastapi.testclient import TestClient
 from sqlalchemy import select, update
 
-from conftest import PASSWORD, new_email
 from curvestudio_api import mailer
 from curvestudio_api.orm import EmailToken, User
 from curvestudio_api.settings import Settings

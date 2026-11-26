@@ -13,12 +13,12 @@ from typing import Any
 
 import pytest
 from alembic import command
+from api_test_helpers import make_settings
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, func, inspect, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from conftest import make_settings
 from curvestudio_api.app import JSON_BODY_LIMIT, create_app
 from curvestudio_api.db import make_session_factory
 from curvestudio_api.deps import ERROR_REPORTS_PER_HOUR, INSTALL_RECORDS_PER_HOUR

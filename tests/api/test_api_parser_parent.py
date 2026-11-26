@@ -10,9 +10,9 @@ from collections.abc import Callable
 from pathlib import Path
 
 import pytest
+from api_test_helpers import linear_csv, signup, upload
 from fastapi.testclient import TestClient
 
-from conftest import linear_csv, signup, upload
 from curvestudio_api.importer import PARSER_START_METHOD, start_parser_parent
 from curvestudio_api.settings import Settings
 

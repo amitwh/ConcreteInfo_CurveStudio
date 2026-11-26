@@ -8,9 +8,9 @@ from typing import Any
 
 import api_job_workers
 import pytest
+from api_test_helpers import linear_csv, signup, upload
 from fastapi.testclient import TestClient
 
-from conftest import linear_csv, signup, upload
 from curvestudio_api.jobs import FairQueue, Task
 
 API = "/api/v1"

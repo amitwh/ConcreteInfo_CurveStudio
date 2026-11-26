@@ -17,13 +17,13 @@ from typing import Any
 
 import jwt
 import pytest
+from api_test_helpers import make_settings, new_email, signup
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from conftest import make_settings, new_email, signup
 from curvestudio_api import licences
 from curvestudio_api.app import create_app
 from curvestudio_api.db import make_engine, make_session_factory

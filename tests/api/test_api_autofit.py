@@ -12,10 +12,10 @@ from typing import Any
 
 import pytest
 from alembic import command
+from api_test_helpers import linear_csv, make_settings, signup, upload
 from fastapi.testclient import TestClient
 from sqlalchemy import inspect, select
 
-from conftest import linear_csv, make_settings, signup, upload
 from curvestudio.discovery import (
     AutoFitConfig,
     AutoFitResult,

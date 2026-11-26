@@ -9,10 +9,10 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 import pytest
+from api_test_helpers import PASSWORD, new_email
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select, update
 
-from conftest import PASSWORD, new_email
 from curvestudio_api import oauth
 from curvestudio_api.orm import OAuthCode, User
 from curvestudio_api.settings import Settings

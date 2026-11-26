@@ -11,11 +11,11 @@ from typing import Any
 import api_job_workers
 import pytest
 from alembic import command
+from api_test_helpers import linear_csv, make_settings, signup, upload
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, insert, inspect, select
 from sqlalchemy.orm import Session
 
-from conftest import linear_csv, make_settings, signup, upload
 from curvestudio.discovery import AutoFitResult, subsample
 from curvestudio.discovery.engine import SUBSAMPLE_N
 from curvestudio.tools import (

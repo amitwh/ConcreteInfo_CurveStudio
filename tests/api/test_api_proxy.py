@@ -4,9 +4,9 @@ from collections.abc import Callable
 from typing import Any
 
 import pytest
+from api_test_helpers import PASSWORD, new_email
 from fastapi.testclient import TestClient
 
-from conftest import PASSWORD, new_email
 from curvestudio_api.proxy import client_address
 
 API = "/api/v1"

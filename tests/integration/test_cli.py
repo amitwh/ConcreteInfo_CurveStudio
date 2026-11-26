@@ -17,6 +17,8 @@ from openpyxl import Workbook
 
 from curvestudio.cli import main
 from curvestudio.fitting import FitResult, FitStatus
+from curvestudio.models.registry import _clear_registry
+from curvestudio.models.starter import register_starter_models
 
 REPO = Path(__file__).resolve().parents[2]
 DECAY = REPO / "examples" / "decay.csv"
@@ -89,8 +91,18 @@ def test_unknown_model_with_near_match_hint(capsys: pytest.CaptureFixture[str]) 
 def test_unknown_model_without_near_match_points_at_models(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    code = main(["fit", str(DECAY), "--x", "x", "--y", "y", "--model", "nope"])
-    captured = capsys.readouterr()
+    # the registry is process-wide: earlier suites (autofit pool, desktop) register plugin
+    # models whose ids near-match 'nope' ('gompertz'), which would turn this into a
+    # did-you-mean hint. Reset to the starter set, under which 'nope' genuinely has no
+    # near match, and restore it afterwards for the other CLI tests.
+    _clear_registry()
+    register_starter_models()
+    try:
+        code = main(["fit", str(DECAY), "--x", "x", "--y", "y", "--model", "nope"])
+        captured = capsys.readouterr()
+    finally:
+        _clear_registry()
+        register_starter_models()
     assert code == 2
     assert "curvestudio models" in captured.err
 

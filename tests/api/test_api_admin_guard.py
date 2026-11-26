@@ -7,10 +7,10 @@ from urllib.parse import parse_qs, urlparse
 
 import pytest
 from alembic import command
+from api_test_helpers import PASSWORD, make_settings, new_email
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, inspect, select, text
 
-from conftest import PASSWORD, make_settings, new_email
 from curvestudio_api import oauth
 from curvestudio_api.app import create_app
 from curvestudio_api.deps import AdminUser

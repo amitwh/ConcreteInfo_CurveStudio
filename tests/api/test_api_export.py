@@ -12,10 +12,10 @@ import uuid
 from typing import Any
 
 import numpy as np
+from api_test_helpers import linear_csv, signup, upload
 from fastapi.testclient import TestClient
 from openpyxl import load_workbook
 
-from conftest import linear_csv, signup, upload
 from curvestudio.discovery import AutoFitResult
 from curvestudio.tools import CrossValidation, audit_fit, methods_text
 from curvestudio.workflow import FitBundle, FitSpec

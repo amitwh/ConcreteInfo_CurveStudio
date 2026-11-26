@@ -11,12 +11,12 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
+from api_test_helpers import make_settings
 from fastapi.testclient import TestClient
 from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
-from conftest import make_settings
 from curvestudio_api import housekeeping
 from curvestudio_api.app import create_app
 from curvestudio_api.db import SessionFactory

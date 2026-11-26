@@ -18,9 +18,9 @@ from typing import Any
 
 import numpy as np
 import pytest
+from api_test_helpers import linear_csv, michaelis_csv, signup, upload
 from fastapi.testclient import TestClient
 
-from conftest import linear_csv, michaelis_csv, signup, upload
 from curvestudio.data import XY
 from curvestudio.discovery import AutoFitConfig, CancelToken, autofit
 from curvestudio.discovery.pool import AutoFitPool

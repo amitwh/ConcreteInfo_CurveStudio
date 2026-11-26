@@ -9,10 +9,10 @@ from typing import Any
 
 import api_job_workers
 import pytest
+from api_test_helpers import linear_csv, signup, upload
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from conftest import linear_csv, signup, upload
 from curvestudio_api.app import create_app
 from curvestudio_api.migrations import upgrade_to_head
 from curvestudio_api.orm import Dataset, Job, User

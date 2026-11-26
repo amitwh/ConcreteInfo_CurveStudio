@@ -6,11 +6,11 @@ from datetime import date, timedelta
 
 import jwt
 import pytest
+from api_test_helpers import PASSWORD, new_email, signup
 from fastapi.testclient import TestClient
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
-from conftest import PASSWORD, new_email, signup
 from curvestudio_api.orm import AuditLog, RefreshToken, User, UserDailyActivity
 from curvestudio_api.timeutil import IST, utcnow
 

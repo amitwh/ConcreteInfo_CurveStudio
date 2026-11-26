@@ -6,12 +6,12 @@ from collections.abc import Callable
 from datetime import datetime, timedelta
 
 import pytest
+from api_test_helpers import PASSWORD, new_email, signup
 from fastapi.testclient import TestClient
 from httpx import Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from conftest import PASSWORD, new_email, signup
 from curvestudio_api.orm import AuditLog, User
 from curvestudio_api.routers.auth import FAILED_LOGIN_ROWS_PER_DAY
 from curvestudio_api.security import verify_password

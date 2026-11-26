@@ -18,9 +18,9 @@ from multiprocessing.connection import Connection
 from typing import Any
 
 import api_job_workers
+from api_test_helpers import linear_csv, michaelis_csv, signup, upload
 from fastapi.testclient import TestClient
 
-from conftest import linear_csv, michaelis_csv, signup, upload
 from curvestudio_api.audit_worker import run_cross_validation_job
 from curvestudio_api.orm import Dataset, Fit, Job
 from curvestudio_api.worker import run_fit_job

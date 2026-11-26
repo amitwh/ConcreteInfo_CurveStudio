@@ -7,10 +7,10 @@ from collections.abc import Callable, Iterator
 
 import numpy as np
 import pytest
+from api_test_helpers import linear_csv, signup, upload
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from conftest import linear_csv, signup, upload
 from curvestudio.data import XY
 from curvestudio_api.orm import AuditLog, Dataset
 from curvestudio_api.routers.datasets import MAX_POINTS

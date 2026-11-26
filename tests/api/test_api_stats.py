@@ -7,10 +7,10 @@ from pathlib import Path
 
 import numpy as np
 from alembic import command
+from api_test_helpers import linear_csv, make_settings, signup, upload
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, func, inspect, select
 
-from conftest import linear_csv, make_settings, signup, upload
 from curvestudio.data import read_dataset
 from curvestudio.tools.stats import FAMILIES, build_request, catalogue, run_tool
 from curvestudio_api.app import create_app

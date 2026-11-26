@@ -5,10 +5,10 @@ account only clears ``user_id`` on its rows, so anything written into ``detail``
 import json
 from collections.abc import Callable
 
+from api_test_helpers import linear_csv, new_email, signup, upload
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from conftest import linear_csv, new_email, signup, upload
 from curvestudio_api.orm import AuditLog
 from curvestudio_api.settings import Settings
 

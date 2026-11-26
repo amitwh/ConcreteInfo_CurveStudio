@@ -13,11 +13,11 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from api_test_helpers import make_settings
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 from sqlalchemy.orm import InstrumentedAttribute, Session
 
-from conftest import make_settings
 from curvestudio_api import __version__
 from curvestudio_api.app import create_app
 from curvestudio_api.db import SessionFactory
