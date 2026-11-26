@@ -1,6 +1,7 @@
 """Liveness and readiness probes, the signed-in user's profile and the model catalogue."""
 
 from dataclasses import asdict
+from functools import lru_cache
 from typing import Annotated, Any, Literal, cast
 
 from fastapi import APIRouter, Query, Request, Response
@@ -347,13 +348,26 @@ def delete_me(body: DeleteMeIn, user: CurrentUser, ctx: Ctx, db: Db) -> Response
     return Response(status_code=204)
 
 
+@lru_cache(maxsize=1)
+def _catalogue() -> list[ModelInfo]:
+    """The whole model catalogue, enumerated once per process.
+
+    The catalogue comes from installed-package entry points; the registry loads its plugins
+    once and is runtime-immutable, and no entry carries request-scoped data, so every
+    ``/models`` call after the first is served from this cache. The returned list is shared
+    and must not be mutated — the route filters it into new lists. Cleared by the API
+    tests' ``starter_models`` fixture, which rebuilds the registry for every test.
+    """
+    return list_models()
+
+
 @router.get("/models", response_model=list[ModelInfo], tags=["models"])
 def models(
     category: Annotated[str | None, Query(max_length=100)] = None,
     q: Annotated[str | None, Query(max_length=100)] = None,
 ) -> list[ModelInfo]:
     """The model catalogue, optionally filtered by category and a search text."""
-    found = list_models()
+    found = _catalogue()
     if category:
         wanted = category.strip().lower()
         found = [m for m in found if m.category.lower() == wanted]

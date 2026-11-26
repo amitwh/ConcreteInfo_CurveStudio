@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 from curvestudio.models.registry import _clear_registry
 from curvestudio.models.starter import register_starter_models
 from curvestudio_api.app import create_app
+from curvestudio_api.routers.system import _catalogue
 from curvestudio_api.settings import Settings
 
 PASSWORD = "correct horse battery staple"
@@ -20,12 +21,19 @@ _counter = itertools.count(1)
 
 @pytest.fixture(autouse=True)
 def starter_models() -> Iterator[None]:
-    """Other tests clear the model registry; make sure the starter set is there."""
+    """Other tests clear the model registry; make sure the starter set is there.
+
+    The /models route serves the catalogue from a process cache, so every registry
+    rebuild here drops that cache too: a test never sees a catalogue enumerated from
+    the previous test's registry.
+    """
     _clear_registry()
     register_starter_models()
+    _catalogue.cache_clear()
     yield
     _clear_registry()
     register_starter_models()
+    _catalogue.cache_clear()
 
 
 def make_settings(directory: Path, **overrides: Any) -> Settings:

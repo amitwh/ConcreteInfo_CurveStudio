@@ -23,7 +23,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from starlette.types import Message
 
 from conftest import linear_csv, make_settings, new_email, signup, upload
-from curvestudio.workflow import list_models
+from curvestudio.workflow import ModelInfo, list_models
 from curvestudio_api.app import create_app
 from curvestudio_api.db import make_session_factory
 from curvestudio_api.errors import ApiError
@@ -32,6 +32,7 @@ from curvestudio_api.logging_setup import LOGGER_NAME, JsonFormatter
 from curvestudio_api.middleware import BodyLimitMiddleware
 from curvestudio_api.migrations import _config, upgrade_to_head
 from curvestudio_api.orm import AuditLog, Base, Plan
+from curvestudio_api.routers import system as system_router
 from curvestudio_api.settings import Settings, load_jwt_keys
 from curvestudio_api.timeutil import IST, to_ist_iso
 
@@ -496,6 +497,31 @@ def test_openapi_covers_the_documented_endpoints() -> None:
 
 
 # -- Model catalogue ---------------------------------------------------------------------------
+
+
+def test_models_is_served_from_the_process_cache(
+    shared_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A second /models answer is identical to the first and does not re-enumerate the
+    catalogue: the enumeration is process-global and runtime-immutable, so it runs once."""
+    calls = 0
+    real = system_router.list_models
+
+    def counted() -> list[ModelInfo]:
+        nonlocal calls
+        calls += 1
+        return real()
+
+    monkeypatch.setattr(system_router, "list_models", counted)
+    system_router._catalogue.cache_clear()
+    try:
+        first = shared_client.get(f"{API}/models")
+        second = shared_client.get(f"{API}/models")
+    finally:
+        system_router._catalogue.cache_clear()
+    assert first.status_code == second.status_code == 200
+    assert first.json() == second.json()
+    assert calls == 1
 
 
 @pytest.mark.real_plugins
