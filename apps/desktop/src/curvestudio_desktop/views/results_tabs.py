@@ -44,6 +44,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from curvestudio.messages import explain_error
 from curvestudio_desktop.jobs import JobRunner
 from curvestudio_desktop.theme import mono_font
 from curvestudio_desktop.views.fit_audit_view import CrossValidateCaller, FitAuditView
@@ -691,7 +692,7 @@ class ResultsTabs(QWidget):
         try:
             prediction = caller(bundle, spec, values, band)
         except WorkflowError as exc:
-            self._show_predict_error(f"{exc.code}: {exc}")
+            self._show_predict_error(explain_error(exc))
             return
         self._predict_error.hide()
         table = self._predict_table

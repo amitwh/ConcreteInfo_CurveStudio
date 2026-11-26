@@ -2405,6 +2405,63 @@ th[aria-sort="descending"] .th-sort__caret {
   white-space: nowrap;
 }
 
+/* The ranking table by viewport width (item 15). At 1280 px the table keeps its full
+   twelve columns and its designed min-width, scrolling the little that does not fit
+   inside the wrap with Actions pinned. Below 800 px (tested at 768) the wrap is barely
+   half that, so the columns a tablet cannot pay for go: the fitted equation (the full
+   results carry it) and the secondary criteria, leaving rank, model, R², RMSE, status
+   and actions. Below 480 px (tested at 360) R² and the status badge go too and the
+   rank column drops its "same curve" hint, so rank, model, RMSE and the row menu fit
+   the narrow wrap. `nth-child` counts hidden columns, so the numbers are the table's
+   full-time column order. */
+@media (max-width: 800px) {
+  .ranking-table {
+    min-width: 42rem;
+  }
+
+  .ranking-table th:nth-child(3),
+  .ranking-table td:nth-child(3),
+  .ranking-table th:nth-child(5),
+  .ranking-table td:nth-child(5),
+  .ranking-table th:nth-child(7),
+  .ranking-table td:nth-child(7),
+  .ranking-table th:nth-child(8),
+  .ranking-table td:nth-child(8),
+  .ranking-table th:nth-child(9),
+  .ranking-table td:nth-child(9),
+  .ranking-table th:nth-child(10),
+  .ranking-table td:nth-child(10) {
+    display: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .ranking-table {
+    min-width: 0;
+  }
+
+  .ranking-table th:nth-child(4),
+  .ranking-table td:nth-child(4),
+  .ranking-table th:nth-child(11),
+  .ranking-table td:nth-child(11) {
+    display: none;
+  }
+
+  .ranking-row__same {
+    display: none;
+  }
+
+  .ranking-table th:nth-child(2),
+  .ranking-table td:nth-child(2) {
+    min-width: 8rem;
+  }
+
+  .ranking-table th.ranking-row__actions,
+  .ranking-table td.ranking-row__actions {
+    min-width: 0;
+  }
+}
+
 /* The category chip next to a candidate's name. */
 .chip {
   display: inline-block;

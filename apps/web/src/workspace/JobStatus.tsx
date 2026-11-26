@@ -6,6 +6,7 @@
 
 import type { ReactElement } from "react";
 import type { JobState } from "../hooks/useJobPolling";
+import { explainCode } from "../messages";
 
 const PHASE_TEXT: Record<JobState["phase"], string> = {
   idle: "",
@@ -28,14 +29,18 @@ export function JobStatus({
   succeededText?: string;
 }): ReactElement | null {
   if (state.phase === "idle") return null;
+  // A failed job reads as its sentence, with the server's own message after it (item 16):
+  // the code itself never reaches the user.
   const text =
     state.phase === "polling"
       ? `${PHASE_TEXT.polling} (${state.status ?? "queued"})`
       : state.phase === "succeeded"
         ? (succeededText ?? PHASE_TEXT.succeeded)
-        : state.phase === "failed" || state.phase === "error"
-          ? `${PHASE_TEXT[state.phase]} ${state.message ?? ""}`.trim()
-          : PHASE_TEXT[state.phase];
+        : state.phase === "failed"
+          ? `${PHASE_TEXT.failed} ${explainCode(state.code, state.message, "the fit failed")}`.trim()
+          : state.phase === "error"
+            ? `${PHASE_TEXT.error} ${state.message ?? ""}`.trim()
+            : PHASE_TEXT[state.phase];
   return (
     <div className="job-status" role="status" aria-live="polite">
       <span

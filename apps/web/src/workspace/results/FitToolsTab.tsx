@@ -23,6 +23,7 @@ import {
 import { Empty, ErrorBox, Loading, apiErrorText } from "../../components/States";
 import { useJobPolling, type JobState } from "../../hooks/useJobPolling";
 import { fmtInt, fmtNumber } from "../../format";
+import { explainCode } from "../../messages";
 import { StatsResult } from "../stats/StatsResult";
 
 export interface FitToolsTabProps {
@@ -72,17 +73,14 @@ function detailCode(error: unknown): string | null {
   return typeof detail?.code === "string" ? detail.code : null;
 }
 
-/** A refused request as the tab says it: its `detail.code` first, then the server's message. */
+/** A refused request as the tab says it: the code's sentence, then the server's message. */
 function refusalText(error: unknown): string {
-  const code = detailCode(error);
-  const text = apiErrorText(error, "the tool could not be started");
-  return code === null ? text : `${code}: ${text}`;
+  return explainCode(detailCode(error), apiErrorText(error, "the tool could not be started"));
 }
 
-/** A failed job as the tab says it: its code first, then the server's message. */
+/** A failed job as the tab says it: the code's sentence, then the server's message. */
 function failureText(state: JobState): string {
-  const text = state.message ?? "the job failed";
-  return state.code == null ? text : `${state.code}: ${text}`;
+  return explainCode(state.code, state.message, "the job failed");
 }
 
 /**

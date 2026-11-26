@@ -19,6 +19,7 @@ import {
 } from "../../api/client";
 import { apiErrorText } from "../../components/States";
 import { exportFitPdf } from "../../lib/report/export";
+import { engineSentence } from "../../messages";
 import { isConverged } from "../traces";
 import { EquationTab } from "./EquationTab";
 import { FitAuditTab } from "./FitAuditTab";
@@ -242,7 +243,8 @@ export function ResultsTabs({
   const { user } = useAuth();
   const status = bundle.result.status;
   const failed = !isConverged(bundle);
-  const heading = FAILURE_HEADING[status] ?? `The fit ${status}`;
+  // A status with no heading of its own reads as its sentence, never as the bare code.
+  const heading = FAILURE_HEADING[status] ?? (engineSentence(status) ?? `The fit ${status}`);
 
   async function onExportPdf(): Promise<void> {
     setExporting(true);

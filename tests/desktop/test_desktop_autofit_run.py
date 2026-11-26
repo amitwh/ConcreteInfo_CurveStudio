@@ -327,3 +327,17 @@ def test_slow_true_model_in_top3_for_exponential_data(make_window, qtbot, write_
     result = wait_stored(qtbot, window, active_id(window), timeout=300000)
     top3 = [row.model_id for row in result.ranked[:3]]
     assert "exponential_decay" in top3, f"true model missing from the top three: {top3}"
+
+
+def test_a_refused_run_reports_its_code_as_a_sentence(make_window, qtbot, write_file) -> None:
+    """Item 16: the engine's codes reach the user as sentences, with the engine's own
+    message after them — never as the bare token."""
+    from curvestudio.messages import SENTENCES
+
+    window = make_tiny_window(make_window, write_file, text="x,y\n1,2\n2,4\n3,6\n")  # 3 points
+    notice = window.analysis_panel.autofit_view.notice
+    qtbot.waitUntil(lambda: notice.text() != "", timeout=30000)
+    text = notice.text()
+    assert SENTENCES["TOO_FEW_POINTS"] in text
+    assert "TOO_FEW_POINTS" not in text  # the sentence stands in for the code
+    assert "at least" in text  # the engine's own message still surfaces after it

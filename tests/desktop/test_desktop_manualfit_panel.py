@@ -5,6 +5,7 @@ import math
 import pytest
 from desktop_data import GOOD_CSV
 
+from curvestudio.messages import SENTENCES
 from curvestudio.models import ModelSpec, Parameter, register
 from curvestudio.models.registry import _REGISTRY
 from curvestudio.workflow import MAX_PREDICT_POINTS, WorkflowError, fit_dataset
@@ -155,7 +156,8 @@ def test_invalid_custom_equation_shows_inline_error_and_fits_nothing(
     view.parameters_edit.setText("a")
     view._validate_now()  # the debounced path, run immediately
     qtbot.waitUntil(lambda: view._last_error is not None, timeout=30000)
-    assert "INVALID_EQUATION" in view.validation_text()
+    assert SENTENCES["INVALID_EQUATION"] in view.validation_text()
+    assert "INVALID_EQUATION" not in view.validation_text()  # the sentence, not the code
     assert not view.fit_button.isEnabled()
     fits_before = window.analysis.fit_count
     view.run_fit()

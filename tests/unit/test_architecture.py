@@ -236,11 +236,13 @@ DESKTOP_ALLOWED_CORE = frozenset(
         "curvestudio.data",
         "curvestudio.discovery",
         "curvestudio.tools",
+        "curvestudio.messages",
     }
 )
 """The only ``curvestudio`` subpackages the desktop app may import (spec §5.3, D2: discovery
 for Auto-fit streaming; the tools layer for the fit audit, the methods text and
-cross-validation; still never the fitting/statistics/maths layers directly)."""
+cross-validation; ``messages`` for the shared code-to-sentence mapping; still never the
+fitting/statistics/maths layers directly)."""
 
 
 def find_core_imports(source: str) -> list[str]:

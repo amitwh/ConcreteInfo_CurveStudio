@@ -15,6 +15,7 @@ import {
   type ToolResult,
 } from "../../api/client";
 import { renderWithQuery } from "../../test/render";
+import { ENGINE_SENTENCES } from "../../messages";
 import { FitToolsTab } from "./FitToolsTab";
 import { ResultsTabs } from "./ResultsTabs";
 
@@ -342,7 +343,7 @@ describe("FitToolsTab — the three tools", () => {
 });
 
 describe("FitToolsTab — errors", () => {
-  it("shows a failed job's NO_RANKING code and message, and re-enables the buttons", async () => {
+  it("shows a failed job's NO_RANKING sentence and message, and re-enables the buttons", async () => {
     answer(DISCERN_PATH, { ok: { job_id: "job-1" } });
     answer("/jobs/job-1", {
       ok: job("failed", "discern", null, {
@@ -355,13 +356,15 @@ describe("FitToolsTab — errors", () => {
     click("Run the discernibility report");
     await pass(300);
 
-    expect(screen.getByRole("alert").textContent).toBe(
-      "The tool failed: NO_RANKING: this fit was not opened from an Auto-fit ranking.",
+    const alert = screen.getByRole("alert").textContent ?? "";
+    expect(alert).toBe(
+      `The tool failed: ${ENGINE_SENTENCES["NO_RANKING"]} — this fit was not opened from an Auto-fit ranking.`,
     );
+    expect(alert).not.toContain("NO_RANKING:"); // the sentence stands in for the code
     for (const button of runButtons()) expect(button.disabled).toBe(false);
   });
 
-  it("shows a 409's detail.code and message, and re-enables the buttons", async () => {
+  it("shows a 409's message (its code has no sentence), and re-enables the buttons", async () => {
     answer(DISCERN_PATH, {
       refused: new ApiError(
         409,
@@ -376,7 +379,7 @@ describe("FitToolsTab — errors", () => {
     await settle();
 
     expect(screen.getByRole("alert").textContent).toBe(
-      "DISCERNIBILITY_RUNNING: a discernibility report of this fit is already queued or running",
+      "a discernibility report of this fit is already queued or running",
     );
     for (const button of runButtons()) expect(button.disabled).toBe(false);
   });

@@ -5,6 +5,23 @@ All notable changes are listed here. Dates are IST. Format: [Keep a Changelog](h
 ## [Unreleased]
 
 ### Changed
+- **Engine codes reach the user as sentences (item 16)**: one mapping in the core
+  package (`curvestudio.messages`) gives every fit status and every error code the API's
+  jobs, tools and data layer can fail with — 84 codes — a single plain sentence to act
+  on, and a test enumerates the codes from the sources themselves so a new code fails
+  the suite until it is sentenced. Both apps show the sentence first and keep the
+  server's or engine's own message after it; a bare code no longer reaches the user
+  (the web's job status, Auto-fit notice and fit-tools tab; the desktop's validation
+  line, status messages and predict errors). The web reads the mapping from a committed
+  copy the core's test pins to the source.
+- **The web is written and tested at 360, 768 and 1280 px (item 15)**: the ranking
+  table, the one surface that could not follow the viewport, now drops the columns a
+  narrow one cannot pay for — the fitted equation and the secondary criteria below
+  800 px, then R², the status badge and the rank's "same curve" hint below 480 px — so
+  rank, model, RMSE and the row menu fit a phone's width (18 px of scroll at 360,
+  measured in a browser, against 1062 before). The header and the workspace layout were
+  measured at the same three widths and already held; CSS tests now pin each surface at
+  each width. The desktop keeps its 980x640 minimum window size, now pinned by a test.
 - **Server jobs run in a warm worker pool**: each worker imports the fitting stack once
   and then forks a fresh, throwaway process per job, so a job no longer pays an
   interpreter start-up while its isolation stays exactly per-job — the worker never runs

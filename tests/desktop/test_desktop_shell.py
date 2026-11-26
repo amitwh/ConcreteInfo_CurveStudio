@@ -51,6 +51,18 @@ def test_stylesheet_and_palette_are_applied(clean_appearance) -> None:
     assert window_color == LIGHT_TOKENS["bg"]
 
 
+def test_window_keeps_its_minimum_size(make_window, qtbot) -> None:
+    """Item 15's desktop half: the app is tested at its minimum window size (980x640),
+    which the window enforces rather than reflowing below."""
+    window = make_window()
+    qtbot.addWidget(window)
+    from curvestudio_desktop.views.main_window import MINIMUM_SIZE
+
+    assert window.minimumSize().width() == MINIMUM_SIZE[0]
+    assert window.minimumSize().height() == MINIMUM_SIZE[1]
+    assert MINIMUM_SIZE == (980, 640)  # moving the floor is a deliberate act
+
+
 def test_toolbar_is_icon_only_movable_and_has_shortcut_tooltips(make_window, qtbot) -> None:
     window = make_window()
     qtbot.addWidget(window)

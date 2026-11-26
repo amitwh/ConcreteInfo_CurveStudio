@@ -17,6 +17,7 @@ import {
 } from "../../api/client";
 import { Loading } from "../../components/States";
 import { fmtInt, fmtNumber } from "../../format";
+import { explainCode } from "../../messages";
 import { RankingTable } from "./RankingTable";
 import type { AutofitState } from "./useAutofit";
 
@@ -51,21 +52,10 @@ export const RANK_BY_OPTIONS: Array<{ value: RankBy; label: string }> = [
 const PAGE_SIZES = [10, 25, 50, 100] as const;
 const DEFAULT_PAGE_SIZE = 10;
 
-/** Clear text for the codes a start can be refused with (the server message otherwise). */
-const CODE_MESSAGES: Record<string, string> = {
-  TOO_FEW_POINTS:
-    "Too few points for Auto-fit — the engine refuses a dataset with fewer than four.",
-  UNKNOWN_FAMILY: "One of the selected families does not exist; uncheck it in Options.",
-  NO_CANDIDATES: "No model in the selected families can be fitted to this dataset.",
-  INVALID_CUSTOM_MODEL: "One of the custom equations cannot be fitted.",
-  DUPLICATE_MODEL_ID: "A custom equation collides with a catalogue model id.",
-  QUOTA_EXCEEDED: "The daily Auto-fit quota is used up — try again tomorrow.",
-  RATE_LIMITED: "Too many jobs are already waiting; wait for one to finish and try again.",
-};
-
+/** Clear text for a refused or failed run: the code's sentence, then the server's
+ *  message after it (item 16 — never the bare code). */
 function errorNotice(state: AutofitState): string {
-  const specific = state.errorCode !== null ? CODE_MESSAGES[state.errorCode] : undefined;
-  return specific ?? (state.error ?? "the run could not be shown");
+  return explainCode(state.errorCode, state.error, "the run could not be shown");
 }
 
 /** id → display name, from the run's outcomes (covers skipped/unconverged too). */

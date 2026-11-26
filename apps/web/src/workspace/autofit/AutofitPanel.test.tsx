@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { api } from "../../api/client";
 import type { components } from "../../api/schema";
+import { ENGINE_SENTENCES } from "../../messages";
 import { AUTOFIT_IDLE, type AutofitState } from "./useAutofit";
 import { AutofitPanel } from "./AutofitPanel";
 
@@ -151,15 +152,20 @@ describe("AutofitPanel — progress", () => {
 });
 
 describe("AutofitPanel — errors and edge states", () => {
-  it("explains TOO_FEW_POINTS from detail.code", () => {
+  it("explains TOO_FEW_POINTS from detail.code, keeping the server's message", () => {
     renderPanel({ phase: "error", error: "the dataset cannot be auto-fitted", errorCode: "TOO_FEW_POINTS" });
     const alert = screen.getByRole("alert");
-    expect(alert.textContent).toMatch(/too few points/i);
+    expect(alert.textContent).toContain(ENGINE_SENTENCES["TOO_FEW_POINTS"]);
+    expect(alert.textContent).toContain("the dataset cannot be auto-fitted");
+    expect(alert.textContent).not.toContain("TOO_FEW_POINTS"); // the sentence, not the code
   });
 
   it("explains a quota rejection", () => {
     renderPanel({ phase: "error", error: "too many auto-fits today", errorCode: "QUOTA_EXCEEDED" });
-    expect(screen.getByRole("alert").textContent).toMatch(/quota/i);
+    const alert = screen.getByRole("alert");
+    expect(alert.textContent).toContain(ENGINE_SENTENCES["QUOTA_EXCEEDED"]);
+    expect(alert.textContent).toContain("too many auto-fits today");
+    expect(alert.textContent).not.toContain("QUOTA_EXCEEDED");
   });
 
   it("shows a generic message for other failures", () => {

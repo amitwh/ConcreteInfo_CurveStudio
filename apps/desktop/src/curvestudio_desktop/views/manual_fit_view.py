@@ -43,6 +43,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from curvestudio.messages import explain_error
 from curvestudio_desktop.controllers.analysis import AnalysisController
 
 if TYPE_CHECKING:
@@ -593,7 +594,7 @@ class ManualFitView(QWidget):
         if token != self._validation_token:
             return  # a newer draft was submitted meanwhile
         if isinstance(error, WorkflowError):
-            self._last_error = f"{error.code}: {error}"
+            self._last_error = explain_error(error)
             self._set_validation(self._last_error, error=True)
         else:
             self._last_error = None

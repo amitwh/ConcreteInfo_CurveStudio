@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 
 from PySide6.QtCore import QObject, QSettings, Signal
 
+from curvestudio.messages import explain_error
 from curvestudio_desktop.controllers.project import IST, ProjectController
 from curvestudio_desktop.controllers.selection import SelectionController
 from curvestudio_desktop.jobs import JobHandle, JobRunner
@@ -73,7 +74,9 @@ def _analysis_jobs() -> Any:
 def _reason_of(error: BaseException) -> str:
     """A stable, readable reason for an exception the workflow layers define."""
     code = getattr(error, "code", None)
-    return f"{code}: {error}" if isinstance(code, str) else str(error)
+    if not isinstance(code, str):
+        return str(error)
+    return explain_error(error)
 
 
 def history_time(created_at: str | None) -> str:

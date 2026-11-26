@@ -133,12 +133,13 @@ class SelectionController(QObject):
             self.last_error = "the dataset has no two numeric columns to plot"
             return None
         from curvestudio.data import DataError
+        from curvestudio.messages import explain_error
 
         x, y, weight = columns
         try:
             result = dataset.xy(x, y, weight)
         except DataError as exc:
-            self.last_error = f"{exc.code}: {exc.args[0]}"
+            self.last_error = explain_error(exc)
             return None
         self.last_error = None
         return result
