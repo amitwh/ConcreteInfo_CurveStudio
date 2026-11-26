@@ -1,10 +1,15 @@
 """PlotView: the interactive pyqtgraph scatter of the active dataset.
 
-Clip-to-view keeps large datasets interactive; auto ("peak") downsampling is
-deliberately off — peak decimation assumes sorted x values and silently distorts
-an unsorted scatter. A log axis is refused (with a reason) while the data contain
-values ≤ 0; export goes through ``pyqtgraph.exporters`` with the crosshair hidden.
-Publication-quality Matplotlib export arrives with D3.
+Large datasets stay cheap: the drawn scatter passes through unchanged up to
+``SCATTER_DISPLAY_MAX_POINTS`` samples and above that is a min/max envelope
+(the web workspace's ``decimateMinMax`` port — bucketed by x-value, so safe for
+an unsorted scatter, unlike pyqtgraph's auto peak mode, which presumes uniform x
+spacing); fitted curves enable pyqtgraph's auto downsampling, which their
+uniform-grid samples never trip. Updates reuse the drawn plot items instead of
+removing and re-adding them. Whatever is decimated is said so under the plot
+("showing X of N points"). A log axis is refused (with a reason) while the data
+contain values ≤ 0; export goes through ``pyqtgraph.exporters`` with the crosshair
+hidden. Publication-quality Matplotlib export arrives with D3.
 """
 
 import re
@@ -33,6 +38,14 @@ _BAND_Z = 0.5
 _CURVE_Z = 2.0
 #: The in-app brand mark: the same text (and faintness) as the published figures.
 _WATERMARK_Z = 10.0
+#: The display budget of the CPU-raster symbol scatter, above which the drawn scatter
+#: becomes a min/max envelope (see :func:`_decimate_min_max`) — the desktop counterpart
+#: of the web workspace's ``GL_DISPLAY_MAX_POINTS`` (200k, just under the WebGL knee;
+#: here every symbol is blitted individually, so the budget is far tighter, and a
+#: ~1400 px plot at symbol size 5 saturates far below it anyway). ``scatter_data`` and
+#: the data table always hold every sample; only the drawn subset shrinks, and the line
+#: under the plot says so.
+SCATTER_DISPLAY_MAX_POINTS = 20_000
 
 
 def _watermark_html() -> str:
@@ -48,6 +61,50 @@ def _watermark_html() -> str:
 
 _EQUATION_LINE_WIDTH = 52
 _EQUATION_MAX_LINES = 4
+
+
+def _decimate_min_max(
+    x: np.ndarray, y: np.ndarray, max_points: int
+) -> tuple[np.ndarray, np.ndarray]:
+    """The drawn subset of ``(x, y)``: a min/max envelope within ``max_points`` samples.
+
+    The desktop port of the web workspace's ``decimateMinMax`` (apps/web/src/
+    workspace/traces.ts): the drawable x-range is split into ``ceil(max_points / 2)``
+    buckets and every bucket contributes its least-y and greatest-y sample (once, when
+    one sample wins both); the whole range's least-x and greatest-x samples are always
+    kept, so the drawn x-span never shrinks, and a spike inside one bucket cannot
+    vanish. Buckets are by x-value, not input order, so an unsorted scatter decimates
+    just as correctly — the property pyqtgraph's auto peak mode lacks. Among equal
+    extremes the first sample wins, which keeps the output deterministic. Non-finite
+    samples are skipped: such a sample draws no marker anyway.
+    """
+    import numpy as np
+
+    if x.size <= max_points:
+        return x, y
+    finite = np.nonzero(np.isfinite(x) & np.isfinite(y))[0]
+    if finite.size == 0:
+        return x[:0], y[:0]
+    fx = x[finite]
+    fy = y[finite]
+    buckets = max(1, int(np.ceil(max_points / 2)))
+    width = (float(fx.max()) - float(fx.min())) / buckets
+    if width > 0.0:
+        bucket = np.clip(((fx - fx.min()) / width).astype(np.int64), 0, buckets - 1)
+    else:
+        bucket = np.zeros(fx.size, dtype=np.int64)
+    # the least-y / greatest-y sample per bucket, by position in ``finite``: sort by
+    # bucket then y; each bucket's block gives its min-y at the head and max-y at the tail
+    order = np.lexsort((fy, bucket))
+    grouped = bucket[order]
+    group_edges = np.flatnonzero(np.diff(grouped))
+    starts = np.concatenate(([0], group_edges + 1))
+    ends = np.concatenate((group_edges, [grouped.size - 1]))
+    kept = np.union1d(
+        finite[order[np.union1d(starts, ends)]],  # each bucket's min-y / max-y sample
+        finite[[int(np.argmin(fx)), int(np.argmax(fx))]],  # the range's least-x / greatest-x
+    )
+    return x[kept], y[kept]
 
 
 def _wrap_equation(
@@ -118,9 +175,16 @@ class PlotView(QWidget):
         self._legend_names: list[str] = []
         self._confidence: pg.FillBetweenItem | None = None
         self._prediction: pg.FillBetweenItem | None = None
+        # the band fills' backing lower/upper curves, kept for in-place updates
+        self._confidence_curves: tuple[pg.PlotDataItem, pg.PlotDataItem] | None = None
+        self._prediction_curves: tuple[pg.PlotDataItem, pg.PlotDataItem] | None = None
         self._band_x: Sequence[float] | None = None
         self._band_confidence: tuple[Sequence[float], Sequence[float]] | None = None
         self._band_prediction: tuple[Sequence[float], Sequence[float]] | None = None
+        # what the drawn scatter honestly holds: (shown, total) when it is a decimated
+        # subset of the dataset, None when every sample is drawn
+        self._display_shown: int | None = None
+        self._display_total: int | None = None
         # the statistical plot's items, and the view state they displaced while shown
         self._stats_items: list[Any] = []
         self._stats_saved_log: tuple[bool, bool] | None = None
@@ -168,8 +232,12 @@ class PlotView(QWidget):
         self._watermark.anchor(itemPos=(1, 1), parentPos=(1, 1), offset=(-8, -6))
         self._watermark.setZValue(_WATERMARK_Z)
         self._watermark.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
-        # auto "peak" downsampling is off: peak decimation assumes sorted x and
-        # distorts an unsorted scatter. clip-to-view stays on.
+        # pyqtgraph's auto ("peak") downsampling stays off at the PlotItem level: peak
+        # decimation presumes uniform x spacing and would distort an unsorted scatter.
+        # The scatter decimates itself instead (an unsorted-safe min/max envelope above
+        # SCATTER_DISPLAY_MAX_POINTS); fitted curves enable it per item after being
+        # added — they are uniform-grid samples, so the presumption holds there.
+        # clip-to-view stays on.
         self._plot.getPlotItem().setDownsampling(auto=False)
         self._plot.getPlotItem().setClipToView(True)
         self.apply_scheme()
@@ -247,29 +315,50 @@ class PlotView(QWidget):
 
         from curvestudio_plotting.palette import data_color
 
-        """Replace the scatter with ``(x, y)``, labelled from the column names."""
+        """Replace the scatter with ``(x, y)``, labelled from the column names.
+
+        The drawn scatter holds every sample up to ``SCATTER_DISPLAY_MAX_POINTS``;
+        above that it draws a min/max envelope and says so under the plot. The item
+        itself is reused when one is already drawn — a dataset switch or a re-selection
+        swaps the arrays in place instead of removing and re-adding the item.
+        """
         self._x_name, self._y_name = x_name, y_name
         self._x, self._y = x, y
-        if self._scatter is not None:
-            self._plot.removeItem(self._scatter)
+        shown_x, shown_y = self._display_arrays(x, y)
         neutral = data_color(dark=self._scheme == "dark")
-        self._scatter = pg.PlotDataItem(
-            x,
-            y,
-            pen=None,
-            symbol="o",
-            symbolSize=5,
-            symbolBrush=pg.mkBrush(neutral),
-            symbolPen=pg.mkPen(neutral),
-        )
-        # clip-to-view comes from the PlotItem config in __init__: configuring the
-        # item before adding it breaks pyqtgraph 0.14's itemChange path
-        self._plot.addItem(self._scatter)
+        if self._scatter is None:
+            self._scatter = pg.PlotDataItem(
+                shown_x,
+                shown_y,
+                pen=None,
+                symbol="o",
+                symbolSize=5,
+                symbolBrush=pg.mkBrush(neutral),
+                symbolPen=pg.mkPen(neutral),
+            )
+            # clip-to-view comes from the PlotItem config in __init__: configuring the
+            # item before adding it breaks pyqtgraph 0.14's itemChange path
+            self._plot.addItem(self._scatter)
+        else:
+            self._scatter.setData(shown_x, shown_y)
         self._plot.setLabel("bottom", x_name)
         self._plot.setLabel("left", y_name)
         self._stack.setCurrentWidget(self._plot)
         self._recompute_log_availability(x, y)
         self.reset_view()
+        self._refresh_readout()
+
+    def _display_arrays(self, x: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """The arrays the scatter draws: full up to the display budget, else the
+        min/max envelope; records the honest (shown, total) counts alongside."""
+        if x.size > SCATTER_DISPLAY_MAX_POINTS:
+            shown_x, shown_y = _decimate_min_max(x, y, SCATTER_DISPLAY_MAX_POINTS)
+            self._display_shown = int(shown_x.size)
+            self._display_total = int(x.size)
+            return shown_x, shown_y
+        self._display_shown = None
+        self._display_total = None
+        return x, y
 
     def clear_data(self) -> None:
         if self._scatter is not None:
@@ -277,12 +366,19 @@ class PlotView(QWidget):
             self._scatter = None
         self.clear_fit()
         self._x = self._y = None
+        self._display_shown = None
+        self._display_total = None
+        self._refresh_readout()
         self._stack.setCurrentWidget(self._empty_page)
         self._can_log_x = self._can_log_y = False
         self._set_log(x=False, y=False)
 
     def scatter_data(self) -> tuple[np.ndarray | None, np.ndarray | None]:
-        """The full plotted arrays (never a downsampled view), or ``(None, None)``."""
+        """The full dataset arrays — never the decimated drawn subset — or ``(None, None)``.
+
+        The drawn scatter is a min/max envelope above ``SCATTER_DISPLAY_MAX_POINTS``
+        (see :meth:`is_downsampling`); these arrays always hold every sample.
+        """
         return self._x, self._y
 
     def axis_labels(self) -> tuple[str, str]:
@@ -306,30 +402,15 @@ class PlotView(QWidget):
         (position 1 is the brand accent); bands are neutral translucent fills, never a
         model colour, so a band can never be read as another curve. Callers never call
         this for a fit that did not converge — there is no curve to draw then (see
-        :meth:`clear_fit`).
+        :meth:`clear_fit`). One curve is the one-curve overlay: the same item reuse
+        applies.
         """
-        import numpy as np
-        import pyqtgraph as pg
-
-        from curvestudio_plotting.palette import curve_style
-
-        self.clear_fit()
-        self._band_x = list(x)
-        self._band_confidence = confidence
-        self._band_prediction = prediction
-        colour, width = curve_style(position)
-        item = pg.PlotDataItem(
-            np.asarray(x, dtype=np.float64),
-            np.asarray(y, dtype=np.float64),
-            pen=pg.mkPen(colour, width=width),
+        self.set_fit_overlay(
+            [OverlayCurve(name=name, x=x, y=y, position=position)],
+            band_x=x,
+            confidence=confidence,
+            prediction=prediction,
         )
-        item.setZValue(_CURVE_Z)
-        self._plot.addItem(item)
-        self._curves.append(item)
-        self._curve_positions.append(position)
-        self._curve_names.append(name)
-        self._draw_bands()
-        self._rebuild_legend()
 
     def set_fit_overlay(
         self,
@@ -342,29 +423,56 @@ class PlotView(QWidget):
         """Draw several model curves, each in its display-position colour, with a legend.
 
         Bands belong to the selected model only and stay neutral; ``band_x`` is that
-        model's curve x (it need not be the first curve in ``curves``).
+        model's curve x (it need not be the first curve in ``curves``). Curve items are
+        reused when the overlay keeps the same number of curves — every ranking-row
+        click redraws through here, and remove+re-add churn is pure cost then; a
+        genuine shape change (a different curve count) rebuilds them.
         """
         import numpy as np
         import pyqtgraph as pg
 
         from curvestudio_plotting.palette import curve_style
 
-        self.clear_fit()
+        reuse = len(self._curves) == len(curves)
+        if reuse:
+            # the items are reused, but a redraw is still a new selection: drop the
+            # previous row's caption and inline notice exactly as clear_fit would
+            self._hint.hide()
+            self.clear_equation()
+        else:
+            self.clear_fit()
         self._band_x = list(band_x) if band_x is not None else None
         self._band_confidence = confidence
         self._band_prediction = prediction
-        for entry in curves:
-            colour, width = curve_style(entry.position)
-            item = pg.PlotDataItem(
-                np.asarray(entry.x, dtype=np.float64),
-                np.asarray(entry.y, dtype=np.float64),
-                pen=pg.mkPen(colour, width=width),
-            )
-            item.setZValue(_CURVE_Z)
-            self._plot.addItem(item)
-            self._curves.append(item)
-            self._curve_positions.append(entry.position)
-            self._curve_names.append(entry.name)
+        if reuse:
+            for item, entry in zip(self._curves, curves, strict=True):
+                colour, width = curve_style(entry.position)
+                item.setData(
+                    np.asarray(entry.x, dtype=np.float64),
+                    np.asarray(entry.y, dtype=np.float64),
+                )
+                item.setPen(pg.mkPen(colour, width=width))
+        else:
+            fresh: list[pg.PlotDataItem] = []
+            for entry in curves:
+                colour, width = curve_style(entry.position)
+                item = pg.PlotDataItem(
+                    np.asarray(entry.x, dtype=np.float64),
+                    np.asarray(entry.y, dtype=np.float64),
+                    pen=pg.mkPen(colour, width=width),
+                )
+                item.setZValue(_CURVE_Z)
+                self._plot.addItem(item)
+                # auto ("peak") downsampling draws a curve holding far more samples than
+                # the view can show as a min/max envelope; engine curves are 200
+                # uniform-grid samples and pass through untouched. Set after addItem:
+                # PlotItem applies its own (off) downsampling config when an item is
+                # added, which would override an item-level setting made before.
+                item.setDownsampling(auto=True, method="peak")
+                fresh.append(item)
+            self._curves = fresh
+        self._curve_positions = [entry.position for entry in curves]
+        self._curve_names = [entry.name for entry in curves]
         self._draw_bands()
         self._rebuild_legend()
 
@@ -378,6 +486,8 @@ class PlotView(QWidget):
         self._curve_names.clear()
         self._confidence = None
         self._prediction = None
+        self._confidence_curves = None
+        self._prediction_curves = None
         self._band_x = None
         self._band_confidence = None
         self._band_prediction = None
@@ -541,43 +651,52 @@ class PlotView(QWidget):
         """(Re)draw the neutral bands for the current theme; no-op without band data."""
         from curvestudio_plotting.palette import band_fill
 
-        for item in (self._confidence, self._prediction):
-            if item is not None:
-                self._plot.removeItem(item)
-        self._confidence = None
-        self._prediction = None
-        if self._band_x is None:
-            return
         dark = self._scheme == "dark"
-        if self._band_confidence is not None:
-            self._confidence = self._fill_between(
-                self._band_x, self._band_confidence, band_fill("confidence", dark=dark)
-            )
-            self._plot.addItem(self._confidence)
-        if self._band_prediction is not None:
-            self._prediction = self._fill_between(
-                self._band_x, self._band_prediction, band_fill("prediction", dark=dark)
-            )
-            self._plot.addItem(self._prediction)
+        self._confidence, self._confidence_curves = self._sync_band(
+            self._confidence,
+            self._confidence_curves,
+            self._band_confidence,
+            band_fill("confidence", dark=dark),
+        )
+        self._prediction, self._prediction_curves = self._sync_band(
+            self._prediction,
+            self._prediction_curves,
+            self._band_prediction,
+            band_fill("prediction", dark=dark),
+        )
 
-    def _fill_between(
+    def _sync_band(
         self,
-        x: Sequence[float],
-        band: tuple[Sequence[float], Sequence[float]],
-        fill: str,
-    ) -> pg.FillBetweenItem:
+        fill: pg.FillBetweenItem | None,
+        curves: tuple[pg.PlotDataItem, pg.PlotDataItem] | None,
+        band: tuple[Sequence[float], Sequence[float]] | None,
+        colour: str,
+    ) -> tuple[pg.FillBetweenItem | None, tuple[pg.PlotDataItem, pg.PlotDataItem] | None]:
+        """One band's items matching ``band``: a fill that is already drawn is updated
+        in place (new arrays via its curves, new theme brush), one that appears for the
+        first time is built. Returns the fill and the lower/upper curve pair backing it.
+        """
         import numpy as np
         import pyqtgraph as pg
 
-        lower = pg.PlotDataItem(
-            np.asarray(x, dtype=np.float64), np.asarray(band[0], dtype=np.float64)
-        )
-        upper = pg.PlotDataItem(
-            np.asarray(x, dtype=np.float64), np.asarray(band[1], dtype=np.float64)
-        )
-        band_item = pg.FillBetweenItem(lower, upper, brush=pg.mkBrush(fill))
-        band_item.setZValue(_BAND_Z)
-        return band_item
+        if band is None:
+            if fill is not None:
+                self._plot.removeItem(fill)
+            return None, None
+        if fill is None or curves is None:
+            lower = pg.PlotDataItem()
+            upper = pg.PlotDataItem()
+            fill = pg.FillBetweenItem(lower, upper, brush=pg.mkBrush(colour))
+            fill.setZValue(_BAND_Z)
+            self._plot.addItem(fill)
+        else:
+            lower, upper = curves
+            # the theme may have changed since the fill was drawn
+            fill.setBrush(pg.mkBrush(colour))
+        band_x = np.asarray(self._band_x, dtype=np.float64)
+        lower.setData(band_x, np.asarray(band[0], dtype=np.float64))
+        upper.setData(band_x, np.asarray(band[1], dtype=np.float64))
+        return fill, (lower, upper)
 
     # -- log axes ----------------------------------------------------------------------------
 
@@ -636,13 +755,16 @@ class PlotView(QWidget):
         return (float(x_range[0]), float(x_range[1])), (float(y_range[0]), float(y_range[1]))
 
     def is_downsampling(self) -> bool:
-        """Whether the scatter is being decimated for drawing (truthful: never here).
+        """Whether the drawn scatter is a decimated subset of the dataset.
 
-        Auto peak downsampling is disabled in this view — it assumes sorted x values
-        and would distort an unsorted scatter. :meth:`scatter_data` therefore always
-        reports the full point count.
+        Above ``SCATTER_DISPLAY_MAX_POINTS`` samples the view draws a min/max envelope
+        (see :func:`_decimate_min_max`) instead of every sample; this method and the
+        "showing X of N points" line under the plot say so, and :meth:`scatter_data`
+        still returns the full arrays. pyqtgraph's own auto peak mode never touches the
+        scatter (it presumes uniform x spacing); fitted curves enable it, but their
+        200-sample uniform grids never trip it either.
         """
-        return False
+        return self._display_shown is not None
 
     # -- crosshair ---------------------------------------------------------------------------
 
@@ -679,10 +801,22 @@ class PlotView(QWidget):
         self._readout.setText(f"{self._x_name} = {x_value:.6g}    {self._y_name} = {y_value:.6g}")
 
     def hide_crosshair(self) -> None:
-        """Drop the crosshair lines and clear the readout (mouse left the plot)."""
+        """Drop the crosshair lines; the readout falls back to the decimation note."""
         self._v_line.hide()
         self._h_line.hide()
-        self._readout.setText("")
+        self._refresh_readout()
+
+    def _refresh_readout(self) -> None:
+        """The line under the plot: crosshair coordinates while they track the mouse,
+        otherwise the decimation note when the drawn scatter is a subset."""
+        if self._v_line.isVisible():
+            return
+        if self._display_shown is not None:
+            self._readout.setText(
+                f"showing {self._display_shown:,} of {self._display_total:,} points"
+            )
+        else:
+            self._readout.setText("")
 
     def crosshair_visible(self) -> bool:
         return bool(self._v_line.isVisible() and self._h_line.isVisible())
@@ -712,6 +846,8 @@ class PlotView(QWidget):
         for item in self._data_items():
             item.hide()
         self._hint.hide()
+        # the dataset (and its decimation note) is off-stage while a stats plot shows
+        self._readout.setText("")
         if self._stats_equation_was_visible:
             self._equation.hide()
         self._legend_names = []
@@ -739,6 +875,7 @@ class PlotView(QWidget):
             log_x, log_y = self._stats_saved_log
             self._set_log(x=log_x, y=log_y)
             self._stats_saved_log = None
+        self._refresh_readout()
         legend = plot_item.legend
         if legend is not None:
             legend.clear()
