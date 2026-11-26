@@ -1522,6 +1522,11 @@ export function HomePage(): ReactElement {
                 <Link to="/about">Privacy</Link>
               </li>
               <li>
+                <a href="https://www.gnu.org/licenses/agpl-3.0.html" target="_blank" rel="noopener noreferrer">
+                  Terms
+                </a>
+              </li>
+              <li>
                 <a href="https://www.concreteinfo.in">ConcreteInfo</a>
               </li>
             </ul>

@@ -11,8 +11,8 @@ exist, and do not describe a capability the code does not have.
 CurveStudio fits a curve to paired x/y measurements and tells you, honestly, how well it fits.
 It is the same engine on the web and on the desktop, so a fit made in one matches the other.
 
-1. **Open or create a project.** The desktop app starts with an empty project; the web app keeps
-   your datasets under your account.
+1. **Open or create a project.** The desktop app starts with an empty project; on the web,
+   your workspace keeps your datasets under your account.
 2. **Import your data** (CSV/TSV/TXT/JSON/XLSX, or paste from a spreadsheet).
 3. **Let Auto-fit run** — it starts by itself after the first import. It screens the model
    library, fits the promising candidates and ranks them.
@@ -24,7 +24,7 @@ Three example datasets ship with the app: `example.csv` (age in days vs. compres
 in MPa), `example-decay.csv` (a first-order decay) and `example-kinetics.csv` (enzyme kinetics)
 — good data to explore with.
 
-![The desktop workspace: plot, equation caption, ranking and data table](images/workspace.png)
+![The desktop main window: plot, equation caption, ranking and data table](images/workspace.png)
 
 ## 2. Importing data
 

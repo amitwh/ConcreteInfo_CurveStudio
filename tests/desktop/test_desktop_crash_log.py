@@ -226,6 +226,17 @@ def test_app_data_dir_is_qts_app_data_folder_created_on_demand() -> None:
 # -- the dialog ----------------------------------------------------------------------------------
 
 
+def test_the_crash_dialog_says_you_can_keep_working(qtbot) -> None:
+    """Item 20: the dialog promises neither a silent exit nor a forced restart."""
+    dialog = CrashDialog("Traceback (most recent call last):\n  boom")
+    qtbot.addWidget(dialog)
+    message = dialog.findChild(QLabel, "crashMessage")
+    assert message is not None
+    text = message.text()
+    assert "You can keep working" in text
+    assert "restart the app if the problem repeats" in text
+
+
 def test_the_crash_dialog_offers_the_log_folder_and_says_the_report_stays_local(
     qtbot, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

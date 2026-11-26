@@ -304,12 +304,13 @@ class CrashDialog(QDialog):
         self.setWindowTitle("Unexpected error")
         self.setModal(True)
         layout = QVBoxLayout(self)
-        layout.addWidget(
-            QLabel(
-                "CurveStudio hit an unexpected error and may be in an inconsistent state.\n"
-                "Your saved files are unaffected; unsaved changes stay in memory until you quit."
-            )
+        message = QLabel(
+            "CurveStudio hit an unexpected error and may be in an inconsistent state.\n"
+            "Your saved files are unaffected; unsaved changes stay in memory until you quit.\n"
+            "You can keep working; restart the app if the problem repeats."
         )
+        message.setObjectName("crashMessage")
+        layout.addWidget(message)
         details_view = QPlainTextEdit(details)
         details_view.setReadOnly(True)
         layout.addWidget(details_view)

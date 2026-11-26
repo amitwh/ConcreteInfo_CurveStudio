@@ -141,7 +141,7 @@ def cross_validate_job(
 
 
 def check_spec_job(spec: FitSpec, weighted: bool) -> None:
-    """Dry-run ``spec`` on a small synthetic data set to surface configuration mistakes.
+    """Dry-run ``spec`` on a small synthetic dataset to surface configuration mistakes.
 
     A fit's numerical outcome never raises in the workflow layer, so only a specification
     the engine cannot run (bad equation, unknown model, impossible method/bounds, weights

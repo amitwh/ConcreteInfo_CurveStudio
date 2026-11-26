@@ -50,6 +50,7 @@ from curvestudio_desktop.views.analysis_panel import AnalysisPanel
 from curvestudio_desktop.views.data_table import DatasetTableModel, DataTableDock
 from curvestudio_desktop.views.details_dialog import DetailsDialog
 from curvestudio_desktop.views.dock_shell import DockTitleBar
+from curvestudio_desktop.views.empty_state import EmptyStartView
 from curvestudio_desktop.views.fit_summary import model_identity
 from curvestudio_desktop.views.fit_tools_view import MORE_TOOLS_TITLE
 from curvestudio_desktop.views.icons import app_icon, icon
@@ -197,6 +198,17 @@ class MainWindow(QMainWindow):
         self._setup_docks()
 
         self._build_actions()
+        # the guided start: the empty project's plot area offers the first moves and
+        # the recent projects (design item 18) — the buttons fire the actions above
+        self.empty_state = EmptyStartView(
+            open_action=self.action_open,
+            import_action=self.action_import,
+            clipboard_action=self.action_clipboard,
+            help_action=self.action_help_contents,
+            parent=self,
+        )
+        self.plot_view.set_empty_page(self.empty_state)
+        self.empty_state.openRecentRequested.connect(self._open_recent)
         self._build_menus()
         self._build_toolbar()
         self._build_status_bar()
@@ -1304,6 +1316,7 @@ class MainWindow(QMainWindow):
         self._recent_menu.clear()
         recents = self.controller.recent_files()
         self._recent_menu.setEnabled(bool(recents))
+        self.empty_state.set_recent_projects(recents[:_RECENT_LIMIT])
         for path in recents[:_RECENT_LIMIT]:
             action = self._recent_menu.addAction(path.name)
             action.setToolTip(str(path))

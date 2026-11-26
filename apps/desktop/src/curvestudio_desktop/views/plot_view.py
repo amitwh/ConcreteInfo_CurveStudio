@@ -125,8 +125,9 @@ class PlotView(QWidget):
         self._stats_items: list[Any] = []
         self._stats_saved_log: tuple[bool, bool] | None = None
         self._stats_equation_was_visible = False
-        self._empty_label = QLabel("Import data to see it plotted")
-        self._empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        empty_label = QLabel("Import data to see it plotted")
+        empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._empty_page: QWidget = empty_label
         # a non-modal inline notice over the plot (a ranking row with no sampled curve)
         self._hint = QLabel(self._plot)
         self._hint.setStyleSheet(
@@ -149,8 +150,8 @@ class PlotView(QWidget):
         self._readout.setFont(mono_font(9))
         stack = QStackedLayout()
         stack.addWidget(self._plot)
-        stack.addWidget(self._empty_label)
-        stack.setCurrentWidget(self._empty_label)
+        stack.addWidget(self._empty_page)
+        stack.setCurrentWidget(self._empty_page)
         self._stack = stack
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -222,6 +223,25 @@ class PlotView(QWidget):
 
     # -- data --------------------------------------------------------------------------------
 
+    def set_empty_page(self, page: QWidget) -> None:
+        """Swap the page shown while no data is plotted (the guided empty start).
+
+        The window owns that page — the actions and recent projects on it are the
+        shell's business, not the plot's — but the stack (and the no-data logic that
+        drives it) stays here, so the swap is an explicit hand-off, once, at build.
+        """
+        was_empty = self._stack.currentWidget() is self._empty_page
+        self._stack.removeWidget(self._empty_page)
+        self._empty_page.deleteLater()
+        self._empty_page = page
+        self._stack.addWidget(page)
+        if was_empty:
+            self._stack.setCurrentWidget(page)
+
+    def is_empty_page_shown(self) -> bool:
+        """Whether the no-data page stands in for the plot right now."""
+        return self._stack.currentWidget() is self._empty_page
+
     def set_data(self, x: np.ndarray, y: np.ndarray, x_name: str, y_name: str) -> None:
         import pyqtgraph as pg
 
@@ -257,7 +277,7 @@ class PlotView(QWidget):
             self._scatter = None
         self.clear_fit()
         self._x = self._y = None
-        self._stack.setCurrentWidget(self._empty_label)
+        self._stack.setCurrentWidget(self._empty_page)
         self._can_log_x = self._can_log_y = False
         self._set_log(x=False, y=False)
 
@@ -725,7 +745,7 @@ class PlotView(QWidget):
             legend.setVisible(False)
         self._rebuild_legend()
         if self._scatter is None:
-            self._stack.setCurrentWidget(self._empty_label)
+            self._stack.setCurrentWidget(self._empty_page)
         else:
             self.reset_view()
 

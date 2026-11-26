@@ -77,10 +77,11 @@ build. Linux CI installs the Qt offscreen libraries (`libegl1 libgl1
 libxkbcommon-x11-0 libxcb-cursor0 libdbus-1-3 libfontconfig1`) so the frozen
 selftest can run headless.
 
-The frozen build is a console application on purpose (also on Windows): the
-`--selftest` output must be capturable everywhere. That means a console window
-sits next to the GUI on Windows; a windowed build is a possible future change
-once the selftest output is captured some other way.
+The frozen build is a windowed application on Windows — no console window sits next
+to the GUI (`packaging/curvestudio-desktop.spec` builds it with `console=False`
+there; the other platforms keep the console). The `--selftest` output stays
+capturable everywhere: with no console to read, the app also writes it to
+`CURVESTUDIO_SELFTEST_OUT`, and `build.py` accepts either channel.
 
 ### Linux packages
 

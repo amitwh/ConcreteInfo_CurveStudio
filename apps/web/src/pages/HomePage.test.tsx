@@ -115,6 +115,7 @@ describe("HomePage", () => {
     }
     expect(scoped.getByText("174")).toBeTruthy();
     expect(scoped.getByText("~200")).toBeTruthy();
+    expect(scoped.getByText("6")).toBeTruthy(); // CSV, JSON, XLSX, PDF, PNG, SVG
     expect(scoped.getByText("export formats")).toBeTruthy();
   });
 
@@ -457,6 +458,9 @@ describe("HomePage", () => {
     expect(contact.getAttribute("href")).toBe("mailto:amit@concreteinfo.in");
     expect(within(footer).getByRole("link", { name: "Privacy" }).getAttribute("href")).toBe(
       "/about",
+    );
+    expect(within(footer).getByRole("link", { name: "Terms" }).getAttribute("href")).toBe(
+      "https://www.gnu.org/licenses/agpl-3.0.html",
     );
 
     // The Open source column mirrors the shared list, plus CurveStudio's own source.

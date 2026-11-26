@@ -8,6 +8,7 @@ The web half of the same policy says, wherever it is written down, that the serv
 a dataset as the whole table that was uploaded, not only the columns used for fitting.
 """
 
+import re
 from collections.abc import Callable
 from pathlib import Path
 
@@ -117,3 +118,59 @@ def test_every_help_surface_names_statistics_and_each_family(surface: str) -> No
 
 def test_the_status_bar_note_is_the_new_one() -> None:
     assert NO_NETWORK_NOTE == "Offline-ready · no account"
+
+
+# -- one name per thing (design item 17) --------------------------------------------------
+#
+# The glossary: "Auto-fit" (hyphenated, capital A), "dataset" as one word, "project" on
+# the desktop and "workspace" on the web, "ranking" for the Auto-fit table and "results"
+# for one fit's numbers. The banned spellings below are the three the design names. The
+# code's and the API's lowercase "autofit" (routes, job kinds, object names, CSS classes)
+# is not user-visible and stays — which is why the "Autofit" pattern is case-sensitive.
+
+BANNED_SPELLINGS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("Autofit", re.compile(r"\bAutofit\b")),
+    ("auto fit", re.compile(r"\bauto fit\b", re.IGNORECASE)),
+    ("data set", re.compile(r"\bdata set\b", re.IGNORECASE)),
+)
+
+_GENERATED_SCHEMA = Path("apps/web/src/api/schema.d.ts")
+"""The OpenAPI schema's "Autofit" spellings are the API's own route and schema names."""
+
+
+def terminology_surfaces() -> list[tuple[str, str]]:
+    """Every file that carries user-visible copy, as ``(relative name, text)``.
+
+    The packaged desktop help is byte-for-byte the canonical help (pinned above), so the
+    canonical document covers both; the web's synced copy under ``src/content`` is the
+    same file again. The web's generated API schema is excluded on purpose.
+    """
+    files = [
+        REPO / "README.md",
+        REPO / "apps" / "desktop" / "README.md",
+        REPO / "apps" / "web" / "README.md",
+        REPO / "apps" / "web" / "index.html",
+        CANONICAL_HELP,
+        *sorted((REPO / "apps" / "desktop" / "src").rglob("*.py")),
+        *sorted((REPO / "apps" / "web" / "src").rglob("*.ts*")),
+    ]
+    return [
+        (str(path.relative_to(REPO)), path.read_text(encoding="utf-8"))
+        for path in files
+        if path.is_file() and path.relative_to(REPO) != _GENERATED_SCHEMA
+    ]
+
+
+@pytest.mark.parametrize(
+    "surface_name, text", terminology_surfaces(), ids=[name for name, _ in terminology_surfaces()]
+)
+def test_the_copy_never_uses_the_banned_spellings(surface_name: str, text: str) -> None:
+    for banned, pattern in BANNED_SPELLINGS:
+        assert not pattern.search(text), f"{surface_name} says {banned!r}"
+
+
+def test_the_help_defines_both_apps_containers() -> None:
+    """The desktop's container is a project, the web's a workspace; the help says both."""
+    text = squeezed(CANONICAL_HELP.read_text(encoding="utf-8"))
+    assert "empty project" in text, "the help no longer defines the desktop's project"
+    assert "your workspace" in text, "the help no longer defines the web's workspace"
