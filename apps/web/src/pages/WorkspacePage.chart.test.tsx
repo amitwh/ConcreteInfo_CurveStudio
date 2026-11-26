@@ -16,6 +16,7 @@ import { AuthProvider } from "../api/auth";
 import { api } from "../api/client";
 import type { components } from "../api/schema";
 import { ThemeProvider } from "../components/ThemeToggle";
+import { clear as clearWorkspaceCache } from "../workspace/workspaceCache";
 import { WorkspacePage } from "./WorkspacePage";
 
 const plotly = vi.hoisted(() => ({
@@ -187,6 +188,8 @@ let pollCount = 0;
 
 beforeEach(() => {
   pollCount = 0;
+  // The workspace's fetch cache is module-level: a test must not meet another's data.
+  clearWorkspaceCache();
   request = vi.spyOn(api, "request").mockImplementation(
     (async (path: string, options?: RequestInit) => {
       const target = String(path);

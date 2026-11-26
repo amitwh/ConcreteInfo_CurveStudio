@@ -21,6 +21,7 @@ import {
   type RankBy,
 } from "../../api/client";
 import type { WorkspaceMode } from "../mode";
+import { invalidateFits } from "../workspaceCache";
 
 const MIN_DELAY_MS = 300;
 const MAX_DELAY_MS = 1500;
@@ -224,6 +225,10 @@ export function useAutofit(): {
             return;
           case "succeeded": {
             stopFlight(jobId);
+            // A finished run is treated as a change to the dataset's fit history: the
+            // cached fits list is dropped, so the next mount revalidates it (one small
+            // GET; the run itself stores no fits, but its rows become fits when opened).
+            invalidateFits(datasetId);
             const autofitId = job.result_id ?? job.result_ref;
             if (autofitId === null) {
               patch(datasetId, {

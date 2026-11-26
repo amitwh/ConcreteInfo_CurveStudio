@@ -7,6 +7,14 @@ import { ApiError, api } from "../api/client";
 import type { components } from "../api/schema";
 import { ThemeProvider } from "../components/ThemeToggle";
 import { setWebglSupportedForTests } from "../workspace/traces";
+import {
+  clear as clearWorkspaceCache,
+  getDatasets,
+  getDetail,
+  getFits,
+  getModels,
+  METADATA_TTL_MS,
+} from "../workspace/workspaceCache";
 import { WorkspacePage } from "./WorkspacePage";
 
 // jsdom cannot host a real Plotly graph; this test is about the workspace's UI state.
@@ -320,6 +328,8 @@ beforeEach(() => {
   noDatasets = false;
   statRunFails = null;
   storedStatistics = [];
+  // The workspace's fetch cache is module-level: a test must not meet another's data.
+  clearWorkspaceCache();
   request = vi.spyOn(api, "request").mockImplementation(
     (async (path: string, options?: RequestInit) =>
       route(String(path), options)) as unknown as typeof api.request,
@@ -768,5 +778,149 @@ describe("WorkspacePage — the empty workspace (design item 7)", () => {
     } finally {
       localStorage.removeItem("curvestudio:datasetsCollapsed");
     }
+  });
+});
+
+describe("WorkspacePage — the workspace's fetch cache", () => {
+  /** How many requests a path has seen so far. */
+  function callsTo(path: string): number {
+    return request.mock.calls.filter(([p]) => String(p) === path).length;
+  }
+
+  it("serves a remount from the cache with no new detail or fits requests", async () => {
+    const first = renderPage("manual");
+    await flush();
+    await flush();
+    fireEvent.click(screen.getByTitle("growth.csv"));
+    await flush();
+    await flush();
+    expect(callsTo("/datasets/ds-1?points=20000")).toBe(1);
+    expect(callsTo("/datasets/ds-1/fits")).toBe(1);
+
+    first.unmount();
+    const second = renderPage("manual");
+    // The cached list renders at once: no loading flash, before any request could land.
+    expect(screen.queryByText("Loading datasets…")).toBeNull();
+    expect(screen.getByTitle("growth.csv")).toBeTruthy();
+    fireEvent.click(screen.getByTitle("growth.csv"));
+    await flush();
+    await flush();
+    expect(callsTo("/datasets/ds-1?points=20000")).toBe(1);
+    expect(callsTo("/datasets/ds-1/fits")).toBe(1);
+    expect(screen.queryByText("Loading dataset…")).toBeNull();
+    second.unmount();
+  });
+
+  it("renders the cached list at once and revalidates it in the background once stale", async () => {
+    const first = renderPage("manual");
+    await flush();
+    await flush();
+    first.unmount();
+
+    vi.advanceTimersByTime(METADATA_TTL_MS + 1);
+    const second = renderPage("manual");
+    // The stale cached list renders immediately; the revalidation runs behind it.
+    expect(screen.getByTitle("growth.csv")).toBeTruthy();
+    expect(screen.queryByText("Loading datasets…")).toBeNull();
+    await flush();
+    await flush();
+    expect(callsTo("/datasets")).toBe(2);
+    expect(screen.getByTitle("growth.csv")).toBeTruthy();
+    second.unmount();
+  });
+
+  it("revalidates a dataset's fits list on the mount after a job completes", async () => {
+    const succeeded: JobOut = {
+      ...FAILED_JOB,
+      status: "succeeded",
+      result_ref: "fit-1",
+      error_code: null,
+      error_message: null,
+    };
+    request.mockImplementation((async (path: string, options?: RequestInit) =>
+      String(path) === "/jobs/job-1"
+        ? succeeded
+        : route(String(path), options)) as unknown as typeof api.request);
+
+    const first = renderPage();
+    await flush();
+    await flush();
+    fireEvent.click(screen.getByTitle("growth.csv"));
+    await flush();
+    await flush();
+    expect(callsTo("/datasets/ds-1/fits")).toBe(1);
+
+    // Open a row: the job is polled and succeeds, storing a fit.
+    fireEvent.click(screen.getByRole("button", { name: "Row actions for Exponential decay" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Open full results" }));
+    await flush();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+    await flush();
+    await flush();
+    // The completion refreshed the live list straight into the panel; the cache for
+    // this dataset holds nothing now.
+    expect(callsTo("/datasets/ds-1/fits")).toBe(2);
+
+    first.unmount();
+    const second = renderPage();
+    await flush();
+    await flush();
+    fireEvent.click(screen.getByTitle("growth.csv"));
+    await flush();
+    await flush();
+    // The invalidation survived the remount: the fits list is fetched again.
+    expect(callsTo("/datasets/ds-1/fits")).toBe(3);
+    second.unmount();
+  });
+
+  it("revalidates the datasets list on the mount after an import", async () => {
+    const upload = vi.spyOn(api, "uploadDataset").mockResolvedValue(DATASET_BIG);
+    const first = renderPage("manual");
+    await flush();
+    await flush();
+    expect(callsTo("/datasets")).toBe(1);
+
+    fireEvent.change(first.container.querySelector("input[type=file]") as HTMLInputElement, {
+      target: { files: [new File(["x,y\n"], "gen-1m.csv", { type: "text/csv" })] },
+    });
+    await flush();
+    await flush();
+    // The upload selected the new dataset, whose detail is cached now too.
+    expect(callsTo("/datasets/ds-2?points=20000")).toBe(1);
+
+    first.unmount();
+    const second = renderPage("manual");
+    await flush();
+    await flush();
+    // The import invalidated the cached list: the remount fetches it again.
+    expect(callsTo("/datasets")).toBe(2);
+    second.unmount();
+    upload.mockRestore();
+  });
+
+  it("clears the workspace cache when the session dies", async () => {
+    const page = renderPage("manual");
+    await flush();
+    await flush();
+    fireEvent.click(screen.getByTitle("growth.csv"));
+    await flush();
+    await flush();
+    expect(getDatasets()).not.toBeNull();
+    expect(getModels()).not.toBeNull();
+    expect(getDetail("ds-1", 20000)).not.toBeNull();
+    expect(getFits("ds-1")).not.toBeNull();
+
+    // The AuthProvider wired the client's failure hook; a dead session must leave the
+    // store holding nothing (a signed-in account's data must not leak across sessions).
+    act(() => {
+      api.onAuthFailure?.();
+    });
+    expect(getDatasets()).toBeNull();
+    expect(getModels()).toBeNull();
+    expect(getDetail("ds-1", 20000)).toBeNull();
+    expect(getFits("ds-1")).toBeNull();
+    page.unmount();
   });
 });

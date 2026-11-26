@@ -10,6 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import { api, type MeOut, type TokenOut } from "./client";
+import { clear as clearWorkspaceCache } from "../workspace/workspaceCache";
 
 export type AuthStatus = "loading" | "authed" | "anon";
 
@@ -38,6 +39,8 @@ export function AuthProvider({ children }: { children: ReactNode }): ReactNode {
   useEffect(() => {
     let alive = true;
     api.onAuthFailure = () => {
+      // The session died: no cached workspace answer may outlive it.
+      clearWorkspaceCache();
       if (alive) {
         setUser(null);
         setStatus("anon");
@@ -73,6 +76,8 @@ export function AuthProvider({ children }: { children: ReactNode }): ReactNode {
 
   const login = useCallback(async (email: string, password: string) => {
     await api.login(email, password);
+    // The store belongs to the session that filled it: a new one starts empty.
+    clearWorkspaceCache();
     setUser(await api.me());
     setStatus("authed");
   }, []);
@@ -86,6 +91,8 @@ export function AuthProvider({ children }: { children: ReactNode }): ReactNode {
   const adoptSession = useCallback(async (tokens: TokenOut) => {
     // Same path the restore effect takes: store the pair, then confirm it against /me.
     api.adoptTokens(tokens);
+    // The store belongs to the session that filled it: a new one starts empty.
+    clearWorkspaceCache();
     try {
       const me = await api.me();
       setUser(me);
@@ -100,6 +107,8 @@ export function AuthProvider({ children }: { children: ReactNode }): ReactNode {
 
   const logout = useCallback(async () => {
     await api.logout();
+    // The session ended; nothing cached about its workspace may survive it.
+    clearWorkspaceCache();
     setUser(null);
     setStatus("anon");
   }, []);

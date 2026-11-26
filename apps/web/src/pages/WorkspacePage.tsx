@@ -46,6 +46,18 @@ import { StatsResult } from "../workspace/stats/StatsResult";
 import { useStatsTools } from "../workspace/stats/useStatsTools";
 import { loadMode, saveMode, type WorkspaceMode } from "../workspace/mode";
 import { chartSamplePoints } from "../workspace/traces";
+import {
+  dropDataset,
+  fetchDetail,
+  fetchDatasets,
+  fetchFits,
+  fetchModels,
+  getDatasets,
+  getDetail,
+  getModels,
+  invalidateDatasets,
+  invalidateFits,
+} from "../workspace/workspaceCache";
 
 /** Where the active fit bundle came from — the chart obeys the mode, the tabs don't. */
 type BundleSource = "manual" | "opened-row";
@@ -77,8 +89,10 @@ export function WorkspacePage({
   const { theme } = useTheme();
   const dark = theme === "dark";
 
-  const [datasets, setDatasets] = useState<DatasetOut[]>([]);
-  const [datasetsLoading, setDatasetsLoading] = useState(true);
+  // The workspace remounts on every tab switch (AuthenticatedApp keys it by workspace):
+  // whatever the cache holds renders at once, so a return visit never flashes empty.
+  const [datasets, setDatasets] = useState<DatasetOut[]>(() => getDatasets()?.data ?? []);
+  const [datasetsLoading, setDatasetsLoading] = useState(() => getDatasets() === null);
   const [datasetsError, setDatasetsError] = useState<unknown>(null);
   /** The sidebar's existing upload and paste actions, for the empty state's buttons. */
   const sidebarActions = useRef<DatasetsSidebarHandle>(null);
@@ -93,7 +107,7 @@ export function WorkspacePage({
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<unknown>(null);
 
-  const [models, setModels] = useState<ModelInfo[]>([]);
+  const [models, setModels] = useState<ModelInfo[]>(() => getModels()?.data ?? []);
   const [modelsError, setModelsError] = useState<unknown>(null);
 
   const [mode, setMode] = useState<WorkspaceMode>(
@@ -161,7 +175,13 @@ export function WorkspacePage({
     setFitError(null);
     setOpenRowBusy(null);
     void loadBundle(fitId, pendingSourceRef.current);
-    if (selectedId !== null) void loadFits(selectedId);
+    if (selectedId !== null) {
+      // The job stored a fit: the dataset's cached history is out of date from here on.
+      // Drop it, and refresh the live list straight into the panel — not through the
+      // cache, so the invalidation survives until the next mount revalidates it.
+      invalidateFits(selectedId);
+      void refreshFits(selectedId);
+    }
   });
 
   // An opened-row job that ends without a fit (failed, cancelled, lost contact) must
@@ -174,14 +194,49 @@ export function WorkspacePage({
   }, [poller.state.phase]);
 
   const loadDatasets = useCallback(async (): Promise<void> => {
+    const cached = getDatasets();
+    if (cached !== null) {
+      // The remount already rendered this list (the state above started from the cache);
+      // only a list older than the TTL revalidates, in the background.
+      setDatasets(cached.data);
+      setDatasetsError(null);
+      setDatasetsLoading(false);
+      if (!cached.stale) return;
+      try {
+        const fetched = await fetchDatasets();
+        // An upload or a delete while the revalidation was away invalidated the list:
+        // the mutation's own answer owns the sidebar now.
+        if (getDatasets() !== null) setDatasets(fetched);
+      } catch {
+        // The cached list is still on screen; the next mount revalidates again.
+      }
+      return;
+    }
     setDatasetsLoading(true);
     setDatasetsError(null);
     try {
-      setDatasets(await api.request<DatasetOut[]>("/datasets"));
+      setDatasets(await fetchDatasets());
     } catch (error) {
       setDatasetsError(error);
     } finally {
       setDatasetsLoading(false);
+    }
+  }, []);
+
+  const loadModels = useCallback(async (): Promise<void> => {
+    const cached = getModels();
+    if (cached !== null && !cached.stale) {
+      setModels(cached.data);
+      setModelsError(null);
+      return;
+    }
+    try {
+      setModels(await fetchModels());
+      setModelsError(null);
+    } catch (error) {
+      // With a cached catalogue on screen a failed revalidation is noise, not breakage;
+      // without one the workspace must say why fitting is limited.
+      if (cached === null) setModelsError(error);
     }
   }, []);
 
@@ -193,13 +248,27 @@ export function WorkspacePage({
     });
   }, []);
 
+  /** The fits list on a mount or a selection: the cache serves it when it can, and only
+   *  a cache miss (or an invalidation) reaches the API. */
   const loadFits = useCallback(async (datasetId: string): Promise<void> => {
+    setFitsError(null);
+    try {
+      setFits(await fetchFits(datasetId));
+    } catch (error) {
+      // The fits list is a sidebar of history; a failure here keeps the workspace usable,
+      // but it must not look like an empty history.
+      setFits([]);
+      setFitsError(error);
+    }
+  }, []);
+
+  /** The fits list after a stored fit, fetched straight into the panel: the cache for
+   *  this dataset stays invalidated, so the next mount revalidates it too. */
+  const refreshFits = useCallback(async (datasetId: string): Promise<void> => {
     setFitsError(null);
     try {
       setFits(await api.request<FitSummaryOut[]>(`/datasets/${datasetId}/fits`));
     } catch (error) {
-      // The fits list is a sidebar of history; a failure here keeps the workspace usable,
-      // but it must not look like an empty history.
       setFits([]);
       setFitsError(error);
     }
@@ -223,11 +292,8 @@ export function WorkspacePage({
 
   useEffect(() => {
     void loadDatasets();
-    api
-      .request<ModelInfo[]>("/models")
-      .then(setModels)
-      .catch((error: unknown) => setModelsError(error));
-  }, [loadDatasets]);
+    void loadModels();
+  }, [loadDatasets, loadModels]);
 
   // Statistics mode lists the selected dataset's stored results; with no dataset it lists
   // all of them, which is where the no-data tools' results live.
@@ -271,15 +337,20 @@ export function WorkspacePage({
       const chartPoints = chartSamplePoints(
         nRows ?? datasetsRef.current.find((dataset) => dataset.id === id)?.n_rows,
       );
-      setDetailLoading(true);
+      const cachedDetail = getDetail(id, chartPoints);
+      setDetailLoading(cachedDetail === null);
       try {
-        // The chart's points and the fits history are independent requests: start them
-        // together instead of holding the (small) list behind the (larger) detail fetch.
-        const [detail] = await Promise.all([
-          api.request<DatasetDetailOut>(`/datasets/${id}?points=${chartPoints}`),
-          loadFits(id),
-        ]);
-        setDetail(detail);
+        if (cachedDetail !== null) {
+          // A return visit: the cached detail renders at once — the chart asks for
+          // nothing, and the fits list comes from the cache too unless invalidated.
+          setDetail(cachedDetail);
+          await loadFits(id);
+        } else {
+          // The chart's points and the fits history are independent requests: start them
+          // together instead of holding the (small) list behind the (larger) detail fetch.
+          const [detail] = await Promise.all([fetchDetail(id, chartPoints), loadFits(id)]);
+          setDetail(detail);
+        }
       } catch (error) {
         setDetailError(error);
       } finally {
@@ -323,6 +394,9 @@ export function WorkspacePage({
 
   const onUploaded = useCallback(
     (dataset: DatasetOut): void => {
+      // The cached list no longer holds the new dataset: the next mount refetches it
+      // (the live list is updated in place below).
+      invalidateDatasets();
       setDatasets((current) => [dataset, ...current]);
       void selectDataset(dataset.id, dataset.n_rows);
     },
@@ -331,6 +405,9 @@ export function WorkspacePage({
 
   const onDeletedDataset = useCallback(
     (id: string): void => {
+      // The dataset is gone: the cached list, detail and fits must not outlive it.
+      invalidateDatasets();
+      dropDataset(id);
       setDatasets((current) => current.filter((d) => d.id !== id));
       autofit.clear(id);
       if (selectedId === id) {
@@ -355,6 +432,9 @@ export function WorkspacePage({
     async (fitId: string): Promise<void> => {
       try {
         await api.request(`/fits/${fitId}`, { method: "DELETE" });
+        // The cached history holds the deleted fit; the next mount refetches it (the
+        // live list is filtered below).
+        if (selectedId !== null) invalidateFits(selectedId);
         setFits((current) => current.filter((f) => f.id !== fitId));
         if (activeFitId === fitId) {
           setActiveFitId(null);
@@ -364,7 +444,7 @@ export function WorkspacePage({
         setFitError(errorText(error, "the fit could not be deleted"));
       }
     },
-    [activeFitId],
+    [activeFitId, selectedId],
   );
 
   const onRunStat = useCallback(
