@@ -17,6 +17,10 @@ WORKDIR /build
 COPY apps/web/package.json apps/web/package-lock.json ./
 RUN npm ci
 COPY apps/web/ ./
+# The canonical help the prebuild copies into the bundle: the sync script resolves it at
+# /docs/help-content.md from /build and fails loudly without it (tracked despite /docs
+# being gitignored; .dockerignore re-includes exactly this file).
+COPY docs/help-content.md /docs/help-content.md
 RUN npm run build
 
 # --- stage 2: the API + SPA runtime --------------------------------------------------------------

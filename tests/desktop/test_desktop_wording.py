@@ -25,7 +25,9 @@ SURFACES: dict[str, Path] = {
     "root README": REPO / "README.md",
     "desktop README": REPO / "apps" / "desktop" / "README.md",
     "desktop help": CANONICAL_HELP,
-    "web help": REPO / "apps" / "web" / "src" / "content" / "help.ts",
+    # The web help needs no surface of its own since 6eaa2a8: the web renders this same
+    # canonical document (the old hand-kept help.ts copy is gone; the web tests pin the
+    # sync and the rendering).
     "web About page": REPO / "apps" / "web" / "src" / "pages" / "AboutPage.tsx",
 }
 
@@ -49,7 +51,6 @@ THE_SHORTER_WORDING_IT_REPLACES = "your datasets and fits are stored in your acc
 WEB_NOTICE_COPIES: dict[str, Callable[[], str]] = {
     "the canonical help": lambda: CANONICAL_HELP.read_text(encoding="utf-8"),
     "the packaged help": lambda: PACKAGED_HELP.read_text(encoding="utf-8"),
-    "the web help": lambda: SURFACES["web help"].read_text(encoding="utf-8"),
     "the web About page": lambda: SURFACES["web About page"].read_text(encoding="utf-8"),
     "the desktop About policy": lambda: POLICY_HTML,
 }
@@ -101,7 +102,8 @@ def test_the_packaged_help_is_the_canonical_help_byte_for_byte() -> None:
 HELP_SURFACES: dict[str, Path] = {
     "the canonical help": CANONICAL_HELP,
     "the packaged help": PACKAGED_HELP,
-    "the web help": SURFACES["web help"],
+    # "the web help" is the canonical help too since 6eaa2a8 (the web renders it; the
+    # old hand-kept copy is gone).
 }
 
 

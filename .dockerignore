@@ -8,6 +8,9 @@
 /.superpowers
 /.claude-*
 /docs
+# …except the one tracked file the web build needs: the SPA's prebuild copies the canonical
+# help document into the bundle (see apps/web/scripts/sync-help.mjs).
+!/docs/help-content.md
 /examples
 /scripts
 /tests
