@@ -10,7 +10,7 @@
  * history state. Statistics mode starts no fit and no Auto-fit.
  */
 
-import { useCallback, useEffect, useRef, useState, type ReactElement } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { Upload } from "lucide-react";
 import { useAuth } from "../api/auth";
 import {
@@ -273,10 +273,13 @@ export function WorkspacePage({
       );
       setDetailLoading(true);
       try {
-        setDetail(
-          await api.request<DatasetDetailOut>(`/datasets/${id}?points=${chartPoints}`),
-        );
-        await loadFits(id);
+        // The chart's points and the fits history are independent requests: start them
+        // together instead of holding the (small) list behind the (larger) detail fetch.
+        const [detail] = await Promise.all([
+          api.request<DatasetDetailOut>(`/datasets/${id}?points=${chartPoints}`),
+          loadFits(id),
+        ]);
+        setDetail(detail);
       } catch (error) {
         setDetailError(error);
       } finally {
@@ -511,19 +514,19 @@ export function WorkspacePage({
   }, [autofit, autofitOptions, selectedId]);
 
   // In Auto-fit mode the chart shows the opened row's full bundle, else the selected
-  // row's stored curve, else the data alone; Manual fit keeps its own bundle.
-  const selectedCurve =
-    selectedRowId !== null && autoState.stored !== null
-      ? ((autoState.stored.result.curves ?? {})[selectedRowId] ?? null)
-      : null;
-  const chartBundle =
-    mode === "auto"
-      ? bundleSource === "opened-row" && bundle !== null
-        ? bundle
-        : selectedCurve !== null
-          ? rowCurveBundle(selectedCurve)
-          : null
-      : bundle;
+  // row's stored curve, else the data alone; Manual fit keeps its own bundle. Memoised:
+  // while a run polls, its progress patches re-render this page several times a second,
+  // and a fresh rowCurveBundle on every one of those renders would re-copy the curve's
+  // point arrays and re-feed Plotly.react with identical data each time.
+  const chartBundle = useMemo(() => {
+    if (mode !== "auto") return bundle;
+    if (bundleSource === "opened-row" && bundle !== null) return bundle;
+    const selectedCurve =
+      selectedRowId !== null && autoState.stored !== null
+        ? ((autoState.stored.result.curves ?? {})[selectedRowId] ?? null)
+        : null;
+    return selectedCurve !== null ? rowCurveBundle(selectedCurve) : null;
+  }, [mode, bundleSource, bundle, selectedRowId, autoState.stored]);
 
   const autofitStatus = (() => {
     switch (autoState.phase) {
