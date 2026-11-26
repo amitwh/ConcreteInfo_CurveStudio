@@ -190,6 +190,24 @@ def plugin_failures() -> tuple[PluginFailure, ...]:
     return tuple(_PLUGIN_FAILURES)
 
 
+def plugins_loaded() -> bool:
+    """Whether the plugins have already loaded in this process, without loading them.
+
+    The model catalogue's disk cache asks this before building: a build that still has
+    the registration ahead of it is the one clean scan a cache may be written from.
+    """
+    return _PLUGINS_DONE
+
+
+def peek_registered_ids() -> list[str]:
+    """Ids currently in the registry, in registration order, without loading plugins.
+
+    The model catalogue's disk cache compares this state against the state a cached list
+    was built from; :func:`list_models` would load the plugins and defeat that comparison.
+    """
+    return list(_REGISTRY)
+
+
 def load_plugins(*, strict: bool = False) -> list[str]:
     """Load every plugin of the entry-point group ``curvestudio.models`` once.
 

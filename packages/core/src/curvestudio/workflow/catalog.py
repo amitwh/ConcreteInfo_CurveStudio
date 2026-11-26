@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict
 from curvestudio.models import ModelSpec
 from curvestudio.models import get_model as _registered_model
 from curvestudio.models import list_models as _registered_models
+from curvestudio.workflow import catalogue_cache
 from curvestudio.workflow.errors import WorkflowError
 from curvestudio.workflow.spec import MAX_POLYNOMIAL_DEGREE
 
@@ -100,7 +101,19 @@ def _info(spec: ModelSpec) -> ModelInfo:
 
 
 def list_models() -> list[ModelInfo]:
-    """Every registered model and the polynomial family, sorted by category then name."""
+    """Every registered model and the polynomial family, sorted by category then name.
+
+    Built on a miss, served from the per-user disk cache when the fingerprint matches:
+    the catalogue depends on nothing but the contributing packages and their entry
+    points (see :mod:`curvestudio.workflow.catalogue_cache`), so a repeat start-up skips
+    the plugin registration and the per-model LaTeX work entirely. Any mismatch,
+    corruption or failure rebuilds here and rewrites the cache.
+    """
+    return catalogue_cache.catalogue(_build_catalogue)
+
+
+def _build_catalogue() -> list[ModelInfo]:
+    """The ordinary scan: load the plugins, describe every model, add the family."""
     infos = [_info(spec) for spec in _registered_models()]
     infos.append(_POLYNOMIAL)
     return sorted(infos, key=lambda m: (m.category, m.name, m.id))

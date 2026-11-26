@@ -4,6 +4,18 @@ All notable changes are listed here. Dates are IST. Format: [Keep a Changelog](h
 
 ## [Unreleased]
 
+### Changed
+- **The desktop's model library loads inside its two-second target**: the built model
+  catalogue (the descriptors every picker is filled from) is cached per user under a
+  fingerprint of the contributing package versions, the `curvestudio.models` entry
+  points and their sources, so a repeat start-up serves it from disk and skips the
+  plugin registration and the per-model SymPy work entirely. Measured `model_list`
+  start-up mark: ~4.6 s before, ~1.8 s after (median of 3, source run); any mismatch,
+  corruption or plugin failure rebuilds the ordinary way and rewrites the cache. The
+  cache lives outside the repository in the per-user cache directory
+  (`~/.cache/ConcreteInfo/CurveStudio` on Linux; `CURVESTUDIO_CATALOGUE_CACHE_DIR`
+  overrides it), and the first run of a fresh install pays the build once, as before.
+
 ## [1.12.0] - 2026-11-26
 
 ### Changed

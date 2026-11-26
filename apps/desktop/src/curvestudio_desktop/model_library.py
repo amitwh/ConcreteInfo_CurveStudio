@@ -61,7 +61,9 @@ def _load() -> None:
     stats = import_module("curvestudio.tools.stats")
     for name in _MODULES:
         import_module(name)
-    catalogue.list_models()  # the plugins load here, once
+    # builds here, or serves the per-user disk cache; on a hit the model plugins stay
+    # unloaded until a fitted model is first asked for
+    catalogue.list_models()
     stats.catalogue()
     with _lock:
         _loaded = True
