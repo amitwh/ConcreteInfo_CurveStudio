@@ -11,13 +11,18 @@ a fit that does not converge is a red banner with its reason, never a curve.
 
 The search does not cover model aliases: the workflow catalogue (the only model layer the
 desktop may import) does not expose them.
+
+The parameters grid stacks when the form is narrow (design item 14): below its width
+threshold each parameter becomes its name over three labelled value rows, so nothing
+scrolls sideways. The logical parameters live in ``_param_names``; the table is their
+presentation, and reads go through :meth:`_param_text`, whichever layout is shown.
 """
 
 import re
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QEvent, QObject, Qt, QTimer
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -59,8 +64,15 @@ DEBOUNCE_MS = 400
 _FORM_SCROLL_MIN_HEIGHT = 140
 """The form scrolls rather than pinning the dock: a short viewport of the form is
 still usable, and the Analysis dock must be able to give its height to the plot."""
+_STACK_BELOW_WIDTH = 360
+"""The form width under which the parameters grid stacks (item 14): four value columns
+across stop fitting around here, so each parameter becomes a labelled block instead."""
+_WIDE_FORM_MIN_WIDTH = 300
+_STACKED_FORM_MIN_WIDTH = 230
 _MAX_SEED = 2**31 - 1
 _ID_IN_TEXT = re.compile(r"^.*?\(([^()]+)\)")
+
+_PARAMETER_FIELDS = ("initial", "lower bound", "upper bound")
 
 XyProvider = Callable[[], "XY | None"]
 
@@ -81,6 +93,9 @@ class ManualFitView(QWidget):
         self._validation_token = -1
         self._last_error: str | None = None
         self._fitting = False
+        # the logical parameter rows (name order is the model's); the table presents them
+        self._param_names: list[str] = []
+        self._parameters_stacked = False
         layout = QVBoxLayout(self)
         layout.setContentsMargins(6, 6, 6, 6)
         layout.setSpacing(4)
@@ -96,14 +111,18 @@ class ManualFitView(QWidget):
         self._build_form(body_layout)
         self._build_parameters(body_layout)
         body_layout.addStretch(1)
-        # a form never scrolls sideways: this floor keeps its rows readable
-        body.setMinimumWidth(300)
+        # a form never scrolls sideways: this floor keeps its rows readable (the stacked
+        # parameter grid lowers it — see _set_parameters_stacked)
+        body.setMinimumWidth(_WIDE_FORM_MIN_WIDTH)
         self.form_scroll = QScrollArea()
         self.form_scroll.setObjectName("manualFormScroll")
         self.form_scroll.setWidgetResizable(True)
         self.form_scroll.setFrameShape(QFrame.Shape.NoFrame)
         self.form_scroll.setWidget(body)
         self.form_scroll.setMinimumHeight(_FORM_SCROLL_MIN_HEIGHT)
+        # the viewport's width decides whether the parameter grid can lie four columns
+        # across or must stack (item 14)
+        self.form_scroll.viewport().installEventFilter(self)
         layout.addWidget(self.form_scroll, stretch=1)
         self._build_actions(layout)
         self._banner = QLabel("")
@@ -242,6 +261,54 @@ class ManualFitView(QWidget):
         layout.addWidget(self._parameters_label)
         layout.addWidget(self.parameters_table)
 
+    # -- parameters grid: wide or stacked ---------------------------------------------------
+
+    def eventFilter(self, obj: QObject, event: QEvent) -> bool:
+        """The form's viewport resizing decides which layout the parameters grid uses."""
+        if obj is self.form_scroll.viewport() and event.type() == QEvent.Type.Resize:
+            self._set_parameters_stacked(event.size().width() < _STACK_BELOW_WIDTH)  # type: ignore[attr-defined]
+        return super().eventFilter(obj, event)
+
+    def _param_cell(self, index: int, field: int) -> tuple[int, int]:
+        """Where parameter ``index``'s field (0 name, 1 initial, 2 lower, 3 upper) lives.
+
+        Wide: one row per parameter, one column per field. Stacked: a block per parameter
+        — its name spanning both columns, then one labelled value row per field.
+        """
+        if self._parameters_stacked:
+            if field == 0:
+                return 4 * index, 0
+            return 4 * index + field, 1
+        return index, field
+
+    def _param_text(self, index: int, field: int) -> str:
+        row, column = self._param_cell(index, field)
+        item = self.parameters_table.item(row, column)
+        return "" if item is None else item.text().strip()
+
+    def _set_parameters_stacked(self, stacked: bool) -> None:
+        """Lay the parameters grid out for a narrow or a wide form, keeping every value."""
+        if stacked == self._parameters_stacked:
+            return
+        entered = [
+            (name, self._param_text(p, 1), self._param_text(p, 2), self._param_text(p, 3))
+            for p, name in enumerate(self._param_names)
+        ]
+        self._parameters_stacked = stacked
+        table = self.parameters_table
+        self._param_names = []
+        table.clearContents()
+        table.setRowCount(0)
+        table.clearSpans()  # the stacked layout's name rows span columns
+        table.setColumnCount(2 if stacked else 4)
+        table.horizontalHeader().setVisible(not stacked)
+        if not stacked:
+            table.setHorizontalHeaderLabels(["parameter", "initial", "lower bound", "upper bound"])
+        # a stacked grid needs less width; the form's floor follows so it need not scroll
+        self.form_body.setMinimumWidth(_STACKED_FORM_MIN_WIDTH if stacked else _WIDE_FORM_MIN_WIDTH)
+        for name, initial, lower, upper in entered:
+            self._add_parameter_row(name, initial, lower, upper)
+
     def _build_actions(self, layout: QVBoxLayout) -> None:
         row = QHBoxLayout()
         self.fit_button = QPushButton("Fit")
@@ -337,7 +404,7 @@ class ManualFitView(QWidget):
 
     def _on_model_changed(self) -> None:
         """A different model: reset the per-parameter rows from the new model's info."""
-        self.parameters_table.setRowCount(0)
+        self._clear_parameter_rows()
         info = self.current_model()
         custom = self._is_custom()
         self._equation_box.setVisible(custom)
@@ -363,8 +430,13 @@ class ManualFitView(QWidget):
     def _custom_parameter_names(self) -> list[str]:
         return [part.strip() for part in self.parameters_edit.text().split(",") if part.strip()]
 
+    def _clear_parameter_rows(self) -> None:
+        self._param_names = []
+        self.parameters_table.clearContents()
+        self.parameters_table.setRowCount(0)
+
     def _sync_custom_parameters(self) -> None:
-        """One editable initial/bounds row per typed custom parameter (blank: default).
+        """One editable initial/bounds entry per typed custom parameter (blank: default).
 
         Values already entered follow their parameter's name, so reordering or
         extending the list never loses them.
@@ -372,22 +444,47 @@ class ManualFitView(QWidget):
         if not self._is_custom():
             return
         previous = {
-            self._cell(row, 0): (self._cell(row, 1), self._cell(row, 2), self._cell(row, 3))
-            for row in range(self.parameters_table.rowCount())
+            name: (
+                self._param_text(p, 1),
+                self._param_text(p, 2),
+                self._param_text(p, 3),
+            )
+            for p, name in enumerate(self._param_names)
         }
-        self.parameters_table.setRowCount(0)
+        self._clear_parameter_rows()
         for name in self._custom_parameter_names():
             initial, lower, upper = previous.get(name, ("", "", ""))
             self._add_parameter_row(name, initial, lower, upper)
 
     def _add_parameter_row(self, name: str, initial: str, lower: str, upper: str) -> None:
-        row = self.parameters_table.rowCount()
-        self.parameters_table.insertRow(row)
-        for column, text in enumerate((name, initial, lower, upper)):
-            item = QTableWidgetItem(text)
-            if column == 0:
-                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-            self.parameters_table.setItem(row, column, item)
+        """Present one parameter in the current layout (wide rows or a stacked block)."""
+        index = len(self._param_names)
+        self._param_names.append(name)
+        table = self.parameters_table
+        if not self._parameters_stacked:
+            row = table.rowCount()
+            table.insertRow(row)
+            for column, text in enumerate((name, initial, lower, upper)):
+                item = QTableWidgetItem(text)
+                if column == 0:
+                    item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                table.setItem(row, column, item)
+            return
+        # stacked: the name spans both columns, then one labelled value row per field
+        name_row = 4 * index
+        for _ in range(4):
+            table.insertRow(table.rowCount())
+        name_item = QTableWidgetItem(name)
+        name_item.setFlags(name_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+        table.setItem(name_row, 0, name_item)
+        table.setItem(name_row, 1, QTableWidgetItem(""))
+        table.setSpan(name_row, 0, 1, 2)
+        for field, text in enumerate((initial, lower, upper), start=1):
+            row = name_row + field
+            label = QTableWidgetItem(_PARAMETER_FIELDS[field - 1])
+            label.setFlags(label.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            table.setItem(row, 0, label)
+            table.setItem(row, 1, QTableWidgetItem(text))
 
     def refresh_data_options(self) -> None:
         """Weights exist only when the active data carry a weights column."""
@@ -427,13 +524,12 @@ class ManualFitView(QWidget):
         bounds: dict[str, tuple[float | None, float | None]] = {}
         initial: dict[str, float] = {}
         if not self._is_polynomial():
-            for row in range(self.parameters_table.rowCount()):
-                name = self._cell(row, 0)
+            for p, name in enumerate(self._param_names):
                 if not name:
                     continue
                 parsed = [
-                    self._number(row, column, label)
-                    for column, label in (
+                    self._number(self._param_cell(p, field), label)
+                    for field, label in (
                         (1, "initial"),
                         (2, "lower bound"),
                         (3, "upper bound"),
@@ -465,8 +561,8 @@ class ManualFitView(QWidget):
         item = self.parameters_table.item(row, column)
         return "" if item is None else item.text().strip()
 
-    def _number(self, row: int, column: int, label: str) -> tuple[float | None, str]:
-        text = self._cell(row, column)
+    def _number(self, cell: tuple[int, int], label: str) -> tuple[float | None, str]:
+        text = self._cell(*cell)
         if not text:
             return None, ""
         try:

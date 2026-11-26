@@ -72,6 +72,25 @@ class Analysis(BaseModel):
     config: dict[str, Any]
     result: FitResult | dict[str, Any]
     note: str = ""
+    created_at: str | None = None
+    """When the analysis ran, as an ISO 8601 string with the +05:30 (IST) offset.
+
+    ``None`` on analyses recorded before the field existed (and on statistics results,
+    which the project tree never showed a time for); never a guessed value.
+    """
+
+    @field_validator("created_at")
+    @classmethod
+    def _created_at_is_ist_when_present(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        try:
+            stamp = datetime.fromisoformat(value)
+        except ValueError as exc:
+            raise ValueError(f"created_at is not ISO 8601: {value!r}") from exc
+        if stamp.utcoffset() != IST.utcoffset(None):
+            raise ValueError(f"created_at must carry the +05:30 (IST) offset: {value!r}")
+        return value
 
     @field_validator("config")
     @classmethod

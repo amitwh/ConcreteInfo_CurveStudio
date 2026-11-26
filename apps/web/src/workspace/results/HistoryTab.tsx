@@ -4,7 +4,7 @@ import { useState, type ReactElement } from "react";
 import { History, Trash2 } from "lucide-react";
 import type { FitSummaryOut } from "../../api/client";
 import { ErrorBox } from "../../components/States";
-import { fmtDate, fmtEquation } from "../../format";
+import { fmtDateTime, fmtEquation } from "../../format";
 
 function modelText(spec: Record<string, unknown>): string {
   const model = spec.model as Record<string, unknown> | undefined;
@@ -56,7 +56,7 @@ export function HistoryTab({
             className="history__load"
             aria-current={fit.id === activeFitId ? "true" : undefined}
             onClick={() => onLoad(fit.id)}
-            title={`${modelText(fit.spec)} · ${fmtDate(fit.created_at)}`}
+            title={`${modelText(fit.spec)} · ${fmtDateTime(fit.created_at)}`}
           >
             <span className="truncate">
               {fit.id === activeFitId && (
@@ -70,7 +70,7 @@ export function HistoryTab({
               <span className={`badge badge--${fit.status === "converged" ? "ok" : "bad"}`}>
                 {fit.status}
               </span>{" "}
-              {fmtDate(fit.created_at)}
+              {fmtDateTime(fit.created_at)}
             </span>
           </button>
           {confirmId === fit.id ? (

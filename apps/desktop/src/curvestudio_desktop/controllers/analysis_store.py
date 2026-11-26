@@ -14,7 +14,7 @@ the choices that produced it in ``analysis.config``.
 
 import json
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from typing import Any
 
 from pydantic import ValidationError
@@ -23,6 +23,7 @@ from curvestudio.discovery import AutoFitResult
 from curvestudio.project import Analysis
 from curvestudio.tools.stats import ToolResult
 from curvestudio.workflow import FitBundle, FitSpec
+from curvestudio_desktop.controllers.project import ist_now
 
 AUTOFIT_PREFIX = "autofit-"
 FIT_PREFIX = "fit-"
@@ -63,7 +64,12 @@ def partial_autofit_analysis_id(dataset_id: str) -> str:
 
 
 def _autofit_analysis(
-    analysis_id: str, dataset_id: str, result: AutoFitResult, note: str
+    analysis_id: str,
+    dataset_id: str,
+    result: AutoFitResult,
+    note: str,
+    *,
+    now: Callable[[], str] = ist_now,
 ) -> Analysis:
     return Analysis(
         id=analysis_id,
@@ -72,10 +78,13 @@ def _autofit_analysis(
         config={"config": result.config.model_dump(mode="json")},
         result=json.loads(result.to_json(include_fits=False)),
         note=note,
+        created_at=now(),
     )
 
 
-def autofit_analysis(dataset_id: str, result: AutoFitResult) -> Analysis:
+def autofit_analysis(
+    dataset_id: str, result: AutoFitResult, *, now: Callable[[], str] = ist_now
+) -> Analysis:
     """The stored form of one Auto-fit run: slim JSON, re-rankable, curves included."""
     return _autofit_analysis(
         autofit_analysis_id(dataset_id),
@@ -83,10 +92,13 @@ def autofit_analysis(dataset_id: str, result: AutoFitResult) -> Analysis:
         result,
         f"Auto-fit: {len(result.ranked)} fitted candidates, "
         f"{len(result.unconverged)} not converged, {len(result.skipped)} skipped",
+        now=now,
     )
 
 
-def partial_autofit_analysis(dataset_id: str, result: AutoFitResult) -> Analysis:
+def partial_autofit_analysis(
+    dataset_id: str, result: AutoFitResult, *, now: Callable[[], str] = ist_now
+) -> Analysis:
     """A cancelled run under its own id: flagged partial, shown with its notice."""
     return _autofit_analysis(
         partial_autofit_analysis_id(dataset_id),
@@ -94,6 +106,7 @@ def partial_autofit_analysis(dataset_id: str, result: AutoFitResult) -> Analysis
         result,
         f"Auto-fit (partial, cancelled): {len(result.ranked)} fitted candidates, "
         f"{len(result.unconverged)} not converged, {len(result.skipped)} never attempted",
+        now=now,
     )
 
 
@@ -177,6 +190,8 @@ def fit_analysis(
         config=config,
         result=bundle.result,
         note=bundle.result.model_id,
+        # the fit's own provenance timestamp: when it was computed, not stored
+        created_at=bundle.result.provenance.created_at,
     )
 
 

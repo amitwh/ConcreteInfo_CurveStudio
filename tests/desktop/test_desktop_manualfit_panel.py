@@ -354,3 +354,69 @@ def test_the_custom_entry_still_selects_custom_mode(make_window, write_file) -> 
     assert view.current_model() is None
     assert view._is_custom() is True
     assert view._equation_box.isVisible() or not window.isVisible()  # shown in a live window
+
+
+def test_parameters_grid_stacks_when_the_form_is_narrow(
+    make_window, qtbot, write_file, test_model
+) -> None:
+    """Design item 14: below its width threshold the parameter grid stacks — each
+    parameter becomes its name over three labelled value rows — and nothing entered is
+    lost, whatever way the panel is resized."""
+    window = make_manual_window(make_window, write_file, EXPONENTIAL_CSV, "exp.csv")
+    view = window.analysis_panel.manual_view
+    view._fill_models()
+    assert view.select_model(test_model)
+    table = view.parameters_table
+    assert table.columnCount() == 4  # wide: parameter | initial | lower | upper
+    table.item(0, 1).setText("4.0")  # initial for a
+    table.item(1, 2).setText("0.0")  # lower bound for r (prefilled, made explicit)
+
+    view._set_parameters_stacked(True)
+
+    assert table.columnCount() == 2
+    assert not view.parameters_table.horizontalHeader().isVisible()  # labels are per row now
+    # each parameter spans four rows: its name, then one labelled row per field
+    assert table.rowCount() == 8
+    assert view._param_names == ["a", "r"]
+    assert view._param_text(0, 1) == "4.0"  # a's initial survived the switch
+    assert view._param_text(1, 2) == "0.0"  # r's lower bound survived
+    spec, problem = view.current_spec()
+    assert spec is not None and problem == ""
+    assert spec.initial == {"a": 4.0}
+    assert spec.bounds == {"r": (0.0, None)}
+
+    # widening the panel lays the four columns out again, values still in place
+    view._set_parameters_stacked(False)
+    assert table.columnCount() == 4
+    assert table.rowCount() == 2
+    assert view._param_text(0, 1) == "4.0"
+    assert view._param_text(1, 2) == "0.0"
+
+    # the switch follows the form's real width, not a manual call
+    from PySide6.QtCore import QSize
+    from PySide6.QtGui import QResizeEvent
+    from PySide6.QtWidgets import QApplication
+
+    viewport = view.form_scroll.viewport()
+    QApplication.sendEvent(viewport, QResizeEvent(QSize(300, 400), QSize(700, 400)))
+    assert view._parameters_stacked is True
+    QApplication.sendEvent(viewport, QResizeEvent(QSize(500, 400), QSize(300, 400)))
+    assert view._parameters_stacked is False
+
+
+def test_stacked_grid_labels_each_field(make_window, qtbot, write_file) -> None:
+    """A stacked row says what each value is: the field labels are in the grid."""
+    window = make_manual_window(make_window, write_file)
+    view = window.analysis_panel.manual_view
+    view.model_combo.setCurrentIndex(view.model_combo.count() - 1)  # custom equation
+    view.equation_edit.setText("y = a*x")
+    view.parameters_edit.setText("a")
+    view._set_parameters_stacked(True)
+    table = view.parameters_table
+    texts = [table.item(row, 0).text() for row in range(table.rowCount())]
+    assert texts == ["a", "initial", "lower bound", "upper bound"]
+    # the label cells are read-only; only the value column is editable
+    from PySide6.QtCore import Qt
+
+    assert not bool(table.item(1, 0).flags() & Qt.ItemFlag.ItemIsEditable)
+    assert bool(table.item(1, 1).flags() & Qt.ItemFlag.ItemIsEditable)

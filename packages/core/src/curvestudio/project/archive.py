@@ -233,6 +233,7 @@ def _analysis_bytes(analysis: Analysis) -> bytes:
         "config": analysis.config,
         "note": analysis.note,
         "result": result,
+        "created_at": analysis.created_at,
     }
     return _json_bytes(document, f"analysis {analysis.id!r}")
 
@@ -672,6 +673,7 @@ def _load_analysis(file_id: str, data: bytes) -> Analysis:
             config=_object(document, "config", path),
             result=result,
             note=_string(document, "note", path, default=""),
+            created_at=_optional_iso(document, "created_at", path),
         )
     except ValidationError as exc:
         raise ProjectError(ProjectErrorCode.CORRUPT, f"{path} is invalid: {exc}") from exc
@@ -682,6 +684,19 @@ def _load_analysis(file_id: str, data: bytes) -> Analysis:
 
 def _string(document: Mapping[str, Any], key: str, path: str, *, default: str | None = None) -> str:
     value = document.get(key, default)
+    if not isinstance(value, str):
+        raise ProjectError(ProjectErrorCode.CORRUPT, f"{path} field {key!r} must be a string")
+    return value
+
+
+def _optional_iso(document: Mapping[str, Any], key: str, path: str) -> str | None:
+    """An optional timestamp field: absent or null reads as ``None``, never corrupt.
+
+    An archive written before the field existed simply does not carry the key.
+    """
+    value = document.get(key)
+    if value is None:
+        return None
     if not isinstance(value, str):
         raise ProjectError(ProjectErrorCode.CORRUPT, f"{path} field {key!r} must be a string")
     return value

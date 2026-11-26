@@ -1,16 +1,33 @@
 /**
  * The Auto-fit ranking table. Rows come pre-ordered from the server (the ordering is
- * the server's job — the client never re-sorts); a metric that is not defined renders
- * as "n/a", never 0 or NaN. Rows with the same fitted curve share their rank, and
- * `same_curve_as` names the others. Keyboard: arrow keys move the selection, Enter
- * opens the selected row's full results.
+ * the `RankBy` selector's business — the client never re-sorts the *ranking*); a metric
+ * that is not defined renders as "n/a", never 0 or NaN. Rows with the same fitted curve
+ * share their rank, and `same_curve_as` names the others. Keyboard: arrow keys move the
+ * selection, Enter opens the selected row's full results.
+ *
+ * Column headers are a display ordering only: clicking one reorders the visible rows
+ * client-side (ascending → descending → back to the ranked order) and the rank column
+ * stays visible, so the true order is always readable. A row's kebab menu holds exactly
+ * the actions the row's buttons used to offer — open the full results, use the model
+ * manually — nothing more.
  */
 
-import { useRef, type KeyboardEvent, type ReactElement } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactElement,
+} from "react";
+import { MoreVertical } from "lucide-react";
 import { CopyButton } from "../../components/CopyButton";
 import { fmtEquation, fmtInt, fmtNumber } from "../../format";
 import type { RankedFit } from "../../api/client";
 import { modelColor } from "../traces";
+import { SortableTh, cycleSort, sortRows, type SortKey, type SortState } from "../sorting";
 
 /** Human label + semantic badge for a candidate's fit status. */
 const STATUS_BADGE: Record<string, { label: string; tone: "ok" | "bad" }> = {
@@ -28,6 +45,171 @@ function StatusBadge({ status }: { status: string }): ReactElement {
   return <span className="badge badge--muted">{status}</span>;
 }
 
+/** Display sort keys by column id; the ranked order itself is never rebuilt. */
+const SORT_KEYS: Record<string, SortKey<RankedFit>> = {
+  rank: (row) => row.rank,
+  model: (row) => row.name,
+  r2: (row) => row.metrics.r2,
+  adj_r2: (row) => row.metrics.adj_r2,
+  rmse: (row) => row.metrics.rmse,
+  aicc: (row) => row.metrics.aicc,
+  bic: (row) => row.metrics.bic,
+  cv_rmse: (row) => row.metrics.cv_rmse,
+  k: (row) => row.metrics.k,
+  status: (row) => row.status,
+};
+
+/**
+ * One row's overflow menu: every action the row's inline buttons used to offer, fired by
+ * the same handlers. Opening moves focus to the first item; the arrow keys move between
+ * items; Escape closes and returns focus to the kebab; a press anywhere outside — or a
+ * scroll of the table under it — closes it too. The popover is `position: fixed` under
+ * the kebab because the table's scroll container would clip an absolutely-positioned one.
+ */
+function RowActionMenu({
+  row,
+  onOpen,
+  onUseManually,
+  showUseManually,
+  openRowBusy,
+}: {
+  row: RankedFit;
+  onOpen: (modelId: string) => void;
+  onUseManually: (row: RankedFit) => void;
+  showUseManually: boolean;
+  openRowBusy: string | null;
+}): ReactElement | null {
+  const [open, setOpen] = useState(false);
+  const [anchor, setAnchor] = useState<{ top: number; right: number } | null>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const firstItemRef = useRef<HTMLButtonElement>(null);
+  const buttonId = useId();
+  const menuId = useId();
+
+  const close = useCallback((restoreFocus: boolean): void => {
+    setOpen(false);
+    setAnchor(null);
+    if (restoreFocus) buttonRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    if (open) firstItemRef.current?.focus();
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (event: MouseEvent): void => {
+      if (!wrapRef.current?.contains(event.target as Node)) close(false);
+    };
+    // capture: any scroll — the table's own or a page one — leaves the anchor behind
+    const onScroll = (): void => close(false);
+    document.addEventListener("mousedown", onDown);
+    window.addEventListener("scroll", onScroll, true);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      window.removeEventListener("scroll", onScroll, true);
+    };
+  }, [open, close]);
+
+  const onMenuKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      close(true);
+      return;
+    }
+    if (event.key === "Tab") {
+      close(false);
+      return;
+    }
+    const items = Array.from(
+      event.currentTarget.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+    );
+    const index = items.indexOf(document.activeElement as HTMLElement);
+    const last = items.length - 1;
+    let target: number;
+    switch (event.key) {
+      case "ArrowDown":
+        target = index < 0 || index === last ? 0 : index + 1;
+        break;
+      case "ArrowUp":
+        target = index <= 0 ? last : index - 1;
+        break;
+      default:
+        return;
+    }
+    event.preventDefault();
+    items[target]?.focus();
+  };
+
+  // An open in flight blocks every row's actions, exactly as the inline buttons were
+  // blocked; the busy row's kebab itself says what is happening.
+  const busy = openRowBusy !== null;
+
+  return (
+    <div className="row-menu-wrap" ref={wrapRef}>
+      <button
+        ref={buttonRef}
+        type="button"
+        className="btn btn--small row-menu__toggle"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-controls={open ? menuId : undefined}
+        aria-label={`Row actions for ${row.name}`}
+        disabled={busy}
+        onClick={(event) => {
+          event.stopPropagation();
+          if (open) {
+            close(false);
+            return;
+          }
+          const rect = buttonRef.current?.getBoundingClientRect();
+          if (rect !== undefined) setAnchor({ top: rect.bottom + 4, right: rect.right });
+          setOpen(true);
+        }}
+      >
+        <MoreVertical className="icon" aria-hidden="true" focusable="false" />
+        {openRowBusy === row.model_id ? "Opening…" : "Actions"}
+      </button>
+      {open && anchor !== null && (
+        <div
+          className="row-menu"
+          style={{ top: anchor.top, right: anchor.right }}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <div role="menu" id={menuId} aria-labelledby={buttonId} onKeyDown={onMenuKeyDown}>
+            <button
+              ref={firstItemRef}
+              type="button"
+              role="menuitem"
+              className="row-menu__item"
+              onClick={() => {
+                close(false);
+                onOpen(row.model_id);
+              }}
+            >
+              Open full results
+            </button>
+            {showUseManually && (
+              <button
+                type="button"
+                role="menuitem"
+                className="row-menu__item"
+                onClick={() => {
+                  close(false);
+                  onUseManually(row);
+                }}
+              >
+                Use this model manually
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export interface RankingTableProps {
   rows: RankedFit[];
   selectedId: string | null;
@@ -35,7 +217,7 @@ export interface RankingTableProps {
   curvesAvailable: ReadonlySet<string>;
   onSelect: (modelId: string) => void;
   onOpen: (modelId: string) => void;
-  /** Shows per-row action buttons (the progress view's live table has none). */
+  /** Shows per-row action menus (the progress view's live table has none). */
   actions?: boolean;
   onUseManually?: (row: RankedFit) => void;
   /** Model ids that can prefill the manual panel (registered models, polynomials). */
@@ -58,24 +240,36 @@ export function RankingTable({
   positionOffset = 0,
 }: RankingTableProps): ReactElement {
   const rowRefs = useRef(new Map<string, HTMLTableRowElement>());
+  const [sort, setSort] = useState<SortState | null>(null);
 
   const focusRow = (modelId: string): void => {
     rowRefs.current.get(modelId)?.focus();
   };
 
+  // Display ordering only — `rows` (the served ranking) is never rebuilt or reordered.
+  const ordered = useMemo(() => sortRows(rows, sort, SORT_KEYS), [rows, sort]);
+  // The swatch follows the row's ordinal in the *ranking*, not its display position, so
+  // it always matches the curve drawn for that row, whichever way the table is sorted.
+  const rankedIndex = useMemo(() => {
+    const map = new Map<string, number>();
+    rows.forEach((row, index) => map.set(row.model_id, index));
+    return map;
+  }, [rows]);
+
   const onKeyDown = (event: KeyboardEvent<HTMLTableSectionElement>): void => {
-    if (rows.length === 0) return;
-    const index = rows.findIndex((row) => row.model_id === selectedId);
+    if (ordered.length === 0) return;
+    const index = ordered.findIndex((row) => row.model_id === selectedId);
     if (event.key === "ArrowDown") {
       event.preventDefault();
-      const next = rows[Math.min(index + 1, rows.length - 1)] ?? rows[rows.length - 1];
+      const next =
+        ordered[Math.min(index + 1, ordered.length - 1)] ?? ordered[ordered.length - 1];
       if (next !== undefined) {
         onSelect(next.model_id);
         focusRow(next.model_id);
       }
     } else if (event.key === "ArrowUp") {
       event.preventDefault();
-      const previous = rows[Math.max(index - 1, 0)] ?? rows[0];
+      const previous = ordered[Math.max(index - 1, 0)] ?? ordered[0];
       if (previous !== undefined) {
         onSelect(previous.model_id);
         focusRow(previous.model_id);
@@ -86,36 +280,46 @@ export function RankingTable({
     }
   };
 
+  const onSort = (column: string): void => {
+    setSort((current) => cycleSort(current, column));
+  };
+
   return (
     <div className="table-wrap">
       <table className="table table--compact ranking-table" aria-label="Ranked candidates">
         <thead>
           <tr>
-            <th scope="col">Rank</th>
-            <th scope="col">Model</th>
+            <SortableTh column="rank" state={sort} onSort={onSort}>
+              Rank
+            </SortableTh>
+            <SortableTh column="model" state={sort} onSort={onSort}>
+              Model
+            </SortableTh>
             <th scope="col">Equation (fitted)</th>
-            <th scope="col" className="num">
+            <SortableTh column="r2" state={sort} onSort={onSort} className="num">
               R²
-            </th>
-            <th scope="col" className="num">
+            </SortableTh>
+            <SortableTh column="adj_r2" state={sort} onSort={onSort} className="num">
               adj. R²
-            </th>
-            <th scope="col" className="num">
+            </SortableTh>
+            <SortableTh column="rmse" state={sort} onSort={onSort} className="num">
               RMSE
-            </th>
-            <th scope="col" className="num">
+            </SortableTh>
+            <SortableTh column="aicc" state={sort} onSort={onSort} className="num">
               AICc
-            </th>
-            <th scope="col" className="num">
+            </SortableTh>
+            <SortableTh column="bic" state={sort} onSort={onSort} className="num">
               BIC
-            </th>
-            <th scope="col" className="num">
+            </SortableTh>
+            <SortableTh column="cv_rmse" state={sort} onSort={onSort} className="num">
               CV-RMSE
-            </th>
-            <th scope="col" className="num">
+            </SortableTh>
+            <SortableTh column="k" state={sort} onSort={onSort} className="num">
               k
-            </th>
-            <th scope="col">Status</th>
+            </SortableTh>
+            <SortableTh column="status" state={sort} onSort={onSort}>
+              Status
+            </SortableTh>
             {actions && (
               <th scope="col" className="ranking-row__actions">
                 Actions
@@ -124,11 +328,11 @@ export function RankingTable({
           </tr>
         </thead>
         <tbody onKeyDown={onKeyDown}>
-          {rows.map((row, index) => {
+          {ordered.map((row) => {
             const selected = row.model_id === selectedId;
-            // The swatch follows the row's ordinal in the full ranking, not its tied
-            // rank value, so it always matches the curve drawn for that row.
-            const swatchColor = modelColor(positionOffset + index + 1);
+            const swatchColor = modelColor(
+              positionOffset + (rankedIndex.get(row.model_id) ?? 0) + 1,
+            );
             const hasCurve = curvesAvailable.has(row.model_id);
             const equation =
               row.equation_fitted === null ? null : fmtEquation(row.equation_fitted);
@@ -186,34 +390,16 @@ export function RankingTable({
                 </td>
                 {actions && (
                   <td className="ranking-row__actions">
-                    <div className="btn-row">
-                      <button
-                        type="button"
-                        className="btn btn--small"
-                        aria-label="Open full results"
-                        disabled={openRowBusy !== null}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          onOpen(row.model_id);
-                        }}
-                      >
-                        {openRowBusy === row.model_id ? "Opening…" : "Open"}
-                      </button>
-                      {onUseManually !== undefined &&
-                        (manuallySelectable?.has(row.model_id) ?? false) && (
-                          <button
-                            type="button"
-                            className="btn btn--small"
-                            aria-label="Use this model manually"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              onUseManually(row);
-                            }}
-                          >
-                            Use manually
-                          </button>
-                        )}
-                    </div>
+                    <RowActionMenu
+                      row={row}
+                      onOpen={onOpen}
+                      onUseManually={onUseManually ?? (() => {})}
+                      showUseManually={
+                        onUseManually !== undefined &&
+                        (manuallySelectable?.has(row.model_id) ?? false)
+                      }
+                      openRowBusy={openRowBusy}
+                    />
                   </td>
                 )}
               </tr>

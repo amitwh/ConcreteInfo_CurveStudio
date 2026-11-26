@@ -349,11 +349,12 @@ describe("WorkspacePage — opened Auto-fit rows", () => {
     await flush();
     await flush();
 
-    const open = screen.getByRole("button", { name: "Open full results" }) as HTMLButtonElement;
+    const open = screen.getByRole("button", { name: "Row actions for Exponential decay" }) as HTMLButtonElement;
     expect(open.disabled).toBe(false);
     fireEvent.click(open);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Open full results" }));
     await flush();
-    const busy = screen.getByRole("button", { name: "Open full results" }) as HTMLButtonElement;
+    const busy = screen.getByRole("button", { name: "Row actions for Exponential decay" }) as HTMLButtonElement;
     expect(busy.disabled).toBe(true);
     expect(busy.textContent).toBe("Opening…");
     expect(request).toHaveBeenCalledWith("/autofits/af-1/rows/exp_decay/open", {
@@ -364,9 +365,9 @@ describe("WorkspacePage — opened Auto-fit rows", () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(300);
     });
-    const reopened = screen.getByRole("button", { name: "Open full results" }) as HTMLButtonElement;
+    const reopened = screen.getByRole("button", { name: "Row actions for Exponential decay" }) as HTMLButtonElement;
     expect(reopened.disabled).toBe(false);
-    expect(reopened.textContent).toBe("Open");
+    expect(reopened.textContent).toBe("Actions");
   });
 });
 
@@ -394,7 +395,8 @@ describe("WorkspacePage — layout and errors", () => {
     await selectDataset();
 
     // Open the row: the route answers with an existing fit, so no job is polled.
-    fireEvent.click(screen.getByRole("button", { name: "Open full results" }));
+    fireEvent.click(screen.getByRole("button", { name: "Row actions for Exponential decay" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Open full results" }));
     await flush();
     await flush();
 
@@ -442,8 +444,9 @@ describe("WorkspacePage — opening a row selects it", () => {
 
     // Open the second row: the selection must follow it, otherwise the chart draws the
     // opened fit in the first row's colour and nothing looks like it changed.
-    const openButtons = screen.getAllByRole("button", { name: "Open full results" });
-    fireEvent.click(openButtons[1] as HTMLButtonElement);
+    const kebabs = screen.getAllByRole("button", { name: /Row actions for / });
+    fireEvent.click(kebabs[1] as HTMLButtonElement);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Open full results" }));
     await flush();
 
     const after = Array.from(container.querySelectorAll("tr.ranking-row"));
@@ -483,8 +486,9 @@ describe("WorkspacePage — selecting a row after opening it", () => {
     await flush();
     await flush();
 
-    const openButtons = screen.getAllByRole("button", { name: "Open full results" });
-    fireEvent.click(openButtons[1] as HTMLButtonElement);
+    const kebabs = screen.getAllByRole("button", { name: /Row actions for / });
+    fireEvent.click(kebabs[1] as HTMLButtonElement);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Open full results" }));
     await flush();
     expect(screen.queryByText("Parameters")).not.toBeNull();
 

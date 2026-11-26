@@ -12,11 +12,12 @@ project tree restores a stored result without refitting. The controller uses QtC
 """
 
 from collections.abc import Callable
+from datetime import datetime
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 from PySide6.QtCore import QObject, QSettings, Signal
 
-from curvestudio_desktop.controllers.project import ProjectController
+from curvestudio_desktop.controllers.project import IST, ProjectController
 from curvestudio_desktop.controllers.selection import SelectionController
 from curvestudio_desktop.jobs import JobHandle, JobRunner
 
@@ -73,6 +74,22 @@ def _reason_of(error: BaseException) -> str:
     """A stable, readable reason for an exception the workflow layers define."""
     code = getattr(error, "code", None)
     return f"{code}: {error}" if isinstance(code, str) else str(error)
+
+
+def history_time(created_at: str | None) -> str:
+    """A stored analysis's time as the history shows it: ` — DD/MM/YYYY HH:mm` in IST.
+
+    An empty string when nothing is recorded — analyses from before the timestamp
+    existed, and statistics results, show no time rather than a guessed one. Whatever
+    offset the ISO string carries, the moment is shown at +05:30.
+    """
+    if created_at is None:
+        return ""
+    try:
+        moment = datetime.fromisoformat(created_at).astimezone(IST)
+    except ValueError:
+        return ""
+    return f" — {moment:%d/%m/%Y %H:%M}"
 
 
 class _RunSignals(QObject):
@@ -584,16 +601,18 @@ class AnalysisController(QObject):
         return None if analysis is None else analysis.dataset_id
 
     def analysis_label(self, analysis_id: str) -> str:
-        """The tree label of an analysis: what it is, not its internal id."""
+        """The tree label of an analysis: what it is, not its internal id, and when it ran."""
         analysis = self._find_analysis(analysis_id)
         if analysis is None:
             return analysis_id
+        when = history_time(analysis.created_at)
         if analysis.kind == "autofit":
             if _store().is_partial_autofit(analysis):
-                return "Auto-fit (partial)"
-            return "Auto-fit"
+                return f"Auto-fit (partial){when}"
+            return f"Auto-fit{when}"
         result = analysis.result
-        return result.model_id if not isinstance(result, dict) else analysis.id
+        name = result.model_id if not isinstance(result, dict) else analysis.id
+        return f"{name}{when}"
 
     # -- current display state ---------------------------------------------------------------
 

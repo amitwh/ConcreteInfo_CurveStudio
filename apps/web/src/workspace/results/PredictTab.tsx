@@ -1,13 +1,15 @@
 /**
  * Prediction: enter x values, get ŷ with an optional confidence or prediction band,
- * plus CSV/JSON/XLSX export of the whole stored fit.
+ * plus CSV/JSON/XLSX export of the whole stored fit. The result table's headers reorder
+ * the visible rows only (ascending → descending → the entered x order).
  */
 
-import { useState, type ReactElement, type SubmitEvent } from "react";
+import { useMemo, useState, type ReactElement, type SubmitEvent } from "react";
 import { Download } from "lucide-react";
 import { api, saveBlob, type FitBundle, type Prediction } from "../../api/client";
 import { ErrorBox } from "../../components/States";
 import { fmtNumber } from "../../format";
+import { SortableTh, cycleSort, sortRows, type SortState } from "../sorting";
 
 type BandChoice = "none" | "confidence" | "prediction";
 
@@ -24,6 +26,7 @@ export function PredictTab({
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
   const [exportError, setExportError] = useState<unknown>(null);
+  const [sort, setSort] = useState<SortState | null>(null);
 
   const converged = bundle.result.status === "converged";
 
@@ -52,6 +55,7 @@ export function PredictTab({
           body: JSON.stringify({ x: values, band: band === "none" ? null : band }),
         }),
       );
+      setSort(null); // a new result is shown in its own order
     } catch (err) {
       setError(err);
     } finally {
@@ -67,6 +71,27 @@ export function PredictTab({
     } catch (error) {
       setExportError(error);
     }
+  };
+
+  // Display order over the result's row indices; a fresh prediction starts unsorted.
+  const orderedIndices = useMemo(() => {
+    if (prediction === null) return [];
+    const keys: Record<string, (index: number) => number | string | null> = {
+      x: (index) => prediction.x[index] ?? null,
+      y: (index) => prediction.y[index] ?? null,
+      lower: (index) => prediction.lower?.[index] ?? null,
+      upper: (index) => prediction.upper?.[index] ?? null,
+      extrapolated: (index) => (prediction.extrapolated[index] ? "yes" : "no"),
+    };
+    return sortRows(
+      prediction.x.map((_, index) => index),
+      sort,
+      keys,
+    );
+  }, [prediction, sort]);
+
+  const onSort = (column: string): void => {
+    setSort((current) => cycleSort(current, column));
   };
 
   return (
@@ -111,17 +136,35 @@ export function PredictTab({
             <caption className="sr-only">Predicted values</caption>
             <thead>
               <tr>
-                <th scope="col">x</th>
-                <th scope="col">ŷ</th>
-                {prediction.band !== null && <th scope="col">lower</th>}
-                {prediction.band !== null && <th scope="col">upper</th>}
-                <th scope="col">extrapolated</th>
+                <SortableTh column="x" state={sort} onSort={onSort} className="num">
+                  x
+                </SortableTh>
+                <SortableTh column="y" state={sort} onSort={onSort} className="num">
+                  ŷ
+                </SortableTh>
+                {prediction.band !== null && (
+                  <SortableTh column="lower" state={sort} onSort={onSort} className="num">
+                    lower
+                  </SortableTh>
+                )}
+                {prediction.band !== null && (
+                  <SortableTh column="upper" state={sort} onSort={onSort} className="num">
+                    upper
+                  </SortableTh>
+                )}
+                <SortableTh column="extrapolated" state={sort} onSort={onSort}>
+                  extrapolated
+                </SortableTh>
               </tr>
             </thead>
             <tbody>
-              {prediction.x.map((x, index) => (
+              {orderedIndices.map((index) => (
                 <tr key={index}>
-                  <td className="num">{x === null ? "n/a" : fmtNumber(x, { digits: 8 })}</td>
+                  <td className="num">
+                    {prediction.x[index] === null
+                      ? "n/a"
+                      : fmtNumber(prediction.x[index], { digits: 8 })}
+                  </td>
                   <td className="num">
                     {prediction.y[index] === null || prediction.y[index] === undefined
                       ? "n/a"

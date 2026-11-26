@@ -2,13 +2,16 @@
  * Fitted parameters: estimate, standard error, 95% CI. The engine does not report t/p
  * values, so those columns do not exist. For a fit that did not converge the estimates
  * are hidden behind a "Show anyway" toggle — they are diagnostics, not results.
- * Copy button yields tab-separated values for pasting into a spreadsheet.
+ * Copy button yields tab-separated values for pasting into a spreadsheet. The column
+ * headers reorder the visible rows only (ascending → descending → the engine's order);
+ * the TSV copy always carries the engine's order.
  */
 
-import { useState, type ReactElement } from "react";
+import { useMemo, useState, type ReactElement } from "react";
 import { CopyButton } from "../../components/CopyButton";
 import type { FitBundle } from "../../api/client";
 import { fmtNumber } from "../../format";
+import { SortableTh, cycleSort, sortRows, type SortKey, type SortState } from "../sorting";
 
 type Row = {
   name: string;
@@ -18,11 +21,20 @@ type Row = {
   ci_high?: number | null;
 };
 
+const SORT_KEYS: Record<string, SortKey<Row>> = {
+  name: (row) => row.name,
+  estimate: (row) => row.value,
+  std_err: (row) => row.std_err ?? null,
+  ci: (row) => row.ci_low ?? null,
+};
+
 export function ParametersTab({ bundle }: { bundle: FitBundle }): ReactElement {
   const converged = bundle.result.status === "converged";
   const [showAnyway, setShowAnyway] = useState(false);
+  const [sort, setSort] = useState<SortState | null>(null);
 
   const rows: Row[] = bundle.result.parameters.map((parameter) => ({ ...parameter }));
+  const ordered = useMemo(() => sortRows(rows, sort, SORT_KEYS), [rows, sort]);
 
   const tsv = [
     "name\testimate\tstd_err\tci_low\tci_high",
@@ -31,6 +43,10 @@ export function ParametersTab({ bundle }: { bundle: FitBundle }): ReactElement {
         `${row.name}\t${row.value}\t${row.std_err ?? ""}\t${row.ci_low ?? ""}\t${row.ci_high ?? ""}`,
     ),
   ].join("\n");
+
+  const onSort = (column: string): void => {
+    setSort((current) => cycleSort(current, column));
+  };
 
   return (
     <div className="table-wrap">
@@ -50,14 +66,22 @@ export function ParametersTab({ bundle }: { bundle: FitBundle }): ReactElement {
             <caption className="sr-only">Fitted parameter estimates with uncertainties</caption>
             <thead>
               <tr>
-                <th scope="col">Parameter</th>
-                <th scope="col">Estimate</th>
-                <th scope="col">Std. error</th>
-                <th scope="col">95% CI</th>
+                <SortableTh column="name" state={sort} onSort={onSort}>
+                  Parameter
+                </SortableTh>
+                <SortableTh column="estimate" state={sort} onSort={onSort} className="num">
+                  Estimate
+                </SortableTh>
+                <SortableTh column="std_err" state={sort} onSort={onSort} className="num">
+                  Std. error
+                </SortableTh>
+                <SortableTh column="ci" state={sort} onSort={onSort} className="num">
+                  95% CI
+                </SortableTh>
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => (
+              {ordered.map((row) => (
                 <tr key={row.name}>
                   <th scope="row">
                     <code>{row.name}</code>

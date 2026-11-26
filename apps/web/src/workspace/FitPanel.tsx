@@ -318,7 +318,9 @@ export function FitPanel({ dataset, models, busy, onFit, fitError, preset }: Fit
         <fieldset className="fieldset">
           <legend>Parameters — initial values and bounds</legend>
           <div className="table-wrap">
-            <table className="table table--compact">
+            {/* data-label carries each cell's column name for the stacked layout the
+                stylesheet switches to below its breakpoint (item 14). */}
+            <table className="table table--compact params-grid">
               <thead>
                 <tr>
                   <th scope="col">Name</th>
@@ -333,7 +335,7 @@ export function FitPanel({ dataset, models, busy, onFit, fitError, preset }: Fit
                     <td>
                       <code>{row.name}</code>
                     </td>
-                    <td>
+                    <td data-label="Initial">
                       <input
                         aria-label={`Initial ${row.name}`}
                         type="number"
@@ -346,7 +348,7 @@ export function FitPanel({ dataset, models, busy, onFit, fitError, preset }: Fit
                         }
                       />
                     </td>
-                    <td>
+                    <td data-label="Lower">
                       <input
                         aria-label={`Lower bound ${row.name}`}
                         type="number"
@@ -367,7 +369,7 @@ export function FitPanel({ dataset, models, busy, onFit, fitError, preset }: Fit
                         }
                       />
                     </td>
-                    <td>
+                    <td data-label="Upper">
                       <input
                         aria-label={`Upper bound ${row.name}`}
                         type="number"

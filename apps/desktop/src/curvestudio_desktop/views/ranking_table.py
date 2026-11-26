@@ -10,8 +10,11 @@ horizontally rather than rounding a value. Display rules that
 matter for honesty (Review Focus 3): undefined metrics render as ``n/a``, never 0 or a
 blank that reads as zero; markers in the Model cell point at degenerate and redundant
 fits whose full explanation lives in the row tooltip; the row tooltip and the context
-menu still carry the fitted equation. The table never re-sorts on its own — ordering is
-the ``RankBy`` selector's business, so click-sorting cannot fight the ranked order.
+menu still carry the fitted equation. The ranking itself is the ``RankBy`` selector's
+business and the model's rows never change order — but a header click is a *display*
+ordering: a sort proxy reorders what the view shows (ascending → descending → back to
+the ranked order), the rank column stays visible, and an undefined metric reads as
+missing and sorts last in both directions.
 """
 
 from collections.abc import Sequence
@@ -23,6 +26,7 @@ from PySide6.QtCore import (
     QObject,
     QPersistentModelIndex,
     QPoint,
+    QSortFilterProxyModel,
     Qt,
     Signal,
 )
@@ -111,6 +115,56 @@ def row_tooltip(row: RankedFit) -> str:
     return "\n".join(lines)
 
 
+def _sort_value(row: RankedFit, column: int) -> float | str | None:
+    """What a column is compared by; ``None`` is the ``n/a`` case."""
+    if column == 0:
+        return row.rank
+    if column == 1:
+        return row.name.casefold()
+    metrics = row.metrics
+    if column == 2:
+        return metrics.r2
+    if column == 3:
+        return metrics.adj_r2
+    if column == 4:
+        return metrics.rmse
+    return metrics.k
+
+
+class _DisplaySortProxyModel(QSortFilterProxyModel):
+    """Reorders the *view* only: the source model (the stored ranking) never changes."""
+
+    def __init__(self, parent: QObject | None = None) -> None:
+        super().__init__(parent)
+        self._descending = False
+
+    def set_descending(self, descending: bool) -> None:
+        self._descending = descending
+
+    def lessThan(  # Qt name
+        self, left: QModelIndex, right: QModelIndex
+    ) -> bool:
+        source = self.sourceModel()
+        assert isinstance(source, RankingTableModel)
+        left_row = source.row_at(left.row())
+        right_row = source.row_at(right.row())
+        if left_row is None or right_row is None:
+            return False
+        a = _sort_value(left_row, left.column())
+        b = _sort_value(right_row, right.column())
+        # an undefined metric is missing information, not a number: it sorts last
+        # whichever way the column is ordered
+        if a is None and b is None:
+            return left.row() < right.row()
+        if a is None:
+            return False
+        if b is None:
+            return True
+        if self._descending:
+            return b < a
+        return a < b
+
+
 class RankingTableModel(QAbstractTableModel):
     """Immutable view of ranked rows; replace wholesale via :meth:`set_rows`."""
 
@@ -195,7 +249,12 @@ class RankingTableModel(QAbstractTableModel):
 
 
 class RankingTableView(QTableView):
-    """Keyboard-operable, read-only ranking table with a copy-equation action."""
+    """Keyboard-operable, read-only ranking table with a copy-equation action.
+
+    A header click cycles a display-only ordering (ascending → descending → ranked);
+    ``set_rows``/``rows``/``select_row`` keep speaking in *stored* row numbers, and the
+    mapping to and from the display order happens here.
+    """
 
     openRequested = Signal()
     """The user asked for the full result of the current row (double-click or Enter)."""
@@ -203,7 +262,12 @@ class RankingTableView(QTableView):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("rankingTable")
-        self.setModel(RankingTableModel(self))
+        self._source_model = RankingTableModel(self)
+        self._sort_proxy = _DisplaySortProxyModel(self)
+        self._sort_proxy.setSourceModel(self._source_model)
+        self.setModel(self._sort_proxy)
+        self._sort_column: int | None = None
+        self._sort_descending = False
         self.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -216,18 +280,68 @@ class RankingTableView(QTableView):
         header.setObjectName("rankingTableHeader")
         header.setStretchLastSection(False)
         header.setMinimumSectionSize(24)
+        # sections are clickable, but the sorting is ours (below): the view's built-in
+        # sorting stays off so it cannot fight the ranked order either
+        header.setSectionsClickable(True)
+        header.setSortIndicatorShown(True)
+        header.setSortIndicator(-1, Qt.SortOrder.AscendingOrder)  # no column sorted yet
+        header.sectionClicked.connect(self._cycle_column_sort)
         for column in range(len(COLUMNS)):
             if column != _MODEL_COLUMN:
                 header.setSectionResizeMode(column, QHeaderView.ResizeMode.Fixed)
         # the model name takes the leftover width and elides; nothing else moves
         header.setSectionResizeMode(_MODEL_COLUMN, QHeaderView.ResizeMode.Stretch)
         self._fit_numeric_columns()
-        model = self.model()
-        if model is not None:
-            model.modelReset.connect(self._fit_numeric_columns)
+        self._source_model.modelReset.connect(self._fit_numeric_columns)
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self._show_menu)
         self.doubleClicked.connect(lambda _index: self.openRequested.emit())
+
+    # -- display ordering --------------------------------------------------------------------
+
+    def _cycle_column_sort(self, column: int) -> None:
+        """The three-state header cycle: ascending → descending → the ranked order."""
+        header = self.horizontalHeader()
+        if self._sort_column != column:
+            self._apply_column_sort(column, descending=False)
+        elif not self._sort_descending:
+            self._apply_column_sort(column, descending=True)
+        else:
+            self._sort_column = None
+            self._sort_descending = False
+            self._sort_proxy.sort(-1)  # -1: the proxy passes the source order through
+            header.setSortIndicator(-1, Qt.SortOrder.AscendingOrder)
+
+    def _apply_column_sort(self, column: int, *, descending: bool) -> None:
+        self._sort_column = column
+        self._sort_descending = descending
+        self._sort(column)
+        self.horizontalHeader().setSortIndicator(
+            column,
+            Qt.SortOrder.DescendingOrder if descending else Qt.SortOrder.AscendingOrder,
+        )
+
+    def _reapply_sort(self) -> None:
+        if self._sort_column is not None:
+            self._sort(self._sort_column)
+
+    def _sort(self, column: int) -> None:
+        """(Re)apply the display sort. The proxy always "ascends" — the comparator itself
+        turns around, so an undefined metric can stay last in the descending order too —
+        and the sort is cleared first because Qt skips a sort that asks for the very
+        column and order it already holds."""
+        self._sort_proxy.set_descending(self._sort_descending)
+        self._sort_proxy.sort(-1)
+        self._sort_proxy.sort(column, Qt.SortOrder.AscendingOrder)
+
+    def _source_row_of(self, index: QModelIndex) -> int:
+        """The stored row a (possibly proxied) view index points at."""
+        if index.model() is self._sort_proxy:
+            return self._sort_proxy.mapToSource(index).row()
+        return index.row()
+
+    def _proxy_index_of(self, source_row: int) -> QModelIndex:
+        return self._sort_proxy.mapFromSource(self._source_model.index(source_row, 0))
 
     def _fit_numeric_columns(self) -> None:
         """Size every non-model column to its widest rendered value plus padding.
@@ -236,9 +350,7 @@ class RankingTableView(QTableView):
         the actual font metrics rather than a guessed table of fixed widths. The model
         column keeps stretching into whatever is left.
         """
-        model = self.model()
-        if model is None:
-            return
+        model = self._source_model
         header = self.horizontalHeader()
         values = self.fontMetrics()
         headers = header.fontMetrics()
@@ -257,33 +369,27 @@ class RankingTableView(QTableView):
         indexes = self.selectedIndexes()
         if not indexes:
             return None
-        model = self.model()
-        assert isinstance(model, RankingTableModel)
-        return model.row_at(indexes[0].row())
+        return self._source_model.row_at(self._source_row_of(indexes[0]))
 
     def set_rows(self, rows: Sequence[RankedFit]) -> None:
-        model = self.model()
-        assert isinstance(model, RankingTableModel)
-        model.set_rows(rows)
+        self._source_model.set_rows(rows)
+        self._reapply_sort()
 
     def rows(self) -> tuple[RankedFit, ...]:
-        model = self.model()
-        assert isinstance(model, RankingTableModel)
-        return model.rows()
+        return self._source_model.rows()
 
     def select_row(self, row: int) -> RankedFit | None:
-        """Select row ``row`` (0-based) and report what became selected.
+        """Select stored row ``row`` (0-based) and report what became selected.
 
         The current index is set explicitly: ``selectRow`` alone moves only the selection,
         so the currentRowChanged the view listens to would never fire.
         """
-        model = self.model()
-        assert isinstance(model, RankingTableModel)
-        if not 0 <= row < len(model.rows()):
+        if not 0 <= row < len(self._source_model.rows()):
             return None
-        self.setCurrentIndex(model.index(row, 0))
-        self.selectRow(row)
-        return model.row_at(row)
+        proxy_index = self._proxy_index_of(row)
+        self.setCurrentIndex(proxy_index)
+        self.selectRow(proxy_index.row())
+        return self._source_model.row_at(row)
 
     def copy_equation(self) -> bool:
         """Copy the current row's fitted equation as shown (``^`` powers); False if none."""
@@ -320,11 +426,10 @@ class RankingTableView(QTableView):
         menu.popup(self.viewport().mapToGlobal(position))
 
     def _copy_row_summary(self) -> None:
-        model = self.model()
-        assert isinstance(model, RankingTableModel)
         assert self.currentIndex().isValid()
+        source_row = self._source_row_of(self.currentIndex())
         cells = [
-            str(model.data(model.index(self.currentIndex().row(), column)) or "")
+            str(self._source_model.data(self._source_model.index(source_row, column)) or "")
             for column in range(len(COLUMNS))
         ]
         QGuiApplication.clipboard().setText("\t".join(cells))

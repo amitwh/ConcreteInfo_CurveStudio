@@ -6,10 +6,11 @@ import { PredictTab } from "./PredictTab";
 
 const client = vi.hoisted(() => ({
   download: vi.fn(),
+  request: vi.fn(),
   saveBlob: vi.fn(),
 }));
 vi.mock("../../api/client", () => ({
-  api: { download: client.download },
+  api: { download: client.download, request: client.request },
   saveBlob: client.saveBlob,
 }));
 
@@ -40,5 +41,56 @@ describe("PredictTab export", () => {
     expect(client.download).toHaveBeenCalledWith("/fits/fit-1/export?format=xlsx");
     expect(client.saveBlob).toHaveBeenCalledTimes(1);
     expect(client.saveBlob).toHaveBeenCalledWith(blob, "fit-1.xlsx");
+  });
+});
+
+describe("PredictTab table sorting", () => {
+  beforeEach(() => {
+    client.request.mockReset();
+    client.request.mockResolvedValue({
+      x: [3, 1, 2],
+      y: [30, 10, 20],
+      band: null,
+      lower: null,
+      upper: null,
+      extrapolated: [false, false, true],
+      band_reason: null,
+    });
+  });
+
+  async function predict(user: ReturnType<typeof userEvent.setup>): Promise<void> {
+    render(<PredictTab fitId="fit-1" bundle={converged} />);
+    await user.type(screen.getByLabelText(/x values/i), "3 1 2");
+    await user.click(screen.getByRole("button", { name: "Predict" }));
+    await screen.findByRole("table");
+  }
+
+  function firstColumn(): string[] {
+    return screen
+      .getAllByRole("row")
+      .slice(1)
+      .map((row) => row.querySelector("td")?.textContent ?? "");
+  }
+
+  it("sorts by ŷ, reverses, then returns to the entered x order", async () => {
+    const user = userEvent.setup();
+    await predict(user);
+    expect(firstColumn()).toEqual(["3", "1", "2"]); // the entered order
+    await user.click(screen.getByRole("button", { name: "ŷ" }));
+    expect(firstColumn()).toEqual(["1", "2", "3"]); // ascending ŷ
+    await user.click(screen.getByRole("button", { name: "ŷ" }));
+    expect(firstColumn()).toEqual(["3", "2", "1"]); // descending
+    await user.click(screen.getByRole("button", { name: "ŷ" }));
+    expect(firstColumn()).toEqual(["3", "1", "2"]); // back to the entered order
+  });
+
+  it("sorts the extrapolated flag", async () => {
+    const user = userEvent.setup();
+    await predict(user);
+    await user.click(screen.getByRole("button", { name: "extrapolated" }));
+    const rows = screen.getAllByRole("row").slice(1);
+    // ascending "no" < "yes": the extrapolated row (x=2, the third entered value) is last
+    expect(rows.map((row) => row.querySelector("td")?.textContent)).toEqual(["3", "1", "2"]);
+    expect(rows[2]?.textContent).toContain("yes");
   });
 });

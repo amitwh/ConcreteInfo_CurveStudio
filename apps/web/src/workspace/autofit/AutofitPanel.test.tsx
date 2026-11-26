@@ -285,9 +285,11 @@ describe("AutofitPanel — results", () => {
   it("opens the selected row and offers to use its model manually", async () => {
     const handlers = renderPanel({ phase: "ready", stored: stored() });
     const user = userEvent.setup();
-    await user.click(screen.getAllByRole("button", { name: /open full results/i })[0]!);
+    await user.click(screen.getAllByRole("button", { name: /row actions for model/i })[0]!);
+    await user.click(screen.getByRole("menuitem", { name: /open full results/i }));
     expect(handlers.onOpenRow).toHaveBeenCalledWith("exp_decay");
-    await user.click(screen.getAllByRole("button", { name: /use this model manually/i })[0]!);
+    await user.click(screen.getAllByRole("button", { name: /row actions for model/i })[0]!);
+    await user.click(screen.getByRole("menuitem", { name: /use this model manually/i }));
     expect(handlers.onUseManually).toHaveBeenCalled();
   });
 

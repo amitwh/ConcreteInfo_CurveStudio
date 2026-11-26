@@ -109,7 +109,8 @@ def test_cancel_shows_partial_ranking_with_notice(make_window, qtbot, write_file
             if a.kind == "autofit" and a.id == partial_id
         ]
         assert len(partials) == 1 and partials[0].dataset_id == dataset_id
-        assert window.analysis.analysis_label(partials[0].id) == "Auto-fit (partial)"
+        # the label is "Auto-fit (partial)" plus the run's IST time (item 13)
+        assert window.analysis.analysis_label(partials[0].id).startswith("Auto-fit (partial) — ")
         # restoring it later shows the partial notice again, still without refitting
         runs_before = window.analysis.run_count
         assert window.analysis.restore_analysis(partials[0].id) is True

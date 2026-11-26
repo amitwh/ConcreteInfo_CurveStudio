@@ -118,15 +118,15 @@ describe("RankingTable", () => {
     expect(screen.getByRole("columnheader", { name: "Model" }).className).not.toContain("num");
   });
 
-  it("keeps the full action names for screen readers with short visible labels", () => {
+  it("keeps the full action names for screen readers in the row menu", async () => {
     renderTable([row("a")], {
       onUseManually: vi.fn(),
       manuallySelectable: new Set(["a"]),
     });
-    const open = screen.getByRole("button", { name: "Open full results" });
-    expect(open.textContent).toBe("Open");
-    const manual = screen.getByRole("button", { name: "Use this model manually" });
-    expect(manual.textContent).toBe("Use manually");
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Row actions for Model a" }));
+    expect(screen.getByRole("menuitem", { name: "Open full results" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "Use this model manually" })).toBeTruthy();
   });
 
   it("renders the equation copy control compact with the full accessible name", () => {
@@ -217,5 +217,140 @@ describe("RankingTable", () => {
       /no stored curve/i,
     );
     expect(noCurve).toBeTruthy();
+  });
+
+  describe("column sorting (display only)", () => {
+    function baseMetrics() {
+      return {
+        k: 2,
+        n: 40,
+        r2: 0.99,
+        adj_r2: 0.98,
+        rmse: 0.05,
+        aicc: -100.0,
+        bic: -97.0,
+        cv_rmse: 0.06,
+      };
+    }
+
+    const sortedRows = [
+      row("a", { rank: 1, name: "Ceta", metrics: { ...baseMetrics(), rmse: 0.05 } }),
+      row("b", { rank: 2, name: "Alpha", metrics: { ...baseMetrics(), rmse: 0.02 } }),
+      row("c", { rank: 3, name: "Beta", metrics: { ...baseMetrics(), rmse: 0.09 } }),
+    ];
+
+    it("clicking a header reorders the visible rows, never the served ranking", async () => {
+      const user = userEvent.setup();
+      renderTable(sortedRows);
+      const names = () =>
+        screen
+          .getAllByRole("row")
+          .slice(1)
+          .map((element) => within(element).getByText(/^(Alpha|Beta|Ceta)$/).textContent);
+
+      expect(names()).toEqual(["Ceta", "Alpha", "Beta"]);
+      await user.click(screen.getByRole("button", { name: "RMSE" }));
+      expect(names()).toEqual(["Alpha", "Ceta", "Beta"]); // ascending RMSE
+      await user.click(screen.getByRole("button", { name: "RMSE" }));
+      expect(names()).toEqual(["Beta", "Ceta", "Alpha"]); // descending
+      await user.click(screen.getByRole("button", { name: "RMSE" }));
+      expect(names()).toEqual(["Ceta", "Alpha", "Beta"]); // back to ranked
+
+      // the ranked order itself is untouched: the rank column still ascends
+      const ranks = screen
+        .getAllByRole("row")
+        .slice(1)
+        .map((element) => within(element).getAllByText(/^\d+$/)[0]?.textContent);
+      expect(ranks).toEqual(["1", "2", "3"]);
+    });
+
+    it("reports the active sort to assistive technology", async () => {
+      const user = userEvent.setup();
+      renderTable(sortedRows);
+      const header = screen.getByRole("columnheader", { name: "RMSE" });
+      expect(header.getAttribute("aria-sort")).toBe("none");
+      await user.click(screen.getByRole("button", { name: "RMSE" }));
+      expect(header.getAttribute("aria-sort")).toBe("ascending");
+      await user.click(screen.getByRole("button", { name: "RMSE" }));
+      expect(header.getAttribute("aria-sort")).toBe("descending");
+      await user.click(screen.getByRole("button", { name: "RMSE" }));
+      expect(header.getAttribute("aria-sort")).toBe("none");
+    });
+
+    it("keeps the swatch on its ranked position while the display is sorted", async () => {
+      const user = userEvent.setup();
+      renderTable(sortedRows);
+      await user.click(screen.getByRole("button", { name: "RMSE" })); // b, a, c displayed
+      const swatches = document.querySelectorAll<HTMLElement>(".rank-swatch");
+      // display order b, a, c — but the swatch still shows each row's ranked colour
+      expect(hexOf(swatches[0]?.style.backgroundColor ?? "")).toBe(modelColor(2).toUpperCase());
+      expect(hexOf(swatches[1]?.style.backgroundColor ?? "")).toBe(modelColor(1).toUpperCase());
+      expect(hexOf(swatches[2]?.style.backgroundColor ?? "")).toBe(modelColor(3).toUpperCase());
+    });
+
+    it("sorts the Model column alphabetically", async () => {
+      const user = userEvent.setup();
+      renderTable(sortedRows);
+      await user.click(screen.getByRole("button", { name: "Model" }));
+      const names = screen
+        .getAllByRole("row")
+        .slice(1)
+        .map((element) => within(element).getByText(/^(Alpha|Beta|Ceta)$/).textContent);
+      expect(names).toEqual(["Alpha", "Beta", "Ceta"]);
+    });
+  });
+
+  describe("row action menu", () => {
+    it("fires the open action with the same handler the button used", async () => {
+      const user = userEvent.setup();
+      const { onOpen } = renderTable([row("a")]);
+      await user.click(screen.getByRole("button", { name: "Row actions for Model a" }));
+      await user.click(screen.getByRole("menuitem", { name: "Open full results" }));
+      expect(onOpen).toHaveBeenCalledWith("a");
+    });
+
+    it("fires the use-manually action for rows that offer it", async () => {
+      const user = userEvent.setup();
+      const onUseManually = vi.fn();
+      renderTable([row("a")], {
+        onUseManually,
+        manuallySelectable: new Set(["a"]),
+      });
+      await user.click(screen.getByRole("button", { name: "Row actions for Model a" }));
+      await user.click(screen.getByRole("menuitem", { name: "Use this model manually" }));
+      expect(onUseManually).toHaveBeenCalledWith(expect.objectContaining({ model_id: "a" }));
+    });
+
+    it("offers nothing that the row's buttons did not offer", async () => {
+      const user = userEvent.setup();
+      renderTable([row("a")]); // no onUseManually: only the open action exists
+      await user.click(screen.getByRole("button", { name: "Row actions for Model a" }));
+      const items = screen.getAllByRole("menuitem");
+      expect(items.map((item) => item.textContent)).toEqual(["Open full results"]);
+    });
+
+    it("closes on Escape and returns focus to the kebab", async () => {
+      const user = userEvent.setup();
+      renderTable([row("a")]);
+      const kebab = screen.getByRole("button", { name: "Row actions for Model a" });
+      await user.click(kebab);
+      await user.keyboard("{Escape}");
+      expect(screen.queryByRole("menu")).toBeNull();
+      expect(document.activeElement).toBe(kebab);
+    });
+
+    it("blocks the row's actions while a row is opening, as the buttons were", () => {
+      renderTable([row("a"), row("b")], { openRowBusy: "a" });
+      const busy = screen.getByRole("button", {
+        name: "Row actions for Model a",
+      }) as HTMLButtonElement;
+      expect(busy.disabled).toBe(true);
+      expect(busy.textContent).toBe("Opening…");
+      const other = screen.getByRole("button", {
+        name: "Row actions for Model b",
+      }) as HTMLButtonElement;
+      expect(other.disabled).toBe(true);
+      expect(other.textContent).toBe("Actions");
+    });
   });
 });
