@@ -133,24 +133,17 @@ def _size_columns(header: QHeaderView, last_column: int) -> None:
 _COLUMN_PADDING = 12 + 8 + 8
 
 
-def _distribute_columns(table: QTableWidget) -> None:
-    """Give every column a content-sized minimum, then share the slack by width.
+def _measure_column_widths(table: QTableWidget) -> list[int]:
+    """Measure, per column, the widest text it holds (heading or cell) plus the padding.
 
-    Stretching only the last column made the parameters table read as a small grid plus a
-    mostly empty band: at 1150 px the "95% CI high" column absorbed ~700 px while the
-    data stayed cramped left. Here the extra width is spread over every column in
-    proportion to the content it holds, so the table stays one grid and still sums to the
-    viewport (no horizontal scrollbar).
+    The one place font metrics are touched: run once per content change (see
+    :class:`_ContentWidths`), never on a bare viewport resize.
     """
     header = table.horizontalHeader()
-    columns = header.count()
-    viewport = table.viewport().width()
-    if columns == 0 or viewport <= 0:
-        return
     cell = table.fontMetrics()
     title_font = header.fontMetrics()
     minimums: list[int] = []
-    for column in range(columns):
+    for column in range(header.count()):
         heading = table.horizontalHeaderItem(column)
         widest = 0 if heading is None else title_font.horizontalAdvance(heading.text())
         for row in range(table.rowCount()):
@@ -158,6 +151,58 @@ def _distribute_columns(table: QTableWidget) -> None:
             if item is not None:
                 widest = max(widest, cell.horizontalAdvance(item.text()))
         minimums.append(widest + _COLUMN_PADDING)
+    return minimums
+
+
+class _ContentWidths:
+    """The per-column content widths of a result table, measured once per content change.
+
+    These tables sit beside live pyqtgraph panels, and distributing used to re-measure
+    every cell on every resizeEvent/showEvent — dragging the splitter walked the whole
+    table with ``horizontalAdvance`` over and over while the content never moved. The
+    widths depend only on the cells and headings, so they are measured once and
+    invalidated by the table's own content signals: ``itemChanged`` fires on ``setItem``
+    (also when a refill writes the same shape of table), the row signals on
+    ``setRowCount``. A pure viewport resize then redistributes from the cached widths and
+    measures nothing.
+    """
+
+    def __init__(self, table: QTableWidget) -> None:
+        self._table = table
+        self._minimums: list[int] | None = None
+        model = table.model()
+        model.rowsInserted.connect(self._invalidate)
+        model.rowsRemoved.connect(self._invalidate)
+        model.modelReset.connect(self._invalidate)
+        table.itemChanged.connect(self._invalidate)
+
+    def minimums(self) -> list[int]:
+        """The cached per-column widths, measured from the current content when stale."""
+        if self._minimums is None:
+            self._minimums = _measure_column_widths(self._table)
+        return self._minimums
+
+    def _invalidate(self, *args: object) -> None:
+        self._minimums = None
+
+
+def _distribute_columns(table: _ProportionalTable) -> None:
+    """Give every column a content-sized minimum, then share the slack by width.
+
+    Stretching only the last column made the parameters table read as a small grid plus a
+    mostly empty band: at 1150 px the "95% CI high" column absorbed ~700 px while the
+    data stayed cramped left. Here the extra width is spread over every column in
+    proportion to the content it holds, so the table stays one grid and still sums to the
+    viewport (no horizontal scrollbar). The content widths come from the table's cache
+    (:class:`_ContentWidths`), so a pure viewport resize reuses them instead of
+    re-measuring every cell.
+    """
+    header = table.horizontalHeader()
+    columns = header.count()
+    viewport = table.viewport().width()
+    if columns == 0 or viewport <= 0:
+        return
+    minimums = table._content_widths.minimums()
     content = sum(minimums)
     if content <= 0:
         return
@@ -173,6 +218,10 @@ def _distribute_columns(table: QTableWidget) -> None:
 
 class _ProportionalTable(QTableWidget):
     """A result table whose columns share the viewport proportionally, never one band."""
+
+    def __init__(self, rows: int, columns: int) -> None:
+        super().__init__(rows, columns)
+        self._content_widths = _ContentWidths(self)
 
     def resizeEvent(self, event: QResizeEvent) -> None:
         super().resizeEvent(event)

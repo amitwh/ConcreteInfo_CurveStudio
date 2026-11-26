@@ -30,6 +30,8 @@ _INCLUDED = "Included"
 _WEIGHT_HEADER = "Weight"
 _NO_WEIGHT = "—"
 _HIGHLIGHT = QColor(255, 90, 90, 45)
+_HIGHLIGHT_BRUSH = QBrush(_HIGHLIGHT)  # one instance for every highlighted cell: QBrush is
+# implicitly shared and never mutated here, so a fresh one per paint was pure waste
 _ROLE = Qt.ItemDataRole
 _NO_PARENT = QModelIndex()  # the immutable empty index Qt passes for top-level queries
 
@@ -78,7 +80,14 @@ class DatasetTableModel(QAbstractTableModel):
         self._x_column = x_column
         self._y_column = y_column
         self._weight_column = weight_column
+        self._value_columns = (x_column, y_column, weight_column)
         self._row_issues = _row_issue_map(issues)
+        self._display_cache: dict[tuple[int, int], str] = {}
+
+    def resetInternalData(self) -> None:  # Qt name: the model's own data-reset path
+        """Drop the caches on a data reset: the strings describe the previous data."""
+        super().resetInternalData()
+        self._display_cache.clear()
 
     def rowCount(  # Qt name
         self, parent: QModelIndex | QPersistentModelIndex = _NO_PARENT
@@ -119,19 +128,32 @@ class DatasetTableModel(QAbstractTableModel):
             if role == _ROLE.TextAlignmentRole:
                 return int(Qt.AlignmentFlag.AlignCenter)
             if role == _ROLE.BackgroundRole and not self._active[row]:
-                return QBrush(_HIGHLIGHT)
+                return _HIGHLIGHT_BRUSH
             return None
-        name = (self._x_column, self._y_column, self._weight_column)[column]
+        name = self._value_columns[column]
         if name is None:  # no weight column chosen
             return _NO_WEIGHT if role == _ROLE.DisplayRole else None
-        value = self._frame.iat[row, self._frame.columns.get_loc(name)]
         if role == _ROLE.DisplayRole:
-            return _format_number(value)
+            return self._display_text(row, column)
         if role == _ROLE.ToolTipRole and row in self._row_issues:
             return self._row_issues[row]
         if role == _ROLE.BackgroundRole and row in self._row_issues:
-            return QBrush(_HIGHLIGHT)
+            return _HIGHLIGHT_BRUSH
         return None
+
+    def _display_text(self, row: int, column: int) -> str:
+        """The cell's ``%.10g`` text, formatted once per cell — never per repaint.
+
+        ``float`` + format cost on every paint showed when scrolling large datasets; the
+        string depends only on the cell's value, so it is cached until the next data reset
+        (the model is replaced, never edited, when the dataset changes).
+        """
+        cached = self._display_cache.get((row, column))
+        if cached is None:
+            value = self._frame.iat[row, self._frame.columns.get_loc(self._value_columns[column])]
+            cached = _format_number(value)
+            self._display_cache[(row, column)] = cached
+        return cached
 
     def tooltip_for_row(self, row: int) -> str:
         return self._row_issues.get(row, "")
