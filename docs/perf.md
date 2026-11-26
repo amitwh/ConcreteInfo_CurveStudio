@@ -764,3 +764,53 @@ also a test). The upload parser child costs **1.227 s** to start under `spawn` a
 keep Task 5's isolation: the pool's workers die with their job child (PDEATHSIG plus the
 manager's `killpg`), and the parser child is still one fresh, self-capped process per
 upload (the timeout, memory-cap and crash tests run unchanged).
+
+
+## 2026-11-26 — the packaged desktop's cold start
+
+Command: the frozen Linux bundle from this day's build
+(`QT_QPA_PLATFORM=offscreen uv run python apps/desktop/packaging/build.py`, spec at
+`fcca5f8` plus the freeze fix below), run as `dist/curvestudio-desktop/curvestudio-desktop
+--startup-timing` — the same phase lines Task 6's source figures come from, five times,
+each with a throwaway HOME and the install record disabled, terminated once `pool_warm`
+prints. **Windows was not available** — these are Linux x86_64 figures only. Medians of 5
+(runs' spread in parentheses):
+
+| Phase (the app's own marks, seconds from `t0`) | Frozen | Source (Task 6) |
+| --- | ---: | ---: |
+| `t0` | 0.000 | 0.000 |
+| `app_module` | 0.010 | — |
+| `qapp` | 0.055 | 0.142 |
+| `window_built` | 0.474 | 0.565 |
+| **`window_shown`** | **0.478** (0.474–0.589) | **0.593** |
+| **`model_list`** | **4.993** (4.927–5.211) | **4.233** |
+| **`pool_warm`** | **7.426** (7.162–7.480) | **6.133** |
+
+One extra number the source run cannot have: the parent's wall clock from spawn to the
+first phase line — the PyInstaller bootloader and interpreter coming up — is **0.198 s**
+(0.160–0.252), so the window is on screen ~0.68 s after launch in total.
+
+So the frozen app reaches the window **0.12 s faster** than the source run (Qt and the
+window modules load from the bundle without site-packages scanning), but the library
+behind it is **0.76 s slower** to list (`model_list` 4.993 vs 4.233) and the pool **1.29 s
+slower** to warm. The pool gap is the spawn method: every Auto-fit worker re-executes the
+frozen binary, paying the ~0.2 s bootloader each (the gap after `model_list` grows from
+1.90 s source to 2.43 s frozen, two workers plus the sequencing); the `model_list` gap is
+the frozen importer — entry-point discovery over the collected dist-info and the PYZ
+decompressing the model families — on top of the same 2.8 s catalogue load. Total cold
+start to a fully warm app: **7.4 s frozen vs 6.1 s source**; to the user, a window in
+under 0.7 s either way, which is the phase that was targeted.
+
+What the freeze needed. The build's own selftest caught it: the stats registry imports
+its tool modules by name from `TOOL_MODULES` at first use, so no static import ever
+reaches them and PyInstaller left all 22 out of the bundle — `ModuleNotFoundError` on
+`curvestudio.tools.stats.anova` the moment the model-library load warmed the statistics
+catalogue. The latent bug predates the lazy-import wave (a frozen app would have crashed
+opening the Statistics tab); the wave made it loud at build time. The spec now carries
+`collect_submodules("curvestudio.tools.stats")` beside the entry-point families, and the
+bundle was verified module-complete against the six source packages afterwards (only
+`curvestudio.cli` and `curvestudio.testing` are absent — the core CLI and its test
+helpers, neither reachable from the app). The PEP 562 re-export roots
+(`curvestudio_desktop.views`/`controllers`) needed nothing: every name they resolve
+lazily is also imported statically by a module in the graph, and `curvestudio.messages`
+rides those imports.

@@ -12,7 +12,12 @@ What the frozen app needs beyond plain module-graph analysis:
   collected too. Same for the version lookup in ``curvestudio_desktop``.
 * ``collect_submodules`` — the model families are imported through entry points,
   never through a static import statement, so PyInstaller cannot see them. The
-  lazily generated engineering families are covered by the same call.
+  lazily generated engineering families are covered by the same call. The
+  statistics tool modules are the same shape: the stats registry imports them by
+  name from ``TOOL_MODULES`` at first use, so no static import ever reaches them
+  (the model-library load warms the catalogue at run time, which is what made
+  the missing modules fail the frozen selftest rather than a user's Statistics
+  tab).
 * ``PySide6.QtSvg`` — QtSvg drives the SVG image format and the icon engine
   plugins; keeping the module explicit keeps those plugins in the bundle.
 * matplotlib's ``mpl-data`` (the DejaVu fonts the PDF reports register) and
@@ -38,6 +43,9 @@ hiddenimports = [
     # the model families load through entry points, invisible to module analysis
     *collect_submodules("curvestudio_models"),
     *collect_submodules("curvestudio_engineering"),
+    # the statistics tools register from modules the stats registry imports by
+    # name (TOOL_MODULES) on first use — invisible to module analysis the same way
+    *collect_submodules("curvestudio.tools.stats"),
     # the export UI (plotting + reporting) is not imported anywhere in the app's
     # own graph yet; collecting them pulls in matplotlib and reportlab, whose
     # hooks then ship mpl-data and the PDF fonts
