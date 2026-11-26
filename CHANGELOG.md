@@ -4,6 +4,8 @@ All notable changes are listed here. Dates are IST. Format: [Keep a Changelog](h
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-11-26
+
 ### Changed
 - **Engine codes reach the user as sentences (item 16)**: one mapping in the core
   package (`curvestudio.messages`) gives every fit status and every error code the API's
