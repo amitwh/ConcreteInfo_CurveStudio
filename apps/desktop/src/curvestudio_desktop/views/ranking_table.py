@@ -115,12 +115,13 @@ def row_tooltip(row: RankedFit) -> str:
     return "\n".join(lines)
 
 
-def _sort_value(row: RankedFit, column: int) -> float | str | None:
-    """What a column is compared by; ``None`` is the ``n/a`` case."""
+_NAME_COLUMN = 1
+
+
+def _numeric_sort_value(row: RankedFit, column: int) -> float | None:
+    """What a numeric column (the rank, the metrics) is compared by; ``None`` is ``n/a``."""
     if column == 0:
         return row.rank
-    if column == 1:
-        return row.name.casefold()
     metrics = row.metrics
     if column == 2:
         return metrics.r2
@@ -129,6 +130,11 @@ def _sort_value(row: RankedFit, column: int) -> float | str | None:
     if column == 4:
         return metrics.rmse
     return metrics.k
+
+
+def _text_sort_value(row: RankedFit) -> str:
+    """What the name column is compared by (a name always exists: no ``n/a`` case)."""
+    return row.name.casefold()
 
 
 class _DisplaySortProxyModel(QSortFilterProxyModel):
@@ -142,7 +148,9 @@ class _DisplaySortProxyModel(QSortFilterProxyModel):
         self._descending = descending
 
     def lessThan(  # Qt name
-        self, left: QModelIndex, right: QModelIndex
+        self,
+        left: QModelIndex | QPersistentModelIndex,
+        right: QModelIndex | QPersistentModelIndex,
     ) -> bool:
         source = self.sourceModel()
         assert isinstance(source, RankingTableModel)
@@ -150,8 +158,12 @@ class _DisplaySortProxyModel(QSortFilterProxyModel):
         right_row = source.row_at(right.row())
         if left_row is None or right_row is None:
             return False
-        a = _sort_value(left_row, left.column())
-        b = _sort_value(right_row, right.column())
+        if left.column() == _NAME_COLUMN:  # text: a name always exists, no n/a case
+            a_name = _text_sort_value(left_row)
+            b_name = _text_sort_value(right_row)
+            return (b_name < a_name) if self._descending else (a_name < b_name)
+        a = _numeric_sort_value(left_row, left.column())
+        b = _numeric_sort_value(right_row, right.column())
         # an undefined metric is missing information, not a number: it sorts last
         # whichever way the column is ordered
         if a is None and b is None:
