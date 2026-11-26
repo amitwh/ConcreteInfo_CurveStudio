@@ -1,6 +1,6 @@
 [project]
 name = "curvestudio-models"
-version = "0.12.0"
+version = "1.12.0"
 description = "CurveStudio hand-written model catalogue (registered through the curvestudio.models entry point)"
 readme = "README.md"
 requires-python = ">=3.14"
