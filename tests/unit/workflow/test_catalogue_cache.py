@@ -5,9 +5,12 @@ The built catalogue is decided entirely by the contributing packages and their
 exactly those. These tests hold the contract from both sides: a valid cache serves the
 identical model list without registering anything, and any mismatch, corruption or
 failure rebuilds the ordinary way and repairs the cache. Installed plugins are hidden
-by the root conftest; every plugin here is synthetic.
+by the root conftest; every plugin here is synthetic — except the regression tests at
+the bottom, which carry ``real_plugins`` to reproduce the full-suite process state the
+cache's deferred registration broke.
 """
 
+import importlib.metadata
 import json
 from collections.abc import Callable, Iterator, Sequence
 
@@ -359,3 +362,68 @@ def test_the_default_cache_directory_is_outside_the_repo_and_site_packages(
 
     assert Path.cwd() not in directory.parents  # never inside the repository
     assert "site-packages" not in str(directory)  # never inside an installation
+
+
+# -- the deferred registration a hit promises (real plugins) ------------------------------
+#
+# A hit skips registration and defers it to the first model request; these tests hold
+# that promise with the installed entry points, across the entry-point visibility
+# changes the test suite itself makes (the root conftest hides them between tests).
+
+
+def _real_plugin_entry_points() -> list[importlib.metadata.EntryPoint]:
+    return list(importlib.metadata.entry_points(group=registry_module.PLUGIN_GROUP))
+
+
+@pytest.mark.real_plugins
+def test_an_empty_plugin_scan_is_not_the_plugins_done(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A scan that finds no entry points loads nothing, so it must not spend the registry's
+    once-per-process load: the visible entry points change while a test suite runs, and a
+    later call has to see them. The poisoned version of this — the load latched on an
+    empty scan — is what left ``get_model`` unable to find any plugin model in the full
+    suite once the catalogue cache had stopped forcing registration."""
+    real = _real_plugin_entry_points()
+    assert real, "the installed model plugins must be visible for this test"
+    _patch_entry_points(monkeypatch, [])  # the entry points disappear (as the conftest does)
+    assert registry_module.load_plugins() == []
+    assert not registry_module.plugins_loaded()  # nothing was loaded: nothing is done
+    _patch_entry_points(monkeypatch, real)  # ...and they are back
+    assert "library" in registry_module.load_plugins()  # the later call scans again
+    assert registry_module.plugins_loaded()
+    assert registry_module.get_model("logistic4").id == "logistic4"
+
+
+@pytest.mark.real_plugins
+def test_a_cache_hit_does_not_strand_the_plugins_a_model_request_needs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The full-suite sequence the catalogue cache broke: a clean start-up scan seeds the
+    cache with the real entry points; later tests hide them and spend the registry's
+    once-per-process plugin load on an empty scan (any hidden-context registry call — a
+    listing, a lookup, an Auto-fit enumeration); the registry ends at its starter
+    baseline. The catalogue is then served from the cache without registering anything —
+    by design — so the plugins' one remaining chance to register is the fitted-model
+    request itself. With the load latched on the empty scan, that request raised
+    ``KeyError: unknown model id 'logistic4'; did you mean 'logistic3'?`` in the Auto-fit
+    known-truth gate, the API's fit-job workers and the Auto-fit pool integration tests."""
+    real = _real_plugin_entry_points()
+    assert real, "the installed model plugins must be visible for this test"
+    # 1. the seed, the way the desktop suite does it: real entry points, a clean scan,
+    #    full registration, the record written
+    seeded = list_models()
+    assert "logistic4" in _ids(seeded)  # a plugin-only model: not one of the starters
+    assert catalogue_cache.record_path().exists()
+    # 2. the state a later non-real_plugins test leaves: the starter baseline and the
+    #    once-per-process plugin load spent on an empty scan
+    _fresh_start()
+    _patch_entry_points(monkeypatch, [])  # the entry points disappear
+    registry_module.load_plugins()  # ...and a registry call in that context scans nothing
+    # 3. they are back (a real_plugins test), same process, same cache record
+    _patch_entry_points(monkeypatch, real)
+    catalogue_cache._reset_for_tests()
+    assert _ids(list_models()) == _ids(seeded)  # served from the cache, not rebuilt
+    assert "logistic4" not in registry_module.peek_registered_ids()  # and it registered nothing
+    from curvestudio.workflow import get_model
+
+    assert get_model("logistic4").id == "logistic4"  # the deferred registration happens now
+    assert registry_module.plugins_loaded()

@@ -214,8 +214,11 @@ def load_plugins(*, strict: bool = False) -> list[str]:
     Each entry-point value is ``module:function``; the function is called with no
     arguments and registers models (and families) through this module. Loading is thread
     safe and happens once per process (until :func:`_clear_registry`): later calls, and
-    concurrent first calls, return the same result once loading has finished. A plugin
-    that looks a model up from inside its own function does not recurse.
+    concurrent first calls, return the same result once loading has finished. A scan that
+    finds no entry points loads nothing, so nothing is done yet: the visible entry points
+    can change while a process runs (a test suite hides them, a tool installs a package),
+    and a later call scans again. A plugin that looks a model up from inside its own
+    function does not recurse.
 
     A plugin that fails (any exception, including ``SystemExit``) is recorded in
     :func:`plugin_failures`, logged as a warning once, and its partial registrations are
@@ -246,15 +249,18 @@ def load_plugins(*, strict: bool = False) -> list[str]:
 def _load_all() -> None:
     global _PLUGINS_DONE
     models_before, families_before = set(_REGISTRY), set(_FAMILIES)
+    found = 0
     try:
         for entry in importlib.metadata.entry_points(group=PLUGIN_GROUP):
+            found += 1
             _load_one(entry)
     except KeyboardInterrupt:
         _rollback(models_before, families_before)
         _LOADED_PLUGINS.clear()
         _PLUGIN_FAILURES.clear()
         raise
-    _PLUGINS_DONE = True
+    if found:  # an empty scan loads nothing, so nothing is done: a later call scans again
+        _PLUGINS_DONE = True
 
 
 def _load_one(entry: importlib.metadata.EntryPoint) -> None:
