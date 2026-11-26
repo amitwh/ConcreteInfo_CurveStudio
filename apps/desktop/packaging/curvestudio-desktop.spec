@@ -84,8 +84,29 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=["tkinter"],
     noarchive=False,
+    # The shared workspace venv also installs the server and test stacks, and static
+    # analysis reaches them from modules the app does import. Nothing here imports them
+    # at run time, so they are excluded from the bundle (checked against the frozen
+    # module graph, xref-curvestudio-desktop.html):
+    # * sqlalchemy — only pandas.io.sql references it, under TYPE_CHECKING and lazily
+    #   via import_optional_dependency; no desktop code path calls the pandas SQL API
+    # * psycopg / psycopg2 / greenlet — imported only by sqlalchemy (its PostgreSQL
+    #   dialect and its async bridge), so they drop with sqlalchemy
+    # * hypothesis — only pydantic's legacy v1 hypothesis plugin imports it
+    #   (pydantic.v1._hypothesis_plugin, which pydantic's PyInstaller hook collects
+    #   via collect_submodules); the app imports pydantic v2 models only
+    # PIL/pillow is deliberately NOT excluded: matplotlib 3.11 imports it at module
+    # level (matplotlib/colors.py, matplotlib/backends/backend_agg.py), and the PDF
+    # reports import matplotlib.
+    excludes=[
+        "tkinter",
+        "sqlalchemy",
+        "psycopg",
+        "psycopg_binary",
+        "greenlet",
+        "hypothesis",
+    ],
 )
 pyz = PYZ(a.pure)
 

@@ -11,7 +11,7 @@ A command that needs the library before it is ready either waits (an import the 
 already running blocks on the same module locks and finishes with them) or asks
 :func:`is_ready` and says "still loading" — nothing crashes, nothing silently no-ops. The
 load also warms the catalogues the pickers are built from and pre-starts the Auto-fit pool
-(:func:`prewarm_autofit_pool`), so the first fit pays for none of it.
+(:func:`prewarm_autofit_pool`), so early fits pay none of the workers' start-up.
 """
 
 import threading
@@ -111,12 +111,12 @@ def _thread_started() -> bool:
 
 
 def prewarm_autofit_pool() -> None:
-    """Start the shared Auto-fit pool's workers now, so the first run pays no start-up.
+    """Start the shared Auto-fit pool's first workers now, so early runs pay no start-up.
 
     The same pool :func:`curvestudio_desktop.controllers.analysis_jobs.run_autofit` uses,
-    at the count its default configuration resolves to. Runs on the caller's thread; the
-    app calls it from its own background thread, after the library has loaded, off the
-    GUI thread.
+    at the count its default configuration resolves to. A few workers (three) come up now;
+    a wider run starts the rest as it fans out. Runs on the caller's thread; the app calls
+    it from its own background thread, after the library has loaded, off the GUI thread.
     """
     from curvestudio.discovery import get_shared_pool
 

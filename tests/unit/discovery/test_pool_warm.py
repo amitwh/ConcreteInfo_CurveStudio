@@ -3,18 +3,27 @@
 A pool started with ``start_method="fork"`` (a long-lived process that has already imported
 the fitting stack — the API's warm job workers) creates its workers without paying the
 interpreter and import cost again, and gives the same results the default ``spawn`` pool
-gives. :meth:`AutoFitPool.prewarm` starts every worker now, so the first run pays nothing.
+gives. :meth:`AutoFitPool.prewarm` starts a few workers now (three), so an early run pays
+none of their start-up; the executor brings the rest up as the run submits its jobs.
 """
 
 import sys
+import time
 
 import numpy as np
 import pytest
 
 from curvestudio.data import XY
 from curvestudio.discovery import AutoFitConfig, CancelToken, autofit
-from curvestudio.discovery.pool import AutoFitPool
+from curvestudio.discovery.pool import PREWARM_WORKERS, AutoFitPool
 from curvestudio.discovery.worker import run_candidate
+
+
+def _hold_a_moment() -> None:
+    """A pool job long enough (against the microseconds between submits) to keep its
+    worker busy, so the executor has to start another one for the next job."""
+    time.sleep(1.0)
+
 
 FORK = pytest.mark.skipif(
     not sys.platform.startswith("linux"), reason="the fork start method is POSIX"
@@ -63,11 +72,35 @@ def test_an_unknown_start_method_is_refused_at_construction() -> None:
         AutoFitPool(2, start_method="no-such-method")
 
 
-def test_prewarm_starts_every_worker_without_a_run() -> None:
+def test_prewarm_starts_a_few_workers_not_every_one() -> None:
+    pool = AutoFitPool(6)  # wide enough that the prewarm count binds
+    try:
+        pool.prewarm()
+        assert len(pool.worker_pids()) == PREWARM_WORKERS
+    finally:
+        pool.shutdown()
+
+
+def test_prewarm_caps_at_the_pool_width() -> None:
     pool = AutoFitPool(2)
     try:
         pool.prewarm()
         assert len(pool.worker_pids()) == 2
+    finally:
+        pool.shutdown()
+
+
+def test_a_run_still_scales_past_the_prewarmed_workers() -> None:
+    pool = AutoFitPool(5)
+    try:
+        pool.prewarm()
+        assert len(pool.worker_pids()) == PREWARM_WORKERS
+        # The run's own jobs arrive back to back and outlast the submit loop, so the
+        # executor starts the remaining workers for them
+        futures = [pool.executor().submit(_hold_a_moment) for _ in range(5)]
+        assert len(pool.worker_pids()) == 5
+        for future in futures:
+            future.result(timeout=30)
     finally:
         pool.shutdown()
 

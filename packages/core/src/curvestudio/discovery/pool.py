@@ -42,6 +42,14 @@ MAX_WATCHDOG_KILLS = 10
 
 WATCHDOG_BASE_SECONDS = 5.0
 
+PREWARM_WORKERS = 3
+"""How many workers :meth:`AutoFitPool.prewarm` starts before any run asks for one.
+
+A wide idle pool is only a cost: on a many-core machine every worker holds its imported
+fitting stack (about 200 MB) for as long as it lives. A few warm workers absorb an early
+small run entirely; the rest of the workers come up as a real run submits its jobs.
+"""
+
 
 def default_deadline(job: CandidateJob) -> float:
     """Seconds a candidate may run before the watchdog stops it: ``2 * time_limit + 5``."""
@@ -114,17 +122,19 @@ class AutoFitPool:
             )
         return self._executor
 
-    def prewarm(self, timeout_s: float | None = None) -> None:
-        """Start every worker now, so the first run pays none of their start-up.
+    def prewarm(self, timeout_s: float | None = None, *, count: int = PREWARM_WORKERS) -> None:
+        """Start a few workers now, so early runs pay none of their start-up.
 
-        One no-op job per worker is enough: the executor starts a process per submission
-        until it has ``workers`` of them. Waits for the workers to come up (a caller that
-        wants the cost off its own critical path runs this on a background thread); a
-        ``timeout_s`` bounds that wait.
+        The executor starts one process per submission until it has ``workers`` of them, so
+        ``count`` no-op jobs bring up ``count`` workers (capped at the pool's width) and a
+        real run later starts the rest on demand. Waits for those workers to come up (a
+        caller that wants the cost off its own critical path runs this on a background
+        thread); a ``timeout_s`` bounds that wait.
         """
         if self._executor is not None:
-            return  # already started: every worker exists or is being replaced on demand
-        futures = [self.executor().submit(_noop) for _ in range(self.workers)]
+            return  # already started: workers exist or are being replaced on demand
+        warmed = max(1, min(count, self.workers))
+        futures = [self.executor().submit(_noop) for _ in range(warmed)]
         for future in futures:
             future.result(timeout=timeout_s)
 

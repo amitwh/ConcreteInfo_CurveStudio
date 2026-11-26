@@ -270,7 +270,8 @@ def run_app(argv: list[str] | None = None) -> int:
     )
     registry.spawn()
     # The window is up: load the model library behind it (it refreshes the window when
-    # it lands) and pre-start the Auto-fit pool, so the first run pays no start-up.
+    # it lands) and pre-start a few Auto-fit pool workers, so early runs pay none of
+    # their start-up.
     model_library.begin_loading()
     threading.Thread(target=_warm_pools, name="curvestudio-pool-prewarm", daemon=True).start()
     return int(app.exec())
