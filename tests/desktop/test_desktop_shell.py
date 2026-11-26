@@ -529,7 +529,7 @@ def test_the_status_bar_carries_the_concreteinfo_icon_links(
     }
     footer = window.statusBar().findChild(QWidget, "concreteinfoFooter")
     assert footer is not None, "the ConcreteInfo footer is not in the status bar"
-    for object_name, url in expected.items():
+    for object_name in expected:
         button = footer.findChild(QToolButton, object_name)
         assert button is not None, f"{object_name} is missing"
         assert not button.icon().isNull(), f"{object_name} has no icon"

@@ -244,7 +244,10 @@ def test_set_fit_reuses_the_drawn_items(plot: PlotView) -> None:
     assert plot.drawn_curve_positions() == [3]
     assert plot.legend_names() == []
     # the bands updated in place too
-    assert plot.band_colors() == [confidence.brush().color().name(), prediction.brush().color().name()]
+    assert plot.band_colors() == [
+        confidence.brush().color().name(),
+        prediction.brush().color().name(),
+    ]
     # dropping the bands removes their fills without orphaning anything
     plot.set_fit([1.0, 2.0, 3.0], [3.0, 5.0, 9.0])
     assert plot._confidence is None and plot._prediction is None
