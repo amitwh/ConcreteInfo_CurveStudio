@@ -51,6 +51,11 @@ _ICONS: dict[str, str] = {
     "panel-project": "panel-left.svg",
     "panel-analysis": "panel-right.svg",
     "panel-table": "panel-bottom.svg",
+    # the status-bar footer's links: Lucide's globe, and the two brand marks from
+    # Simple Icons (CC0) — Lucide dropped brand icons
+    "globe": "globe.svg",
+    "linkedin": "linkedin.svg",
+    "github": "github.svg",
 }
 
 _ICON_CACHE: dict[tuple[str, str], QIcon] = {}

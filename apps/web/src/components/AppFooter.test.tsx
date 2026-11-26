@@ -1,7 +1,8 @@
 /**
  * The app footer: the ConcreteInfo attribution on every surface that is not the home
- * page's marketing footer — the links are the owner's list (website, LinkedIn, the
- * source repository).
+ * page's marketing footer. The links are icon buttons — the globe (Lucide) for the
+ * website, Simple Icons' CC0 LinkedIn and GitHub marks — so their accessible names
+ * come from the aria-labels, which is what these tests pin.
  */
 
 import { render, screen } from "@testing-library/react";

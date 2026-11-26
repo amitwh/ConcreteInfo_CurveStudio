@@ -55,6 +55,11 @@ INTERNAL_ICON_NAMES = {
     "panel-project",
     "panel-analysis",
     "panel-table",
+    # the status-bar footer's links (globe is Lucide's; linkedin/github are
+    # Simple Icons' CC0 brand marks — Lucide dropped brand icons)
+    "globe",
+    "linkedin",
+    "github",
 }
 
 
@@ -98,10 +103,15 @@ def test_an_unknown_icon_name_raises_instead_of_returning_blank(qtbot) -> None:
 
 
 def test_icons_use_one_stroke_weight_and_the_theme_colour() -> None:
+    # the two brand marks (linkedin, github) are Simple Icons' CC0 *filled* glyphs —
+    # they carry no stroke at all, only the themed fill
+    filled = {"linkedin", "github"}
     for name in INTERNAL_ICON_NAMES:
         source = icons._svg_text(name, "#123456")
         assert "currentColor" not in source, f"{name} kept the unresolved colour"
         assert "#123456" in source, f"{name} did not take the theme colour"
+        if name in filled:
+            continue
         assert source.count('stroke-width="1.8"') == 1, (
             f"{name} does not use the toolbar's single stroke weight"
         )

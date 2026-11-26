@@ -3,7 +3,7 @@
 import pytest
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFontDatabase, QPalette
-from PySide6.QtWidgets import QApplication, QDockWidget, QLabel
+from PySide6.QtWidgets import QApplication, QDockWidget, QLabel, QToolButton, QWidget
 
 from curvestudio_desktop.theme import (
     DARK_TOKENS,
@@ -507,3 +507,33 @@ def test_a_saved_layout_with_no_floating_panel_restores_untouched(
     assert not second.analysis_panel.isFloating()
     assert not second.table_dock.isVisible()  # a deliberate close stays closed
     assert second.analysis_panel.width() <= 420
+
+
+def test_the_status_bar_carries_the_concreteinfo_icon_links(
+    make_window, qtbot, monkeypatch
+) -> None:
+    """The web footer's sibling: three icon buttons (website, LinkedIn, source) in the
+    status bar's permanent right end, each opening its URL in the system browser."""
+    from PySide6.QtCore import QUrl
+    from PySide6.QtGui import QDesktopServices
+
+    opened: list[QUrl] = []
+    monkeypatch.setattr(QDesktopServices, "openUrl", staticmethod(lambda url: opened.append(url)))
+    window = make_window()
+    qtbot.addWidget(window)
+
+    expected = {
+        "footerLink-globe": "https://www.concreteinfo.in",
+        "footerLink-linkedin": "https://in.linkedin.com/company/concreteinfo",
+        "footerLink-github": "https://github.com/amitwh/ConcreteInfo_CurveStudio",
+    }
+    footer = window.statusBar().findChild(QWidget, "concreteinfoFooter")
+    assert footer is not None, "the ConcreteInfo footer is not in the status bar"
+    for object_name, url in expected.items():
+        button = footer.findChild(QToolButton, object_name)
+        assert button is not None, f"{object_name} is missing"
+        assert not button.icon().isNull(), f"{object_name} has no icon"
+        assert button.toolTip(), f"{object_name} has no tooltip"
+        button.click()
+    assert [url.toString() for url in opened] == list(expected.values())
+    assert footer.findChild(QLabel, "footerCopyright") is not None

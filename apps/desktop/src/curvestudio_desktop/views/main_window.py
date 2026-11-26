@@ -10,11 +10,19 @@ from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, cast
 
-from PySide6.QtCore import QByteArray, QObject, QPoint, QSettings, QSize, Qt, Signal
-from PySide6.QtGui import QAction, QActionGroup, QCloseEvent, QKeySequence, QShowEvent
+from PySide6.QtCore import QByteArray, QObject, QPoint, QSettings, QSize, Qt, QUrl, Signal
+from PySide6.QtGui import (
+    QAction,
+    QActionGroup,
+    QCloseEvent,
+    QDesktopServices,
+    QKeySequence,
+    QShowEvent,
+)
 from PySide6.QtWidgets import (
     QApplication,
     QDockWidget,
+    QHBoxLayout,
     QInputDialog,
     QLabel,
     QLineEdit,
@@ -25,6 +33,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QTableView,
     QToolBar,
+    QToolButton,
     QWidget,
 )
 
@@ -631,7 +640,45 @@ class MainWindow(QMainWindow):
         bar.addPermanentWidget(self._job_progress)
         bar.addPermanentWidget(self._observations)
         bar.addPermanentWidget(self._no_network)
+        bar.addPermanentWidget(self._build_concreteinfo_footer())
         bar.showMessage("Ready")
+
+    def _build_concreteinfo_footer(self) -> QWidget:
+        """The status bar's right end: the ConcreteInfo attribution as icon links
+        (the web footer's sibling — website, LinkedIn, the source repository)."""
+        links = (
+            ("globe", "ConcreteInfo website", "https://www.concreteinfo.in"),
+            (
+                "linkedin",
+                "ConcreteInfo on LinkedIn",
+                "https://in.linkedin.com/company/concreteinfo",
+            ),
+            (
+                "github",
+                "Source on GitHub",
+                "https://github.com/amitwh/ConcreteInfo_CurveStudio",
+            ),
+        )
+        row = QWidget()
+        row.setObjectName("concreteinfoFooter")
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(8, 0, 0, 0)
+        layout.setSpacing(2)
+        for icon_name, tooltip, url in links:
+            button = QToolButton(row)
+            button.setObjectName(f"footerLink-{icon_name}")
+            button.setIcon(icon(icon_name))
+            button.setToolTip(tooltip + " — opens in your browser")
+            button.setCursor(Qt.CursorShape.PointingHandCursor)
+            button.setAutoRaise(True)
+            button.clicked.connect(
+                lambda _checked=False, target=url: QDesktopServices.openUrl(QUrl(target))
+            )
+            layout.addWidget(button)
+        copyright_label = QLabel("© ConcreteInfo")
+        copyright_label.setObjectName("footerCopyright")
+        layout.addWidget(copyright_label)
+        return row
 
     # -- background jobs -----------------------------------------------------------------------
 

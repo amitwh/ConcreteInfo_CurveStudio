@@ -3999,6 +3999,14 @@ html[data-theme="dark"] .about-logo {
 
 .app-footer__links a {
   color: var(--muted-foreground);
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem;
+}
+
+.app-footer__links .icon {
+  width: 1.15em;
+  height: 1.15em;
 }
 
 .app-footer__links a:hover {
