@@ -11,6 +11,7 @@ import { useState, type ReactElement, type SubmitEvent } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../api/auth";
 import { api, ApiError } from "../api/client";
+import { AppFooter } from "../components/AppFooter";
 import { OAuthButtons } from "../components/OAuthButtons";
 import { errorText } from "../components/States";
 
@@ -107,6 +108,7 @@ export function RegisterPage(): ReactElement {
   }
 
   return (
+    <>
     <main className="auth-page">
       <form className="card auth-card" onSubmit={(e) => void onSubmit(e)} noValidate>
         <h1>Create an account</h1>
@@ -161,5 +163,7 @@ export function RegisterPage(): ReactElement {
       </form>
       <OAuthButtons />
     </main>
+    <AppFooter />
+  </>
   );
 }

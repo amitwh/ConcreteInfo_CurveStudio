@@ -8,6 +8,7 @@
 import { useEffect, useRef, useState, type ReactElement } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api, ApiError } from "../api/client";
+import { AppFooter } from "../components/AppFooter";
 import { Loading } from "../components/States";
 
 type VerifyState = "verifying" | "success" | "missing" | "invalid";
@@ -42,6 +43,7 @@ export function VerifyEmailPage(): ReactElement {
   }, [token]);
 
   return (
+    <>
     <main className="auth-page">
       <section className="card auth-card">
         <h1>Verify email</h1>
@@ -84,5 +86,7 @@ export function VerifyEmailPage(): ReactElement {
         )}
       </section>
     </main>
+    <AppFooter />
+  </>
   );
 }

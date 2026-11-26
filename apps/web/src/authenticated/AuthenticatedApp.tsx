@@ -14,6 +14,7 @@
 import { lazy, useCallback, useEffect, useState, type ReactElement } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../api/auth";
+import { AppFooter } from "../components/AppFooter";
 import { AppNav, type Overlay } from "../components/AppNav";
 import { Modal } from "../components/Modal";
 import { LazyBoundary } from "../components/States";
@@ -80,6 +81,7 @@ export function AuthenticatedApp(): ReactElement {
           onModeChange={(mode) => setWorkspaceSet((current) => updateWorkspace(current, active.id, { mode }))}
         />
       </LazyBoundary>
+      <AppFooter />
       {overlay === "help" && (
         <Modal title="Help contents" variant="sheet" onClose={closeOverlay}>
           <LazyBoundary label="Opening help…">

@@ -9,6 +9,7 @@
 import { useState, type ReactElement, type SubmitEvent } from "react";
 import { Link } from "react-router-dom";
 import { api, ApiError } from "../api/client";
+import { AppFooter } from "../components/AppFooter";
 import { errorText } from "../components/States";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -43,6 +44,7 @@ export function ForgotPasswordPage(): ReactElement {
   };
 
   return (
+    <>
     <main className="auth-page">
       <section className="card auth-card">
         <h1>Reset password</h1>
@@ -87,5 +89,7 @@ export function ForgotPasswordPage(): ReactElement {
         )}
       </section>
     </main>
+    <AppFooter />
+  </>
   );
 }

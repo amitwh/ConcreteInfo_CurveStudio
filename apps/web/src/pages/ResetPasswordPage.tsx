@@ -8,6 +8,7 @@
 import { useState, type ReactElement, type SubmitEvent } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api, ApiError } from "../api/client";
+import { AppFooter } from "../components/AppFooter";
 import { errorText } from "../components/States";
 
 const INVALID_LINK = "this reset link is invalid or has expired";
@@ -53,6 +54,7 @@ export function ResetPasswordPage(): ReactElement {
   const missingToken = token === null || token === "";
 
   return (
+    <>
     <main className="auth-page">
       <section className="card auth-card">
         <h1>Reset password</h1>
@@ -118,5 +120,7 @@ export function ResetPasswordPage(): ReactElement {
         )}
       </section>
     </main>
+    <AppFooter />
+  </>
   );
 }
