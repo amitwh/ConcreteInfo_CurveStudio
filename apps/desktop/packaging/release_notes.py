@@ -29,7 +29,8 @@ INSTALL_LINES = """\
 
 **Windows (x86_64)**
 - `curvestudio-desktop-{version}-windows-x86_64.zip`: unpack and run `curvestudio-desktop.exe`
-- `curvestudio-desktop-setup.exe` when the installer step succeeded
+- `curvestudio-desktop-{version}-windows-x86_64-setup.exe` when the installer
+  step succeeded
 """
 
 

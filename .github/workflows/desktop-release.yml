@@ -3,7 +3,7 @@ name: Desktop release
 # Builds the desktop app on every supported platform and publishes one GitHub
 # Release per `v*` tag.
 #
-#   push tag v0.10.3   -> Linux (.deb, .AppImage, .tar.gz) + Windows (.zip, setup)
+#   push tag v0.10.3   -> Linux (.deb, .AppImage, .tar.gz) + Windows (.zip, setup.exe)
 #                         uploaded to the release for that tag
 #   workflow_dispatch  -> a dry run: builds and uploads workflow artifacts only,
 #                         nothing is published
@@ -136,8 +136,7 @@ jobs:
       - name: Build the bundle (icons, PyInstaller, frozen selftest, zip)
         run: uv run python apps/desktop/packaging/build.py
 
-      - name: Windows installer (Inno Setup, best effort)
-        continue-on-error: true
+      - name: Windows installer (Inno Setup)
         shell: pwsh
         run: |
           choco install -y innosetup

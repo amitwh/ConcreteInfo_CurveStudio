@@ -1,4 +1,4 @@
-; Inno Setup script for ConcreteInfo CurveStudio (built by CI, best effort).
+; Inno Setup script for ConcreteInfo CurveStudio (built by CI; a release fails if this fails).
 ;
 ;   iscc /DMyAppVersion=<version> apps\desktop\packaging\windows\curvestudio.iss
 ;
@@ -19,9 +19,9 @@ AppPublisher=ConcreteInfo
 DefaultDirName={autopf}\CurveStudio
 DefaultGroupName=ConcreteInfo CurveStudio
 UninstallDisplayIcon={app}\curvestudio-desktop.exe
-OutputDir=..\..\..\dist\release
-OutputBaseFilename=curvestudio-desktop-setup
-SetupIconFile=..\..\..\build\icons\curvestudio-desktop.ico
+OutputDir=..\..\..\..\dist\release
+OutputBaseFilename=curvestudio-desktop-{#MyAppVersion}-windows-x86_64-setup
+SetupIconFile=..\..\..\..\build\icons\curvestudio-desktop.ico
 LicenseFile=..\..\..\..\LICENSE
 Compression=lzma2
 SolidCompression=yes
@@ -29,7 +29,7 @@ WizardStyle=modern
 PrivilegesRequired=lowest
 
 [Files]
-Source: "..\..\..\dist\curvestudio-desktop\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs
+Source: "..\..\..\..\dist\curvestudio-desktop\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs
 ; Which artifact the app came from: the app's anonymous install record reports the word
 ; in package.txt beside its executable. The installer is its own package kind, so the
 ; word comes from this file (the portable zip carries a different one inside the archive).

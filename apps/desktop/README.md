@@ -26,8 +26,9 @@ Release](https://github.com/amitwh/ConcreteInfo_CurveStudio/releases) (the
 
 - **Linux** — `curvestudio-desktop-<version>-linux-x86_64.tar.gz`
 - **Windows** — `curvestudio-desktop-<version>-windows-x86_64.zip` (portable;
-  releases from CI may also carry `curvestudio-desktop-setup.exe`, an Inno
-  Setup installer)
+  releases from CI also carry
+  `curvestudio-desktop-<version>-windows-x86_64-setup.exe`, the Inno Setup
+  installer)
 
 Verify a download against the matching `SHA256SUMS-<os>-<arch>` file
 (`sha256sum -c SHA256SUMS-linux-x86_64`), then:
