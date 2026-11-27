@@ -143,18 +143,61 @@ const FIT_SUMMARY: FitSummaryOut = {
   spec: { model: { kind: "registered", id: "exp_decay" } },
 };
 
-/** Only the fields the chart, default Parameters tab and History tab touch. */
+/** Only the fields the chart, the opened-result modal's reused tabs (the equation tab
+ *  reads the method/provenance block) and History tab touch. */
 const FIT_BUNDLE = {
   result: {
     status: "converged",
     termination_reason: "converged",
     model_id: "quadratic",
+    equation: "y = a + b * x",
+    equation_fitted: null,
+    method: "trf",
+    loss: "linear",
+    n_starts: 1,
+    provenance: { seed: 7 },
     parameters: [],
   },
+  equation_text: "y = a + b * x",
   curve: null,
   confidence_band: null,
   prediction_band: null,
 } as unknown as FitBundle;
+
+/** A bundle whose statistics and parameters the modal's reused tabs can render. */
+const RICH_BUNDLE = {
+  ...FIT_BUNDLE,
+  result: {
+    ...FIT_BUNDLE.result,
+    model_id: "exp_decay",
+    equation_fitted: "y = 2.05 * exp(-0.32 * x)",
+    parameters: [{ name: "a", value: 2.05, std_err: 0.01, ci_low: 2.03, ci_high: 2.07 }],
+    stats: {
+      n: 40,
+      k: 2,
+      df: 38,
+      r2: 0.99,
+      adj_r2: 0.98,
+      rmse: 0.05,
+      sse: 0.1,
+      mae: 0.04,
+      residual_se: 0.05,
+    },
+  },
+  summary: {
+    criteria: { aic: -120, aicc: -119.8, bic: -117, convention: "as printed in reports" },
+    cv: null,
+    result_summary: {},
+    diagnostics: { tests: [] },
+    warnings: [],
+  },
+} as unknown as FitBundle;
+
+/** The bundle GET /fits/fit-1 answers with; the modal test swaps in the richer one. */
+let fitBundle: FitBundle = FIT_BUNDLE;
+
+/** When true the bundle GET rejects, so the opened result never arrives. */
+let fitBundleFails = false;
 
 const FAILED_JOB: JobOut = {
   id: "job-1",
@@ -298,9 +341,13 @@ function route(path: string, options?: RequestInit): Promise<unknown> {
   if (path === "/datasets/ds-1/fits") return Promise.resolve([FIT_SUMMARY]);
   if (path === "/fits/fit-1") {
     // The GET loads an opened row's bundle; the DELETE fails to surface a fit error.
-    return options?.method === "DELETE"
-      ? Promise.reject(new ApiError(404, "NOT_FOUND", "the fit does not exist", null))
-      : Promise.resolve(FIT_BUNDLE);
+    if (options?.method === "DELETE") {
+      return Promise.reject(new ApiError(404, "NOT_FOUND", "the fit does not exist", null));
+    }
+    if (fitBundleFails) {
+      return Promise.reject(new ApiError(500, "INTERNAL_ERROR", "the fit could not be read", null));
+    }
+    return Promise.resolve(fitBundle);
   }
   if (path === "/autofits/af-1/rows/exp_decay/open") {
     return Promise.resolve(
@@ -328,6 +375,8 @@ beforeEach(() => {
   noDatasets = false;
   statRunFails = null;
   storedStatistics = [];
+  fitBundle = FIT_BUNDLE;
+  fitBundleFails = false;
   // The workspace's fetch cache is module-level: a test must not meet another's data.
   clearWorkspaceCache();
   request = vi.spyOn(api, "request").mockImplementation(
@@ -378,6 +427,64 @@ describe("WorkspacePage — opened Auto-fit rows", () => {
     const reopened = screen.getByRole("button", { name: "Row actions for Exponential decay" }) as HTMLButtonElement;
     expect(reopened.disabled).toBe(false);
     expect(reopened.textContent).toBe("Actions");
+  });
+});
+
+describe("WorkspacePage — opened results open in a modal", () => {
+  async function selectDataset(): Promise<void> {
+    renderPage();
+    await flush();
+    await flush();
+    fireEvent.click(screen.getByTitle("growth.csv"));
+    await flush();
+    await flush();
+  }
+
+  it("opens the result in the house modal with the tabs' own rendering", async () => {
+    openAsExistingFit = true;
+    fitBundle = RICH_BUNDLE;
+    await selectDataset();
+
+    fireEvent.click(screen.getByRole("button", { name: "Row actions for Exponential decay" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Open full results" }));
+    await flush();
+    await flush();
+
+    const dialog = screen.getByRole("dialog", { name: "Opened result — Exponential decay" });
+    expect(within(dialog).getByText("Model equation")).toBeTruthy();
+    expect(within(dialog).getByRole("columnheader", { name: "Parameter" })).toBeTruthy();
+    expect(within(dialog).getByText("Adjusted R²")).toBeTruthy();
+
+    // Escape closes it again.
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: /Opened result/ })).toBeNull();
+  });
+
+  it("says the fit is in flight in the modal while the opened-row job runs", async () => {
+    await selectDataset();
+
+    fireEvent.click(screen.getByRole("button", { name: "Row actions for Exponential decay" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Open full results" }));
+    await flush();
+
+    expect(
+      screen.getByText(/Fitting this model — the result opens here when it is ready/),
+    ).toBeTruthy();
+  });
+
+  it("shows the fit's load failure in the modal instead of waiting forever", async () => {
+    openAsExistingFit = true;
+    fitBundleFails = true;
+    await selectDataset();
+
+    fireEvent.click(screen.getByRole("button", { name: "Row actions for Exponential decay" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Open full results" }));
+    await flush();
+    await flush();
+
+    const dialog = screen.getByRole("dialog", { name: "Opened result — Exponential decay" });
+    expect(within(dialog).getByRole("alert").textContent).toContain("the fit could not be read");
+    expect(within(dialog).queryByText("Model equation")).toBeNull();
   });
 });
 

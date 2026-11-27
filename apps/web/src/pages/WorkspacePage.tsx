@@ -35,6 +35,7 @@ import { EmptyWorkspace } from "../workspace/EmptyWorkspace";
 import { FitPanel } from "../workspace/FitPanel";
 import { JobStatus } from "../workspace/JobStatus";
 import { ResultsTabs } from "../workspace/results/ResultsTabs";
+import { OpenResultModal } from "../workspace/results/OpenResultModal";
 import { AutofitOptions } from "../workspace/autofit/AutofitOptions";
 import { AutofitPanel } from "../workspace/autofit/AutofitPanel";
 import { DEFAULT_AUTOFIT_OPTIONS, useAutofit, type AutoFitOptions } from "../workspace/autofit/useAutofit";
@@ -120,6 +121,14 @@ export function WorkspacePage({
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
   const [openRowBusy, setOpenRowBusy] = useState<string | null>(null);
   const [openRowError, setOpenRowError] = useState<string | null>(null);
+  /** The row whose opened result the modal presents, with the fit it is waiting for
+   *  (null until the open answers with one); the results panel below the ranking stays
+   *  as it is — the modal is where the user is looking. */
+  const [openResult, setOpenResult] = useState<{
+    modelId: string;
+    name: string;
+    fitId: string | null;
+  } | null>(null);
   const [manualPreset, setManualPreset] = useState<ManualPreset | null>(null);
   const [datasetsCollapsed, setDatasetsCollapsed] = useState(
     () => localStorage.getItem("curvestudio:datasetsCollapsed") === "1",
@@ -175,6 +184,12 @@ export function WorkspacePage({
     setFitError(null);
     setOpenRowBusy(null);
     void loadBundle(fitId, pendingSourceRef.current);
+    // An opened-row job that produced a fit is the result the modal is waiting for.
+    if (pendingSourceRef.current === "opened-row") {
+      setOpenResult((current) =>
+        current !== null && current.fitId === null ? { ...current, fitId } : current,
+      );
+    }
     if (selectedId !== null) {
       // The job stored a fit: the dataset's cached history is out of date from here on.
       // Drop it, and refresh the live list straight into the panel — not through the
@@ -546,6 +561,15 @@ export function WorkspacePage({
       setSelectedRowId(candidateId);
       setOpenRowBusy(candidateId);
       setOpenRowError(null);
+      // The result opens in a modal, where the user is, instead of the panel below
+      // the ranking — which renders under the fold.
+      setOpenResult({
+        modelId: candidateId,
+        name:
+          autoState.stored?.result.ranked.find((row) => row.model_id === candidateId)?.name ??
+          candidateId,
+        fitId: null,
+      });
       try {
         const created = await api.request<OpenRowOut>(
           `/autofits/${storedId}/rows/${candidateId}/open`,
@@ -559,7 +583,11 @@ export function WorkspacePage({
         }
         if (created.fit_id != null) {
           // Opened before: the fit already exists.
-          await loadBundle(created.fit_id, "opened-row");
+          const fitId = created.fit_id;
+          setOpenResult((current) =>
+            current?.modelId === candidateId ? { ...current, fitId } : current,
+          );
+          await loadBundle(fitId, "opened-row");
           setOpenRowBusy(null);
           return;
         }
@@ -635,6 +663,31 @@ export function WorkspacePage({
   // three next steps instead of the everyday panels — a loading or failed list must not
   // read as an empty account.
   const emptyWorkspace = !datasetsLoading && datasetsError === null && datasets.length === 0;
+
+  // The opened-result modal's props, from what the fit request is doing: the request
+  // itself, then the fit's bundle load, then the reused tabs' rendering — and the
+  // honest error or fallback when one of those does not arrive.
+  const openResultProps = (() => {
+    if (openResult === null) return null;
+    const ready =
+      openResult.fitId !== null &&
+      bundle !== null &&
+      activeFitId === openResult.fitId &&
+      bundleSource === "opened-row";
+    const waitingForFit = openResult.fitId !== null && !ready && bundleError === null;
+    return {
+      name: openResult.name,
+      bundle: ready ? bundle : null,
+      busy:
+        (openRowBusy !== null && openRowBusy === openResult.modelId) || waitingForFit,
+      error:
+        openRowBusy === null && openResult.fitId === null
+          ? openRowError
+          : openResult.fitId !== null && bundleError !== null
+            ? errorText(bundleError, "the fit could not be loaded")
+            : null,
+    };
+  })();
 
   return (
     <div className={datasetsCollapsed ? "workspace workspace--rail-collapsed" : "workspace"}>
@@ -827,6 +880,13 @@ export function WorkspacePage({
             )}
           </div>
         </>
+      )}
+
+      {openResultProps !== null && (
+        <OpenResultModal
+          {...openResultProps}
+          onClose={() => setOpenResult(null)}
+        />
       )}
     </div>
   );

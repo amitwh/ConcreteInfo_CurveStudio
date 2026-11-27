@@ -2496,6 +2496,29 @@ th[aria-sort="descending"] .th-sort__caret {
   gap: 0.25rem 0.6rem;
 }
 
+/* The Auto-fit options disclosure never moves the layout around it: its open content is
+   a dropdown panel anchored under the summary — out of flow, so the <details> keeps its
+   collapsed height and the chart and ranking below stay put — with the panel's own
+   height capped and scrolled inside. */
+.autofit-options {
+  position: relative;
+}
+
+.autofit-options__body {
+  position: absolute;
+  top: calc(100% + 0.4rem);
+  left: 0;
+  right: 0;
+  z-index: 30;
+  max-height: min(60vh, 30rem);
+  overflow-y: auto;
+  padding: 0.35rem 0.75rem 0.75rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 12px 32px rgba(13, 11, 9, 0.18);
+}
+
 /* ---- Icons ---- */
 
 /* Lucide icons inherit `currentColor`; sizing comes from these classes, not inline

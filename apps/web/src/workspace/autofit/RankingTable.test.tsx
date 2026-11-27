@@ -70,6 +70,21 @@ function hexOf(cssColor: string): string {
   );
 }
 
+/** A getBoundingClientRect stand-in for the geometry jsdom cannot compute. */
+function domRect(x: number, y: number, width: number, height: number): DOMRect {
+  return {
+    x,
+    y,
+    width,
+    height,
+    top: y,
+    bottom: y + height,
+    left: x,
+    right: x + width,
+    toJSON: () => ({}),
+  } as DOMRect;
+}
+
 describe("RankingTable", () => {
   it("colours the swatch by display position, so tied ranks stay distinct", () => {
     renderTable([row("a", { rank: 1 }), row("b", { rank: 2 }), row("c", { rank: 2 })]);
@@ -127,6 +142,52 @@ describe("RankingTable", () => {
     await user.click(screen.getByRole("button", { name: "Row actions for Model a" }));
     expect(screen.getByRole("menuitem", { name: "Open full results" })).toBeTruthy();
     expect(screen.getByRole("menuitem", { name: "Use this model manually" })).toBeTruthy();
+  });
+
+  it("opens the last row's menu fully inside the viewport, never off-screen", async () => {
+    // jsdom has no layout, so the trigger box, the rendered menu's box and the viewport
+    // are stubbed (one prototype-level spy — mixing it with per-element stubs makes the
+    // stub leak onto every element) and the inline placement is asserted exactly.
+    const user = userEvent.setup();
+    const viewport = { width: 1280, height: 700 };
+    vi.spyOn(window, "innerWidth", "get").mockReturnValue(viewport.width);
+    vi.spyOn(window, "innerHeight", "get").mockReturnValue(viewport.height);
+    const realRect = Element.prototype.getBoundingClientRect;
+    const rectSpy = vi
+      .spyOn(Element.prototype, "getBoundingClientRect")
+      .mockImplementation(function (this: Element) {
+        // The last row's kebab: at the table's right edge, 12px above the viewport floor.
+        if (this.classList.contains("row-menu__toggle")) {
+          return domRect(1040, 600, 228, 88);
+        }
+        // The rendered menu: 208px wide (13rem), two items tall.
+        if (this.classList.contains("row-menu")) {
+          return domRect(1040, 508, 208, 88);
+        }
+        return realRect.call(this);
+      });
+    try {
+      renderTable([row("a")], {
+        onUseManually: vi.fn(),
+        manuallySelectable: new Set(["a"]),
+      });
+      const toggle = screen.getByRole("button", {
+        name: "Row actions for Model a",
+      });
+
+      await user.click(toggle);
+
+      const menu = document.querySelector<HTMLElement>(".row-menu");
+      expect(menu).not.toBeNull();
+      const left = Number.parseFloat(menu?.style.left ?? "");
+      const top = Number.parseFloat(menu?.style.top ?? "");
+      expect(left).toBe(1060); // right-aligned to the kebab's right edge (1268 - 208)
+      expect(top).toBe(508); // flipped above: 600 - 4 - 88
+      expect(left + 208).toBeLessThanOrEqual(viewport.width);
+      expect(top + 88).toBeLessThanOrEqual(viewport.height);
+    } finally {
+      rectSpy.mockRestore();
+    }
   });
 
   it("renders the equation copy control compact with the full accessible name", () => {

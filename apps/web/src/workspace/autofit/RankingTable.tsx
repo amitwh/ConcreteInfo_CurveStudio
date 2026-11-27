@@ -28,6 +28,7 @@ import { fmtEquation, fmtInt, fmtNumber } from "../../format";
 import type { RankedFit } from "../../api/client";
 import { modelColor } from "../traces";
 import { SortableTh, cycleSort, sortRows, type SortKey, type SortState } from "../sorting";
+import { placePopoverWithin } from "../popover";
 
 /** Human label + semantic badge for a candidate's fit status. */
 const STATUS_BADGE: Record<string, { label: string; tone: "ok" | "bad" }> = {
@@ -64,8 +65,15 @@ const SORT_KEYS: Record<string, SortKey<RankedFit>> = {
  * the same handlers. Opening moves focus to the first item; the arrow keys move between
  * items; Escape closes and returns focus to the kebab; a press anywhere outside — or a
  * scroll of the table under it — closes it too. The popover is `position: fixed` under
- * the kebab because the table's scroll container would clip an absolutely-positioned one.
+ * the kebab because the table's scroll container would clip an absolutely-positioned
+ * one, and its placement goes through `placePopoverWithin` so it is always fully
+ * inside the viewport — a last row's kebab opens the menu upwards, a rightmost one
+ * never has it spill past the right or left edge.
  */
+
+/** The menu's stylesheet size (13rem wide) for the first, pre-measurement placement. */
+const MENU_ESTIMATE = { width: 208, height: 88 };
+
 function RowActionMenu({
   row,
   onOpen,
@@ -80,9 +88,10 @@ function RowActionMenu({
   openRowBusy: string | null;
 }): ReactElement | null {
   const [open, setOpen] = useState(false);
-  const [anchor, setAnchor] = useState<{ top: number; right: number } | null>(null);
+  const [anchor, setAnchor] = useState<{ top: number; left: number } | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const firstItemRef = useRef<HTMLButtonElement>(null);
   const buttonId = useId();
   const menuId = useId();
@@ -93,9 +102,38 @@ function RowActionMenu({
     if (restoreFocus) buttonRef.current?.focus();
   }, []);
 
+  const openAtTrigger = (): void => {
+    const rect = buttonRef.current?.getBoundingClientRect();
+    if (rect !== undefined) {
+      setAnchor(
+        placePopoverWithin(rect, MENU_ESTIMATE, {
+          width: window.innerWidth,
+          height: window.innerHeight,
+        }),
+      );
+    }
+    setOpen(true);
+  };
+
   useEffect(() => {
     if (open) firstItemRef.current?.focus();
   }, [open]);
+
+  // The first placement estimates the menu's size; once it is on the page its real
+  // box replaces the estimate — before the browser paints, so the menu never shows
+  // at an off-screen spot.
+  useEffect(() => {
+    if (!open || anchor === null) return;
+    const menuRect = menuRef.current?.getBoundingClientRect();
+    const buttonRect = buttonRef.current?.getBoundingClientRect();
+    if (menuRect === undefined || buttonRect === undefined) return;
+    const next = placePopoverWithin(
+      buttonRect,
+      { width: menuRect.width, height: menuRect.height },
+      { width: window.innerWidth, height: window.innerHeight },
+    );
+    if (next.top !== anchor.top || next.left !== anchor.left) setAnchor(next);
+  }, [open, anchor]);
 
   useEffect(() => {
     if (!open) return;
@@ -163,9 +201,7 @@ function RowActionMenu({
             close(false);
             return;
           }
-          const rect = buttonRef.current?.getBoundingClientRect();
-          if (rect !== undefined) setAnchor({ top: rect.bottom + 4, right: rect.right });
-          setOpen(true);
+          openAtTrigger();
         }}
       >
         <MoreVertical className="icon" aria-hidden="true" focusable="false" />
@@ -174,7 +210,8 @@ function RowActionMenu({
       {open && anchor !== null && (
         <div
           className="row-menu"
-          style={{ top: anchor.top, right: anchor.right }}
+          ref={menuRef}
+          style={{ top: anchor.top, left: anchor.left }}
           onClick={(event) => event.stopPropagation()}
         >
           <div role="menu" id={menuId} aria-labelledby={buttonId} onKeyDown={onMenuKeyDown}>
