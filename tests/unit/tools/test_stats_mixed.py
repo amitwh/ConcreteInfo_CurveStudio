@@ -779,22 +779,25 @@ def test_adding_a_constant_to_the_outcome_moves_only_the_intercept() -> None:
     base_fixed = _keyed(base, "Fixed effects")
     shifted_fixed = _keyed(shifted, "Fixed effects")
 
+    # Shift invariance is exact in exact arithmetic; the iterative fit only
+    # approximates it, and the CI runner's optimizer lands within ~4e-8 relative
+    # of itself run to run (observed 7e-10 .. 4e-8 over three runs, versus ~1e-12
+    # locally). The tolerances sit an order above that spread; a real shift bug
+    # moves these quantities by orders of magnitude more.
     assert shifted_fixed["(Intercept)"]["estimate"] == pytest.approx(
         float(base_fixed["(Intercept)"]["estimate"]) + 10.0,
         rel=1e-9,  # type: ignore[arg-type]
-        # shift invariance is exact in exact arithmetic; 1e-12 was below the
-        # BLAS rounding the CI runner's libraries produce (rel ~5e-12 observed)
     )
     assert shifted_fixed["x"]["estimate"] == pytest.approx(
         base_fixed["x"]["estimate"],
-        rel=1e-8,  # type: ignore[arg-type]  # CI-runner BLAS noise floor (~7e-10 observed)
+        rel=1e-6,  # type: ignore[arg-type]
     )
     for label in (
         "Residual variance (sigma squared)",
         "Between-group variance (tau squared)",
         "Intraclass correlation",
     ):
-        assert _estimate(shifted, label) == pytest.approx(_estimate(base, label), rel=1e-8)
+        assert _estimate(shifted, label) == pytest.approx(_estimate(base, label), rel=1e-6)
 
 
 # --------------------------------------------------------------------------- the edge cases

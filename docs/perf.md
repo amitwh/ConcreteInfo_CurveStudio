@@ -814,3 +814,43 @@ helpers, neither reachable from the app). The PEP 562 re-export roots
 (`curvestudio_desktop.views`/`controllers`) needed nothing: every name they resolve
 lazily is also imported statically by a module in the graph, and `curvestudio.messages`
 rides those imports.
+
+## 2026-11-26 — P7: the runtime wave (desktop + web)
+
+Seven parallel worktree tasks (`docs/plans/2026-11-26-p7-runtime-perf.md`), each merged
+after inline review, full suites green at every merge. The owner kept the container at
+2 CPU / 2 GB, so the server Auto-fit figure below stands unchanged — this wave bought
+what code alone can buy. Every figure is the implementer's measured number (source runs,
+medians, benchmarks in the task worktrees) unless marked otherwise.
+
+### What changed, with its evidence
+
+| Surface | Change | Measured |
+| --- | --- | --- |
+| web | `Plotly.react` only fires on a real data change: the selected-curve → `rowCurveBundle` derivation is memoised, so Auto-fit progress polls (300 ms–1.5 s) no longer re-copy point arrays and re-diff the chart | mutation check: 5 spurious replots per 4 poll ticks → 0; a row selection still replots (1 call) |
+| web | The workspace's GETs are cached across the tab-switch remount: metadata 30 s TTL + revalidate, details/fits hard-cached until a mutation invalidates them, detail LRU cap 3 (a large detail is tens of MB) | remount with the same dataset: zero detail/fits requests, rows render synchronously |
+| api | `GET /models` serves the catalogue from a process cache (`lru_cache(1)`, cleared by the test fixture that rebuilds the registry) | 152 ms median + 2,332 ms cold → ~ms after the first call per process |
+| web | dataset-detail and fits-history requests start together (`Promise.all`) | fits no longer wait behind the larger detail fetch |
+| desktop | the model catalogue (`list_models()`) caches to a versioned per-user disk record — profiled root cause: NOT registration (0.07 s) but the SymPy compile + LaTeX render per model (~1.9 s) that the `ModelInfo` build forces | `model_list` **4.62 s → 1.80 s** median source (target ≤ 2.0 s met); the remaining ~1.8 s is the fitting-stack import, untouched by design |
+| desktop | the plot downsamples and decimates honestly: line curves peak-downsample per item; the scatter draws a min/max envelope above 20 000 points (unsorted-safe, span/extremes preserved, `showing X of N points` readout, log axis refused while decimated); `set_data`/`set_fit` reuse items instead of teardown/rebuild | `set_data` 100 k points **441.8 → 37.2 ms**; full repaint **16.3 → 3.7 ms**; 2 k dataset switch 9.7 → 3.6 ms with pinned identical visuals |
+| desktop | result tables cache their measuring (`_ContentWidths`, invalidated by the table's own content signals) and the data table caches per-cell `%.10g` strings + a shared highlight brush | 100 resizes of a 300×5 table: **1 130 ms → 523 ms** |
+| desktop | the Auto-fit pool prewarms **3** workers (was `cores−1`, each ~200 MB, never expiring); a real run still scales to full width on demand | idle pool on a 16-core box: ~3 GB → ~600 MB |
+| desktop | the frozen bundle drops the server/test stacks the app never imports (sqlalchemy, psycopg + psycopg_binary, greenlet, hypothesis; PIL deliberately kept — matplotlib imports it at module level) | bundle **601.9 → 565.6 MB** file bytes, `_internal` 183 → 163 entries; frozen selftest green with the 3-worker prewarm |
+| web (bundle) | no meaningful change — entry 112.42 KB gzip (was 111.77; the cache module), WorkspacePage 141.53 KB | build of this wave |
+
+### What this wave deliberately did not buy
+
+- **Server Auto-fit stays ~15.9 s median** at the 2-CPU container cap (owner's decision);
+  the engine's candidate fan-out is unchanged. The `GET /models` cache removes one
+  per-mount 152 ms server cost, and the spawn-pool work already landed in P6.
+- Desktop plot exports render the drawn subset (the envelope above 20 000 points),
+  matching the web app's display-only decimation; a full-resolution export path is a
+  possible follow-up.
+- Entry chunk remains 112 KB gzip against the 100 KB target — unchanged priority.
+
+### Found during the wave (pre-existing, left for a follow-up)
+
+- Two real-timer test files (`errorReporter`, `HelpPage`) flake under full-suite load and
+  pass in isolation — both confirmed on the clean base.
+- `tests/integration/test_cli.py` has registry-lifecycle order sensitivity: it fails only
+  when run after the real-plugins pool test in the same process.
