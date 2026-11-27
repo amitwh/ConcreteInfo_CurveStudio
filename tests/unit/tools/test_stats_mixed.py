@@ -781,7 +781,9 @@ def test_adding_a_constant_to_the_outcome_moves_only_the_intercept() -> None:
 
     assert shifted_fixed["(Intercept)"]["estimate"] == pytest.approx(
         float(base_fixed["(Intercept)"]["estimate"]) + 10.0,
-        rel=1e-12,  # type: ignore[arg-type]
+        rel=1e-9,  # type: ignore[arg-type]
+        # shift invariance is exact in exact arithmetic; 1e-12 was below the
+        # BLAS rounding the CI runner's libraries produce (rel ~5e-12 observed)
     )
     assert shifted_fixed["x"]["estimate"] == pytest.approx(
         base_fixed["x"]["estimate"],
